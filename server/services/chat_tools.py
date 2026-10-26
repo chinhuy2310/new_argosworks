@@ -1810,7 +1810,7 @@ def _tool_create_issue(args, current_user, cfg):
 
         read_departments, append_record, next_record_id, get_next_card_code,
 
-        read_schedule, write_schedule
+        read_schedule, write_schedule, mutate_schedule
 
     )
 
@@ -2129,8 +2129,6 @@ def _tool_create_issue(args, current_user, cfg):
 
             s_end = due_date or start_date
 
-            events = read_schedule()
-
             cal_event = {
 
                 "id": next_record_id(),
@@ -2157,9 +2155,9 @@ def _tool_create_issue(args, current_user, cfg):
 
             }
 
-            events.append(cal_event)
+            # 전역 저장 락으로 보호된 read-modify-write (동시 저장 시 일정 유실 방지)
 
-            write_schedule(events)
+            mutate_schedule(lambda evs: evs.append(cal_event))
 
         except Exception as sch_err:
 
@@ -2333,7 +2331,7 @@ def _tool_schedule_issue(args, current_user, cfg):
 
         find_record_by_key_or_code, update_record_work_date,
 
-        read_schedule, write_schedule, next_record_id
+        read_schedule, write_schedule, next_record_id, mutate_schedule
 
     )
 
@@ -2442,63 +2440,55 @@ def _tool_schedule_issue(args, current_user, cfg):
 
         s_end = due_date or start_date
 
-        events = read_schedule()
+        new_event = {
 
-        
+            "id": next_record_id(),
 
-        found_existing = False
+            "ownerKey": f"{assignee_name}|{org_name}",
 
-        for ev in events:
+            "ownerName": assignee_name,
 
-            ev_title = ev.get("title", "")
+            "ownerOrg": org_name,
 
-            if f"[{display_key}]" in ev_title or f"[{issue_key}]" in ev_title or ev_title.startswith(f"{display_key} ") or ev_title == display_key:
+            "ownerEmail": current_user.get("email", ""),
 
-                ev["startDate"] = s_start
+            "type": "업무",
 
-                ev["endDate"] = s_end
+            "title": f"[{display_key}] {summary}",
 
-                ev["updatedAt"] = datetime.now().isoformat()
+            "startDate": s_start,
 
-                found_existing = True
+            "endDate": s_end,
 
-                break
+            "memo": f"JARVIS AI Chatbot에 의해 등록된 일정 ({datetime.now().strftime('%Y-%m-%d %H:%M')})",
 
+            "createdAt": datetime.now().isoformat()
 
+        }
 
-        if not found_existing:
+        def _apply_schedule_event(evs):
 
-            new_event = {
+            for ev in evs:
 
-                "id": next_record_id(),
+                ev_title = ev.get("title", "")
 
-                "ownerKey": f"{assignee_name}|{org_name}",
+                if f"[{display_key}]" in ev_title or f"[{issue_key}]" in ev_title or ev_title.startswith(f"{display_key} ") or ev_title == display_key:
 
-                "ownerName": assignee_name,
+                    ev["startDate"] = s_start
 
-                "ownerOrg": org_name,
+                    ev["endDate"] = s_end
 
-                "ownerEmail": current_user.get("email", ""),
+                    ev["updatedAt"] = datetime.now().isoformat()
 
-                "type": "업무",
+                    return
 
-                "title": f"[{display_key}] {summary}",
-
-                "startDate": s_start,
-
-                "endDate": s_end,
-
-                "memo": f"JARVIS AI Chatbot에 의해 등록된 일정 ({datetime.now().strftime('%Y-%m-%d %H:%M')})",
-
-                "createdAt": datetime.now().isoformat()
-
-            }
-
-            events.append(new_event)
+            evs.append(new_event)
 
 
 
-        write_schedule(events)
+        # 전역 저장 락으로 보호된 read-modify-write (동시 저장 시 일정 유실 방지)
+
+        mutate_schedule(_apply_schedule_event)
 
     except Exception as sch_err:
 

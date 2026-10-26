@@ -42,6 +42,10 @@ _RE_STRFTIME_NOW = re.compile(
     re.IGNORECASE,
 )
 _RE_PRAGMA = re.compile(r"^\s*PRAGMA\s+", re.IGNORECASE)
+# SQLite exposes an implicit "rowid" pseudo-column that PostgreSQL does not have.
+# All ARGOS tables use an explicit "id" primary key, so ordering by rowid (insert
+# order in SQLite) has to fall back to ordering by the primary key on PostgreSQL.
+_RE_ORDER_BY_ROWID = re.compile(r"\bORDER\s+BY\s+rowid\b", re.IGNORECASE)
 
 
 def _translate_sql(sql):
@@ -56,6 +60,9 @@ def _translate_sql(sql):
 
     # 2. strftime('%Y-...','now') → CURRENT_TIMESTAMP
     sql = _RE_STRFTIME_NOW.sub("CURRENT_TIMESTAMP", sql)
+
+    # 2b. ORDER BY rowid → ORDER BY id (SQLite implicit rowid is unavailable in PostgreSQL)
+    sql = _RE_ORDER_BY_ROWID.sub("ORDER BY id", sql)
 
     # 3. INSERT OR IGNORE → INSERT ... ON CONFLICT DO NOTHING
     m = _RE_INSERT_OR_IGNORE.search(sql)
@@ -336,8 +343,14 @@ if ENGINE == "sqlite":
             _tls.conn = conn
         return _tls.conn
 
-    def close_connection():
-        """Closes the thread-local database connection."""
+    def close_connection(force=False):
+        """
+        Closes the thread-local database connection.
+
+        `force` is accepted for cross-engine API parity: in PostgreSQL mode it is
+        the only way to drop the shared pool (restore/shutdown), while SQLite
+        always releases the thread-local connection.
+        """
         if hasattr(_tls, 'conn') and _tls.conn is not None:
             try:
                 _tls.conn.close()
@@ -557,11 +570,21 @@ else:
         """
         return _get_pool().getconn()
 
-    def close_connection():
+    def close_connection(force=False):
         """
-        Closes and clears pool connections if needed during restore or shutdown.
-        Subsequent queries will lazily re-initialize the pool via _get_pool().
+        Releases per-request resources.
+
+        In PostgreSQL mode every query already borrows a pooled connection and
+        returns it immediately, so the per-request cleanup performed by
+        handler.py / wsgi.py must be a no-op: closing the whole pool after each
+        request would drop 10-128 warm connections (and could close a connection
+        another thread is still using).
+
+        Pass force=True only when the pool must really be discarded
+        (restore / shutdown); subsequent queries lazily rebuild it.
         """
+        if not force:
+            return
         global _pool
         if _pool is not None and not _pool.closed:
             with _pool_lock:

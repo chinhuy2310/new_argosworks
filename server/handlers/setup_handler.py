@@ -141,7 +141,17 @@ def handle_post_setup_complete(handler, raw_body, ip):
         ]
 
     # 관리자 소속 부서 결정
-    dept_ids = [d.get("id") for d in departments if d.get("id")]
+    # dept_ids 가 비어 있으면(부서 항목에 id 누락) admin_dept_id 결정 단계에서
+    # IndexError(500)가 발생하므로 명시적으로 검증한다.
+    dept_ids = [str(d.get("id")).strip().lower() for d in departments if d.get("id")]
+    dept_ids = [d for d in dept_ids if d]
+    if not dept_ids:
+        handler._send_json(400, {
+            "ok": False,
+            "error": "최소 1개 이상의 유효한 부서(id 포함)를 등록해야 초기 설정을 완료할 수 있습니다."
+        })
+        return
+    admin_dept_id = str(admin_dept_id or "").strip().lower()
     if not admin_dept_id or admin_dept_id not in dept_ids:
         admin_dept_id = "mgmt" if "mgmt" in dept_ids else dept_ids[0]
 

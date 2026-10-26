@@ -14,6 +14,19 @@ from services.chat_tools import execute_tool
 from services.jira_client import jira_ongoing_records_for, get_cached_jira_records
 
 
+def _chat_session_owned(chat_sess, session):
+    """
+    대화 세션이 현재 로그인 사용자 소유인지 판정한다 (표시 이름 + 부서).
+
+    이름만 비교하면 부서가 다른 동명이인의 대화 기록을 읽거나 삭제할 수 있다.
+    """
+    if not chat_sess or not session:
+        return False
+    if (chat_sess.get("user_name") or "") != (session.get("name") or ""):
+        return False
+    return (chat_sess.get("user_org") or "") == (session.get("org") or "")
+
+
 CHAT_SYSTEM_PROMPT = """
 당신은 아르고스웍스(ARGOS WORKS) R&D Lab의 AI 업무 비서입니다.
 현재 날짜: {today}
@@ -410,7 +423,7 @@ def handle_chat_stream(handler, raw_body, ip):
     chat_session = None
     if session_id:
         chat_session = get_chat_session(session_id)
-        if chat_session and chat_session.get("user_name") != user_name:
+        if chat_session and not _chat_session_owned(chat_session, session):
             handler._send_json(403, {"ok": False, "error": "접근 권한이 없습니다."})
             return
     
@@ -645,7 +658,7 @@ def handle_delete_session(handler, raw_body, ip):
         handler._send_json(400, {"ok": False, "error": "sessionId가 필요합니다."})
         return
     from services.chat_store import delete_session
-    ok = delete_session(session_id, session["name"])
+    ok = delete_session(session_id, session["name"], session.get("org", ""))
     handler._send_json(200, {"ok": ok})
     access_log(ip, "chat_delete_session", 200, session_id)
 
@@ -659,15 +672,23 @@ def handle_get_history(handler, parsed, ip):
     qs = parse_qs(parsed.query)
     session_id = (qs.get("sessionId", [""])[0])
     before_id = qs.get("beforeId", [None])[0]
-    limit = min(int(qs.get("limit", ["20"])[0]), 100)
-    
+    # ?limit=abc 이전에는 ValueError(500), 음수 limit 은 LIMIT -1(전체 조회)이 되었다.
+    try:
+        limit = int(qs.get("limit", ["20"])[0])
+    except (TypeError, ValueError):
+        limit = 20
+    limit = max(1, min(limit, 100))
+
     if not session_id:
         handler._send_json(400, {"ok": False, "error": "sessionId가 필요합니다."})
         return
-    
-    # Verify session ownership
+
+    # Verify session ownership (fail-closed: unknown session id → 404)
     chat_sess = get_chat_session(session_id)
-    if chat_sess and chat_sess.get("user_name") != session["name"]:
+    if not chat_sess:
+        handler._send_json(404, {"ok": False, "error": "대화 세션을 찾을 수 없습니다."})
+        return
+    if not _chat_session_owned(chat_sess, session):
         handler._send_json(403, {"ok": False, "error": "접근 권한이 없습니다."})
         return
     
@@ -767,7 +788,8 @@ def handle_execute_action(handler, raw_body, ip):
                 message_id=body.get("message_id") or body.get("messageId"),
                 summary=body.get("summary"),
                 action_type=action_type,
-                user_name=session["name"]
+                user_name=session["name"],
+                user_dept_id=session.get("org", "")
             )
         except Exception as e:
             log_line("executed 상태 저장 오류:", e)
@@ -802,6 +824,7 @@ def handle_cancel_action(handler, raw_body, ip):
             message_id=message_id,
             summary=summary,
             action_type=action_type,
-            user_name=session["name"]
+            user_name=session["name"],
+            user_dept_id=session.get("org", "")
         )
     handler._send_json(200, {"ok": True, "updated": ok})

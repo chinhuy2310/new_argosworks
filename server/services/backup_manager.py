@@ -457,7 +457,7 @@ def restore_backup(backup_filename):
                     shutil.copyfileobj(f_in, f_out)
 
             # 3. 복원 대상 무결성 검증 및 복원 실행
-            close_connection()
+            close_connection(force=True)
 
             if is_postgres:
                 # PostgreSQL pg_restore execution with clean drop/create

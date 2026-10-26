@@ -607,7 +607,7 @@ updateTopbarUserUI(null);
 
         var res = await apiPostJson("/api/account/update-profile", payload);
         if(res && res.ok){
-          showToast("회원 정보가 성공적으로 수정되었습니다.");
+          showToast(res.message || "회원 정보가 성공적으로 수정되었습니다.");
           closeEditModal();
           // Update user state in localStorage & UI
           var u = (typeof getCurrentUser === "function") ? getCurrentUser() : loggedInUser;

@@ -212,7 +212,8 @@ def handle_account_login(handler, raw_body, ip):
         )
         handler._send_json(403, {"ok": False, "error": "계정 가입 요청이 반려되었습니다. 사내 관리자에게 문의하세요."})
         return
-    elif acc.get("disabled") or acc.get("is_active") is False:
+    elif (acc.get("disabled") or acc.get("is_active") is False
+          or acc_status not in (None, "", "active")):
         from services.audit_logger import log_audit
         log_audit(
             session={"name": login_id, "org": org or "unknown"},
@@ -228,9 +229,11 @@ def handle_account_login(handler, raw_body, ip):
     clear_login_failures(ip, login_id)
     name = acc.get("name", login_id)
     username = acc.get("username", login_id)
-    org = acc.get("dept_id") or acc.get("org", "dev")
+    # Never invent a department: an account without dept_id must not be silently
+    # placed into 'dev' (that would grant another department's records).
+    org = (acc.get("dept_id") or acc.get("org") or "").strip()
     email = acc.get("email", "")
-    avatar_url = acc.get("avatar_url", "")
+    avatar_url = acc.get("avatar_url", "") or ""
     token = create_session(name, org, email, user_id=acc.get("id"))
     access_log(ip, "account_login", 200, "%s|%s" % (name, org))
     is_adm = bool(acc.get("role") == "admin" or acc.get("is_admin") == 1 or is_admin_user(acc))
@@ -316,8 +319,13 @@ def handle_account_update_profile(handler, raw_body, ip):
     cur_email = session.get("email", "").strip()
 
     new_name = (payload.get("name") or cur_name).strip()
-    new_email = (payload.get("email") or "").strip()
-    new_org = (payload.get("org") or payload.get("department") or cur_org).strip()
+    # An omitted "email" field must keep the stored value (previously it was wiped).
+    if "email" in payload:
+        new_email = str(payload.get("email") or "").strip()
+    else:
+        new_email = cur_email
+    requested_org = (payload.get("org") or payload.get("department") or cur_org).strip()
+    new_org = requested_org
     new_password = (payload.get("password") or "").strip()
 
     if not new_name:
@@ -348,22 +356,36 @@ def handle_account_update_profile(handler, raw_body, ip):
     if avatar_data:
         try:
             import base64
+            import io
+            from PIL import Image
             from config import ATTACH_DIR
+
             if "," in avatar_data:
                 avatar_data = avatar_data.split(",", 1)[1]
             img_bytes = base64.b64decode(avatar_data)
-            if len(img_bytes) <= 5 * 1024 * 1024:
-                avatars_dir = os.path.join(ATTACH_DIR, "avatars")
-                os.makedirs(avatars_dir, exist_ok=True)
-                fname = f"user_{user_id}_{int(time.time())}.png"
-                dest = os.path.join(avatars_dir, fname)
-                with open(dest, "wb") as f:
-                    f.write(img_bytes)
-                new_avatar = f"/api/attachments/avatars/{fname}"
+            if 0 < len(img_bytes) <= 5 * 1024 * 1024:
+                # Validate that the payload really is a raster image and derive the
+                # extension from the actual format, so the served file carries a
+                # correct MIME type (previously every avatar was stored as .png).
+                with Image.open(io.BytesIO(img_bytes)) as probe:
+                    fmt = (probe.format or "").upper()
+                ext = {"PNG": ".png", "JPEG": ".jpg", "WEBP": ".webp", "GIF": ".gif"}.get(fmt)
+                if ext:
+                    avatars_dir = os.path.join(ATTACH_DIR, "avatars")
+                    os.makedirs(avatars_dir, exist_ok=True)
+                    fname = f"user_{user_id}_{int(time.time())}{ext}"
+                    dest = os.path.join(avatars_dir, fname)
+                    with open(dest, "wb") as f:
+                        f.write(img_bytes)
+                    new_avatar = f"/api/attachments/avatars/{fname}"
         except Exception:
             pass
     elif avatar_url_param is not None:
-        new_avatar = avatar_url_param.strip()
+        # Only allow clearing the avatar or an app-relative / HTTPS URL. Arbitrary
+        # values (e.g. "javascript:...") must never reach an <img src> attribute.
+        candidate = str(avatar_url_param).strip()
+        if not candidate or candidate.startswith("/") or candidate.lower().startswith("https://"):
+            new_avatar = candidate
 
     if new_password:
         if len(new_password) < 8:
@@ -378,6 +400,14 @@ def handle_account_update_profile(handler, raw_body, ip):
         if not any(d["id"] == new_org for d in depts):
             handler._send_json(400, {"ok": False, "error": "유효하지 않은 부서(소속)입니다."})
             return
+
+    # 소속(부서) 변경은 열람 가능한 업무/일정 범위(RBAC scope)를 바꾸므로
+    # 일반 사용자의 self-service 변경은 즉시 반영하지 않고 관리자 승인 요청으로 남긴다.
+    dept_change_pending = False
+    if new_org and new_org.lower() != (cur_org or "").lower():
+        if not is_admin_user(session):
+            dept_change_pending = True
+            new_org = cur_org
 
     # Check if duplicate name+dept exists with a different user id
     dup = get_one(
@@ -400,11 +430,13 @@ def handle_account_update_profile(handler, raw_body, ip):
             # Update current session table via extracted cookie or bearer token
             token = handler._extract_token()
             if token:
+                from services.auth import hash_session_token
+                token_hash = hash_session_token(token)
                 cur.execute(
                     """UPDATE sessions 
                        SET user_name = ?, user_dept_id = ?, user_email = ?
-                       WHERE token = ?""",
-                    (new_name, new_org, new_email, token)
+                       WHERE token = ? OR token = ?""",
+                    (new_name, new_org, new_email, token_hash, token)
                 )
         transaction(_update)
     except Exception as e:
@@ -416,6 +448,28 @@ def handle_account_update_profile(handler, raw_body, ip):
     user_role = get_user_role(user_row)
     access_log(ip, "account_update_profile", 200, f"{cur_name} -> {new_name}|{new_org}")
 
+    # 소속 변경 요청은 관리자에게 승인 요청 알림으로 전달한다 (즉시 반영하지 않음).
+    if dept_change_pending:
+        try:
+            from services.notification_service import add_notification
+            add_notification(
+                recipient_email="",
+                recipient_name="관리자",
+                sender_name=cur_name or "사용자",
+                notif_type="dept_change",
+                title="부서 변경 승인 요청",
+                content=(
+                    f"{cur_name}님이 소속 변경을 요청했습니다: "
+                    f"{cur_org or '(미지정)'} → {requested_org}. "
+                    "설정 > 사용자 관리에서 소속을 변경한 뒤 요청을 처리해주세요."
+                ),
+                link_id=str(user_id),
+                tag="승인요청",
+                tag_type="info"
+            )
+        except Exception:
+            pass
+
     from services.audit_logger import log_audit
     log_audit(
         session=session,
@@ -423,12 +477,25 @@ def handle_account_update_profile(handler, raw_body, ip):
         action="USER_UPDATE_PROFILE",
         target_type="user",
         target_id=new_name,
-        details={"old_name": cur_name, "new_name": new_name, "old_dept": cur_org, "new_dept": new_org, "password_changed": bool(new_password), "avatar_changed": new_avatar != cur_avatar}
+        details={"old_name": cur_name, "new_name": new_name, "old_dept": cur_org, "new_dept": new_org,
+                 "requested_dept": requested_org if dept_change_pending else None,
+                 "dept_change_pending": dept_change_pending,
+                 "password_changed": bool(new_password), "avatar_changed": new_avatar != cur_avatar}
     )
+
+    if dept_change_pending:
+        message = (
+            f"소속 변경({cur_org or '미지정'} → {requested_org}) 요청이 관리자에게 전달되었습니다. "
+            "관리자 승인 후 반영됩니다."
+        )
+    else:
+        message = "회원 정보가 성공적으로 수정되었습니다."
 
     handler._send_json(200, {
         "ok": True,
-        "message": "회원 정보가 성공적으로 수정되었습니다.",
+        "message": message,
+        "deptChangePending": dept_change_pending,
+        "requestedOrg": requested_org if dept_change_pending else None,
         "user": {
             "name": new_name,
             "username": user_row.get("username") or new_name,

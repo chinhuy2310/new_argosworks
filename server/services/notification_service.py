@@ -19,27 +19,80 @@ import threading
 import queue
 
 # Bộ lắng nghe SSE thời gian thực cho Thông báo (Pub/Sub SSE Listeners)
-_NOTIF_SUBSCRIBERS = set()
+# queue.Queue -> identity dict ({"email","name","is_admin"}) — mỗi subscriber chỉ
+# nhận đúng thông báo của mình, không broadcast nội dung cho toàn bộ client.
+_NOTIF_SUBSCRIBERS = {}
 _NOTIF_LOCK = threading.Lock()
 
-def subscribe_notifications(q: queue.Queue):
+
+def _normalize_identity(identity):
+    ident = identity or {}
+    return {
+        "email": (ident.get("email") or "").strip().lower(),
+        "name": (ident.get("name") or "").strip(),
+        "is_admin": bool(ident.get("is_admin")),
+    }
+
+
+def _name_is_unambiguous(name):
+    """표시 이름이 시스템 내에서 유일한지 확인 (동명이인 알림 노출 방지, fail-closed)."""
+    try:
+        from services.auth import is_display_name_unique
+        return is_display_name_unique(name)
+    except Exception:
+        return False
+
+
+def notification_is_for_identity(identity, recipient_email, recipient_name):
+    """SSE 실시간 이벤트 1건이 해당 구독자(사용자)에게 속하는지 판정한다."""
+    ident = _normalize_identity(identity)
+    r_email = (recipient_email or "").strip().lower()
+    r_name = (recipient_name or "").strip()
+
+    # 전체 공지 / 시스템 브로드캐스트
+    if r_email == "all" or (r_email == "" and r_name in ("", "all")):
+        return True
+    if ident["email"] and r_email == ident["email"]:
+        return True
+    if ident["is_admin"] and r_name in ("관리자", "admin"):
+        return True
+    if not ident["name"]:
+        return False
+    if not _name_is_unambiguous(ident["name"]):
+        return False
+    base = assignee_base_name(ident["name"])
+    return r_name == ident["name"] or bool(base and r_name == base)
+
+
+def subscribe_notifications(q: queue.Queue, identity=None):
     with _NOTIF_LOCK:
-        _NOTIF_SUBSCRIBERS.add(q)
+        _NOTIF_SUBSCRIBERS[q] = _normalize_identity(identity)
+
 
 def unsubscribe_notifications(q: queue.Queue):
     with _NOTIF_LOCK:
-        _NOTIF_SUBSCRIBERS.discard(q)
+        _NOTIF_SUBSCRIBERS.pop(q, None)
+
 
 def broadcast_notification_event(event_type: str, data: dict):
+    data = data or {}
     with _NOTIF_LOCK:
-        dead = []
-        for q in _NOTIF_SUBSCRIBERS:
-            try:
-                q.put_nowait({"type": event_type, "data": data})
-            except Exception:
-                dead.append(q)
-        for d in dead:
-            _NOTIF_SUBSCRIBERS.discard(d)
+        subscribers = list(_NOTIF_SUBSCRIBERS.items())
+
+    dead = []
+    for q, identity in subscribers:
+        if not notification_is_for_identity(
+            identity, data.get("recipient_email"), data.get("recipient_name")
+        ):
+            continue
+        try:
+            q.put_nowait({"type": event_type, "data": data})
+        except Exception:
+            dead.append(q)
+    if dead:
+        with _NOTIF_LOCK:
+            for d in dead:
+                _NOTIF_SUBSCRIBERS.pop(d, None)
 
 
 def add_notification(
@@ -127,7 +180,11 @@ def get_user_notifications(user_email=None, user_name=None, is_admin=False, limi
         backfill_initial_notifications()
 
     # Query notifications
-    if clean_email or base_name:
+    # Name-only matching is disabled when the display name is not unique, otherwise
+    # two employees with the same name in different departments would see (and could
+    # mark as read) each other's notifications.
+    name_matching = bool(clean_name) and _name_is_unambiguous(clean_name)
+    if clean_email or name_matching:
         where_clauses = [
             "recipient_email = 'all'",
             "(recipient_email = '' AND (recipient_name = '' OR recipient_name = 'all'))"
@@ -136,10 +193,10 @@ def get_user_notifications(user_email=None, user_name=None, is_admin=False, limi
         if clean_email:
             where_clauses.append("recipient_email = ?")
             params.append(clean_email)
-        if clean_name:
+        if name_matching:
             where_clauses.append("recipient_name = ?")
             params.append(clean_name)
-        if base_name and base_name != clean_name:
+        if name_matching and base_name and base_name != clean_name:
             where_clauses.append("recipient_name = ?")
             params.append(base_name)
         if is_admin:
@@ -152,7 +209,7 @@ def get_user_notifications(user_email=None, user_name=None, is_admin=False, limi
         params.append(limit)
         rows = query(sql, tuple(params))
     else:
-        # If not logged in, return system & public notifications
+        # No email and no unambiguous name: only system/broadcast notifications
         rows = query(
             """SELECT * FROM notifications
                WHERE recipient_email = 'all' OR (recipient_email = '' AND (recipient_name = '' OR recipient_name = 'all'))
@@ -206,7 +263,8 @@ def mark_all_notifications_as_read(user_email=None, user_name=None, is_admin=Fal
     base_name = assignee_base_name(clean_name) if clean_name else ""
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    if clean_email or base_name:
+    name_matching = bool(clean_name) and _name_is_unambiguous(clean_name)
+    if clean_email or name_matching:
         where_clauses = [
             "recipient_email = 'all'",
             "(recipient_email = '' AND (recipient_name = '' OR recipient_name = 'all'))"
@@ -215,10 +273,10 @@ def mark_all_notifications_as_read(user_email=None, user_name=None, is_admin=Fal
         if clean_email:
             where_clauses.append("recipient_email = ?")
             params.append(clean_email)
-        if clean_name:
+        if name_matching:
             where_clauses.append("recipient_name = ?")
             params.append(clean_name)
-        if base_name and base_name != clean_name:
+        if name_matching and base_name and base_name != clean_name:
             where_clauses.append("recipient_name = ?")
             params.append(base_name)
         if is_admin:
@@ -230,8 +288,12 @@ def mark_all_notifications_as_read(user_email=None, user_name=None, is_admin=Fal
                   WHERE ({" OR ".join(where_clauses)}) AND is_read = 0"""
         execute(sql, tuple(params))
     else:
+        # Never fall back to "mark everything read" — only system/broadcast rows.
         execute(
-            "UPDATE notifications SET is_read = 1, read_at = ? WHERE is_read = 0",
+            """UPDATE notifications SET is_read = 1, read_at = ?
+               WHERE is_read = 0
+                 AND (recipient_email = 'all'
+                      OR (recipient_email = '' AND (recipient_name = '' OR recipient_name = 'all')))""",
             (now_str,)
         )
     return True

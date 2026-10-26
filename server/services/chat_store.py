@@ -81,12 +81,24 @@ def get_session(session_id):
     }
 
 
-def delete_session(session_id, user_name):
-    """세션과 관련된 모든 데이터를 삭제한다 (CASCADE로 messages도 삭제)."""
-    r = get_one(
-        "SELECT id FROM chat_sessions WHERE id = ? AND user_name = ?",
-        (session_id, user_name)
-    )
+def delete_session(session_id, user_name, user_dept_id=None):
+    """
+    세션과 관련된 모든 데이터를 삭제한다 (CASCADE로 messages도 삭제).
+
+    user_dept_id 가 주어지면 (user_name, dept) 조합까지 일치해야 삭제한다.
+    표시 이름은 부서가 다르면 중복될 수 있으므로, 이름만으로 소유권을 판정하면
+    동명이인(타 부서)의 대화를 삭제할 수 있다.
+    """
+    if user_dept_id is None:
+        r = get_one(
+            "SELECT id FROM chat_sessions WHERE id = ? AND user_name = ?",
+            (session_id, user_name)
+        )
+    else:
+        r = get_one(
+            "SELECT id FROM chat_sessions WHERE id = ? AND user_name = ? AND user_dept_id = ?",
+            (session_id, user_name, user_dept_id)
+        )
     if not r:
         return False
     execute("DELETE FROM chat_sessions WHERE id = ?", (session_id,))
@@ -183,14 +195,19 @@ def load_history(session_id, limit=20, before_id=None):
     return result
 
 
-def update_proposal_status(session_id, status, message_id=None, summary=None, action_type=None, user_name=None):
+def update_proposal_status(session_id, status, message_id=None, summary=None, action_type=None, user_name=None, user_dept_id=None):
     """세션 기록 내 action_proposal 상태('cancelled' | 'executed')를 영구 저장한다.
 
     user_name이 주어지면 세션 소유자를 먼저 검증한다 (타 사용자 제안 상태 변조 방지).
+    user_dept_id까지 주어지면 동명이인(타 부서) 세션은 fail-closed 로 거부한다.
     """
     if user_name:
         chat_sess = get_session(session_id)
-        if chat_sess and chat_sess.get("user_name") != user_name:
+        if not chat_sess:
+            return False
+        if chat_sess.get("user_name") != user_name:
+            return False
+        if user_dept_id is not None and (chat_sess.get("user_org") or "") != user_dept_id:
             return False
     # 메시지를 찾아서 metadata 업데이트
     if message_id:

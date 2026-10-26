@@ -277,6 +277,10 @@ def find_record_by_key_or_code(key_or_code):
         "cardCode": r.get("card_code") or (r.get("jira_key") or f"#{r['id']}"),
         "participants": r.get("participants") or "",
         "parentKey": r.get("parent_key") or "",
+        # NOTE: is_private MUST be present here as well. Every caller resolves a
+        # card by code/key and then calls can_view_record(); a missing key makes
+        # can_view_record treat a private card as public (RBAC bypass).
+        "is_private": int(r.get("is_private") or 0),
         "is_scheduled": bool(r.get("is_scheduled", 1)),
         "version": int(r.get("version") or 1),
         "updatedAt": r.get("updated_at") or r.get("created_at") or "",
@@ -672,6 +676,24 @@ def write_schedule(events):
     transaction(_do)
 
 
+def mutate_schedule(mutator):
+    """
+    일정 목록에 대한 read-modify-write 를 전역 저장 락(_save_lock)으로 보호한다.
+
+    write_schedule() 은 테이블 전체를 DELETE 후 재삽입하므로, 락 없이
+    read_schedule() → 수정 → write_schedule() 을 수행하면 동시 요청이 서로의
+    변경분을 덮어써 일정이 유실될 수 있다.
+
+    mutator(events) 는 전달받은 리스트를 직접 수정하면 되고, 반환값은 그대로
+    호출자에게 전달된다.
+    """
+    with _save_lock:
+        events = read_schedule()
+        result = mutator(events)
+        write_schedule(events)
+        return result
+
+
 # ---------------------------------------------------------------------------
 # Products (PIM)
 # ---------------------------------------------------------------------------
@@ -821,15 +843,42 @@ DEFAULT_PRODUCT_CATEGORIES_DATA = [
     }
 ]
 
-def read_product_categories():
-    """제품 카테고리 목록과 규격 템플릿을 반환한다."""
-    # Ensure table exists
-    execute("""CREATE TABLE IF NOT EXISTS product_categories (
+_PRODUCT_CATEGORIES_READY = set()
+_PRODUCT_CATEGORIES_LOCK = threading.Lock()
+
+
+def _ensure_product_categories_table():
+    """
+    product_categories 테이블 생성을 DB(경로)당 1회로 제한한다.
+
+    이전 구현은 read_product_categories() 가 호출될 때마다 CREATE TABLE DDL 을
+    실행했는데, 이 함수는 제품 저장/검증/조회 hot path 에서 매번 호출되므로
+    SQLite 에서는 매 읽기마다 스키마 write-lock 을 잡고 PostgreSQL 에서는
+    불필요한 DDL 락을 유발했다. 스키마(schema.sql / schema.postgres.sql)와
+    init_db() 가 이미 테이블을 생성하므로, 여기서는 최초 1회만 보장하면 된다.
+    """
+    try:
+        from db import get_db_path
+        key = str(get_db_path())
+    except Exception:
+        key = "__unknown_db__"
+    if key in _PRODUCT_CATEGORIES_READY:
+        return
+    with _PRODUCT_CATEGORIES_LOCK:
+        if key in _PRODUCT_CATEGORIES_READY:
+            return
+        execute("""CREATE TABLE IF NOT EXISTS product_categories (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
         spec_template TEXT NOT NULL DEFAULT '[]',
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
     )""")
+        _PRODUCT_CATEGORIES_READY.add(key)
+
+
+def read_product_categories():
+    """제품 카테고리 목록과 규격 템플릿을 반환한다."""
+    _ensure_product_categories_table()
     rows = query("SELECT id, name, spec_template FROM product_categories ORDER BY rowid")
     if not rows:
         for item in DEFAULT_PRODUCT_CATEGORIES_DATA:

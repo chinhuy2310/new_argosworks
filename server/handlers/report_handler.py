@@ -67,6 +67,16 @@ def handle_get_report_download(handler, parsed, ip):
     if not session:
         return
 
+    # 보고서 파일에는 전사(전 부서) 업무 데이터가 포함되므로, 생성 권한과 동일하게
+    # 부서 관리자(Manager) 이상만 다운로드할 수 있도록 제한한다.
+    from services.auth import is_manager_or_admin
+    if not is_manager_or_admin(session):
+        handler._send_json(403, {
+            "ok": False,
+            "error": "보고서 다운로드는 부서 관리자(Manager) 또는 시스템 관리자(Admin)만 가능합니다."
+        })
+        return
+
     filename = qs.get("file", [""])[0]
 
     if not filename:

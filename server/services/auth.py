@@ -88,7 +88,8 @@ def get_user_by_login(login_id, org=None):
 
     # 1. username 매칭 (대소문자 무시)
     row = get_one(
-        """SELECT id, name, username, dept_id, email, salt, password_hash, is_admin, role, disabled, status, created_at
+        """SELECT id, name, username, dept_id, email, salt, password_hash, iterations, avatar_url,
+                  is_admin, role, disabled, status, created_at
            FROM users
            WHERE LOWER(username) = ?
            LIMIT 1""",
@@ -99,7 +100,8 @@ def get_user_by_login(login_id, org=None):
 
     # 2. email 매칭 (대소문자 무시)
     row = get_one(
-        """SELECT id, name, username, dept_id, email, salt, password_hash, is_admin, role, disabled, status, created_at
+        """SELECT id, name, username, dept_id, email, salt, password_hash, iterations, avatar_url,
+                  is_admin, role, disabled, status, created_at
            FROM users
            WHERE email != '' AND LOWER(email) = ?
            LIMIT 1""",
@@ -111,7 +113,8 @@ def get_user_by_login(login_id, org=None):
     # 3. 소속 부서 + 이름 매칭 (동명이인 방지를 위해 부서가 지정된 경우만 허용)
     if org:
         row = get_one(
-            """SELECT id, name, username, dept_id, email, salt, password_hash, is_admin, role, disabled, status, created_at
+            """SELECT id, name, username, dept_id, email, salt, password_hash, iterations, avatar_url,
+                      is_admin, role, disabled, status, created_at
                FROM users
                WHERE LOWER(name) = ? AND LOWER(dept_id) = ?
                LIMIT 1""",
@@ -606,8 +609,32 @@ def check_record_write_access(user_or_session, record):
     return True, ""
 
 
+def is_display_name_unique(name):
+    """
+    같은 표시 이름(name)을 가진 계정이 시스템에 1개뿐인지 확인한다.
+
+    알림(notifications)과 채팅 세션은 이메일이 없을 때 표시 이름으로 대상을
+    찾는데, 이름은 부서가 달라도 중복될 수 있다(schema 상 unique 제약 없음).
+    이름 단독 매칭은 동명이인 간 데이터 노출로 이어지므로, 이름이 유일할 때만
+    매칭을 허용하는 fail-closed 가드로 사용한다.
+    """
+    clean = (name or "").strip()
+    if not clean:
+        return False
+    try:
+        row = get_one("SELECT COUNT(*) AS c FROM users WHERE LOWER(name) = LOWER(?)", (clean,))
+    except Exception:
+        return False
+    if not row:
+        return False
+    return int(row.get("c") or 0) == 1
+
+
 def user_can_access_notification(user_or_session, notification):
-    """Notification có thuộc về user hiện tại không (chống IDOR)."""
+    """Notification có thuộc về user hiện tại không (chống IDOR).
+
+    이름 기반 매칭은 동명이인이 존재하면 사용하지 않는다(타 사용자 알림 조작 방지).
+    """
     if not user_or_session or not notification:
         return False
     from utils.text import assignee_base_name
@@ -623,11 +650,13 @@ def user_can_access_notification(user_or_session, notification):
         return True
     if email and r_email == email:
         return True
+    if is_admin_user(user_or_session) and r_name in ("관리자", "admin"):
+        return True
+    if not is_display_name_unique(name):
+        return False
     if name and r_name == name:
         return True
     if base and r_name == base:
-        return True
-    if is_admin_user(user_or_session) and r_name in ("관리자", "admin"):
         return True
     return False
 
@@ -1131,10 +1160,19 @@ def delete_all_user_sessions(user_id_or_name):
             pass
 
 def cleanup_expired_sessions():
-    """주기적으로 만료된 세션을 정리한다."""
+    """
+    주기적으로 만료된 세션을 정리한다.
+
+    세션은 '마지막 활동 + TTL' 슬라이딩 만료 정책을 사용하므로(create_session /
+    get_session 참고) created_at 만으로 삭제하면 계속 활동 중인 사용자까지
+    강제 로그아웃된다. last_active_at(없으면 created_at) 을 기준으로 판정한다.
+    """
     cutoff = time.time() - get_session_ttl_seconds()
     try:
-        execute("DELETE FROM sessions WHERE created_at < ?", (cutoff,))
+        execute(
+            "DELETE FROM sessions WHERE COALESCE(NULLIF(last_active_at, 0), created_at) < ?",
+            (cutoff,)
+        )
     except Exception:
         pass
 

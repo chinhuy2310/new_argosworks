@@ -511,9 +511,15 @@ def handle_get_notifications_stream(handler, parsed, ip):
     handler._start_sse()
     import queue
     from services.notification_service import subscribe_notifications, unsubscribe_notifications
+    from services.auth import is_admin_user
 
     q = queue.Queue(maxsize=32)
-    subscribe_notifications(q)
+    # Each subscriber only receives its own notifications (no cross-user fan-out).
+    subscribe_notifications(q, {
+        "email": user_email,
+        "name": user_name,
+        "is_admin": is_admin_user(session),
+    })
 
     # Initial ping
     handler._send_sse_event({"event": "connected", "user": user_name, "time": datetime.now().isoformat()})
@@ -660,8 +666,13 @@ def handle_get_schedule(handler, parsed, ip):
     # RBAC: user와 manager는 본인 소속 부서 카드(또는 본인 담당 카드)만 달력 및 우측 미배정 패널에 표시
     local_records = read_records()
     if not is_admin:
+        # 비공개(private) 카드는 can_view_record 로 한 번 더 검증한다.
+        # (부서/담당자 조건만으로는 같은 부서의 타인 비공개 카드가 캘린더에 노출된다)
+        from services.auth import can_view_record
         filtered_records = []
         for r in local_records:
+            if bool(r.get("is_private")) and not can_view_record(session, r):
+                continue
             r_assignee = (r.get("assignee") or r.get("assignee_name") or "").strip()
             r_org = (r.get("org") or r.get("dept_id") or user_dept_map.get(assignee_base_name(r_assignee).lower(), {}).get("org", "")).strip().lower()
             if (user_dept and r_org == user_dept) or (r_assignee and r_assignee == user_name):
@@ -858,8 +869,8 @@ def handle_assign_schedule_task(handler, raw_body, ip):
         handler._send_json(400, {"ok": False, "error": "잘못된 요청"})
         return
     task_id = payload.get("taskId") or payload.get("cardCode")
-    new_date = (payload.get("date") or "").strip()
-    end_date = (payload.get("endDate") or "").strip()
+    new_date = str(payload.get("date") or "").strip()
+    end_date = str(payload.get("endDate") or "").strip()
     is_unassign = bool(payload.get("unassign")) or new_date.lower() == "unassign"
 
     if not task_id:
@@ -1208,6 +1219,48 @@ def handle_get_jira_attachment(handler, parsed, ip):
     except Exception as e:
         handler._send_json(500, {"ok": False, "error": f"첨부파일 다운로드 실패: {e}"})
 
+_AVATAR_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+
+
+def _serve_avatar_file(handler, filename):
+    """
+    Serve an uploaded profile avatar: /api/attachments/avatars/<file>
+
+    Avatars are stored under data/attachments/avatars (not per-record folders), so
+    they cannot be resolved by the record-attachment path. The path is restricted
+    to that directory and to image extensions (no traversal, no inline HTML/SVG).
+    """
+    fname = os.path.basename(filename or "")
+    ext = os.path.splitext(fname)[1].lower()
+    avatars_dir = os.path.realpath(os.path.join(ATTACH_DIR, "avatars"))
+    file_path = os.path.realpath(os.path.join(avatars_dir, fname))
+    try:
+        is_safe = (os.path.commonpath([file_path, avatars_dir]) == avatars_dir)
+    except Exception:
+        is_safe = False
+
+    if not fname or ext not in _AVATAR_EXTENSIONS or not is_safe or not os.path.isfile(file_path):
+        handler._send_json(404, {"ok": False, "error": "프로필 이미지를 찾을 수 없습니다."})
+        return
+
+    content_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+    if hasattr(handler, "_stream_file"):
+        handler._stream_file(file_path, content_type, download_name=fname, inline=True)
+        return
+    try:
+        with open(file_path, "rb") as f:
+            data = f.read()
+        handler.send_response(200)
+        handler.send_header("Content-Type", content_type)
+        handler.send_header("Content-Length", str(len(data)))
+        handler.send_header("Content-Disposition", f"inline; filename*=UTF-8''{urllib.parse.quote(fname)}")
+        handler.send_header("Cache-Control", "private, max-age=86400")
+        handler.end_headers()
+        handler.wfile.write(data)
+    except Exception as e:
+        handler._send_json(500, {"ok": False, "error": str(e)})
+
+
 def handle_get_local_attachment(handler, parsed, ip):
     """Serve attachment file for a local record: /api/attachments/{record_id}/{filename}"""
     session = handler._get_session_or_401()
@@ -1221,6 +1274,11 @@ def handle_get_local_attachment(handler, parsed, ip):
         return
     record_id = parts[2]
     filename = "/".join(parts[3:])
+
+    # Profile avatars: /api/attachments/avatars/<file> (not a record attachment)
+    if record_id == "avatars":
+        _serve_avatar_file(handler, filename)
+        return
 
     # 1. Tra cứu bản ghi và xác minh quyền can_view_record
     from services.data_store import find_record_by_key_or_code
@@ -1242,7 +1300,9 @@ def handle_get_local_attachment(handler, parsed, ip):
         handler._send_json(403, {"ok": False, "error": "해당 업무 카드의 첨부파일을 열람할 권한이 없습니다."})
         return
     
-    rec_attach_dir = os.path.realpath(os.path.join(ATTACH_DIR, str(record_id)))
+    # 파일이 저장된 디렉터리는 항상 레코드의 실제 ID 기준이다.
+    # (URL 세그먼트가 카드 코드일 수 있으므로 record_id 문자열을 그대로 쓰면 404/혼동 발생)
+    rec_attach_dir = os.path.realpath(os.path.join(ATTACH_DIR, str(rec["id"])))
     file_path = os.path.realpath(os.path.join(rec_attach_dir, filename))
 
     # Strict Directory Traversal Defense: Ensure file resides strictly inside record's attachment directory
@@ -2638,10 +2698,23 @@ def handle_post_admin_user_update(handler, raw_body, ip):
 
     cur_user_id = session.get("id") or session.get("user_id")
     cur_user_name = session.get("name", "")
-    is_self = (cur_user_id is not None and cur_user_id == user_id) or (target_user.get("username") == cur_user_name or target_user.get("name") == cur_user_name)
+    cur_username = session.get("username", "")
+    # JSON body can carry the id as a string ("5" vs 5). Comparing normalized values
+    # prevents bypassing the self-lockout / last-admin safeguards via a type mismatch.
+    is_self = bool(cur_user_id is not None and str(cur_user_id) == str(user_id))
+    if not is_self:
+        is_self = bool(
+            (cur_username and target_user.get("username") == cur_username)
+            or (cur_user_name and target_user.get("name") == cur_user_name)
+        )
+
+    # Normalize the disabled flag once: the client may send 1/0, true/false or "true".
+    disabled_flag = None
+    if disabled is not None:
+        disabled_flag = 1 if str(disabled).strip().lower() in ("1", "true", "yes", "on") else 0
 
     # Safeguard against locking oneself
-    if is_self and disabled == 1:
+    if is_self and disabled_flag == 1:
         handler._send_json(400, {"ok": False, "error": "현재 로그인 중인 본인 계정은 비활성화(잠금)할 수 없습니다."})
         return
 
@@ -2666,9 +2739,9 @@ def handle_post_admin_user_update(handler, raw_body, ip):
     if role in ("admin", "manager", "member", "viewer"):
         updates.append("role = ?, is_admin = ?")
         params.extend([role, 1 if role == "admin" else 0])
-    if disabled is not None:
+    if disabled_flag is not None:
         updates.append("disabled = ?")
-        params.append(1 if disabled else 0)
+        params.append(disabled_flag)
     if new_password:
         if len(new_password) < 8:
             handler._send_json(400, {"ok": False, "error": "비밀번호는 최소 8자 이상이어야 합니다."})
@@ -2683,7 +2756,7 @@ def handle_post_admin_user_update(handler, raw_body, ip):
         execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", tuple(params))
         from services.auth import delete_all_user_sessions
         role_changed = (role is not None and role != target_user.get("role"))
-        disabled_changed = (disabled is not None and int(disabled) != int(target_user.get("disabled") or 0))
+        disabled_changed = (disabled_flag is not None and disabled_flag != int(target_user.get("disabled") or 0))
         pwd_changed = bool(new_password)
         if role_changed or disabled_changed or pwd_changed:
             if is_self:
