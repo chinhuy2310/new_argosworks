@@ -126,7 +126,9 @@ def get_audit_logs(limit=100, action=None, username=None, user_name=None, target
         sql += " AND action = ?"
         params.append(action.upper())
     if username:
-        sql += " AND username LIKE ?"
+        # SQLite's LIKE is case-insensitive for ASCII, PostgreSQL's is not.
+        # LOWER(...) keeps the audit search identical on both engines.
+        sql += " AND LOWER(username) LIKE LOWER(?)"
         params.append(f"%{username}%")
     if target_type:
         sql += " AND target_type = ?"

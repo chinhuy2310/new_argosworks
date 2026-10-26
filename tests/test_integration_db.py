@@ -25,8 +25,7 @@ class TestSchemaInitialization:
     """init_db: verify all required tables are created."""
 
     def test_core_tables_exist(self, tmp_db):
-        tables = tmp_db.query("SELECT name FROM sqlite_master WHERE type='table'")
-        names = {t["name"] for t in tables}
+        names = set(tmp_db.list_tables())
         required = {
             "departments", "users", "records", "record_attachments",
             "record_comments", "record_jira", "schedule_events",
@@ -54,15 +53,13 @@ class TestSchemaInitialization:
         assert lic["max_seats"] == 50
 
     def test_indexes_created(self, tmp_db):
-        indexes = tmp_db.query("SELECT name FROM sqlite_master WHERE type='index'")
-        idx_names = {i["name"] for i in indexes}
+        idx_names = set(tmp_db.list_indexes())
         assert "idx_records_dept" in idx_names
         assert "idx_sessions_user_id" in idx_names
         assert "idx_audit_time" in idx_names
 
     def test_users_table_structure(self, tmp_db):
-        cols = tmp_db.query("PRAGMA table_info(users)")
-        col_names = {c["name"] for c in cols}
+        col_names = set(tmp_db.table_columns("users"))
         required_cols = {
             "id", "username", "name", "dept_id", "email", "salt",
             "password_hash", "is_admin", "role", "disabled", "status"

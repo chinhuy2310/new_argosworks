@@ -68,12 +68,14 @@ def get_ai_usage_stats(period="month", from_date=None, to_date=None):
     }
 
     # 2. Theo người dùng
+    # PostgreSQL requires every non-aggregated column to be in GROUP BY — grouping
+    # by user_name alone made this query fail (HTTP 500) on Postgres.
     users_rows = query(
         f"""SELECT user_name, dept_id,
                   COUNT(*) as calls,
                   COALESCE(SUM(total_tokens), 0) as tokens
            FROM ai_usage {where_sql}
-           GROUP BY user_name
+           GROUP BY user_name, dept_id
            ORDER BY tokens DESC LIMIT 20""",
         tuple(params)
     )

@@ -23,12 +23,17 @@ CREATE TABLE IF NOT EXISTS card_sequences (
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(128) NOT NULL DEFAULT '',
-    name VARCHAR(128) NOT NULL,
+    name TEXT NOT NULL,
     dept_id VARCHAR(64) NOT NULL REFERENCES departments(id),
-    email VARCHAR(255) NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
     avatar_url TEXT NOT NULL DEFAULT '',
     salt VARCHAR(255) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
+    -- Password metadata: required by services/auth.py create_user()/verify_password()
+    -- for auto-upgrading legacy PBKDF2 hashes. Missing here previously made user
+    -- creation (setup wizard / admin create / register) fail on PostgreSQL.
+    hash_algo VARCHAR(32) NOT NULL DEFAULT 'pbkdf2_sha256',
+    iterations INTEGER NOT NULL DEFAULT 600000,
     role VARCHAR(32) NOT NULL DEFAULT 'member', -- admin, manager, member, viewer
     is_admin INTEGER NOT NULL DEFAULT 0,
     disabled INTEGER NOT NULL DEFAULT 0,
@@ -43,12 +48,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email) WHERE e
 CREATE TABLE IF NOT EXISTS records (
     id BIGINT PRIMARY KEY,  -- timestamp ms, NOT autoincrement
     dept_id VARCHAR(64) NOT NULL REFERENCES departments(id),
-    category VARCHAR(128) NOT NULL,
-    title VARCHAR(512) NOT NULL,
-    project VARCHAR(255) NOT NULL DEFAULT '프로젝트 미지정',
+    category TEXT NOT NULL,
+    title TEXT NOT NULL,
+    project TEXT NOT NULL DEFAULT '프로젝트 미지정',
     assignee_id INTEGER REFERENCES users(id),
-    assignee_name VARCHAR(128) NOT NULL,
-    assignee_email VARCHAR(255) NOT NULL DEFAULT '',
+    assignee_name TEXT NOT NULL,
+    assignee_email TEXT NOT NULL DEFAULT '',
     start_date VARCHAR(64) NOT NULL DEFAULT '',
     due_date VARCHAR(64) NOT NULL DEFAULT '',
     work_date VARCHAR(64) NOT NULL DEFAULT '',
@@ -77,7 +82,7 @@ CREATE INDEX IF NOT EXISTS idx_records_card_code ON records(card_code);
 CREATE TABLE IF NOT EXISTS record_attachments (
     id SERIAL PRIMARY KEY,
     record_id BIGINT NOT NULL REFERENCES records(id) ON DELETE CASCADE,
-    filename VARCHAR(512) NOT NULL,
+    filename TEXT NOT NULL,
     file_size BIGINT DEFAULT 0,
     uploaded_at VARCHAR(64) NOT NULL DEFAULT TO_CHAR(CURRENT_TIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS')
 );
@@ -87,7 +92,7 @@ CREATE INDEX IF NOT EXISTS idx_record_attachments_record ON record_attachments(r
 CREATE TABLE IF NOT EXISTS record_comments (
     id SERIAL PRIMARY KEY,
     record_id BIGINT NOT NULL REFERENCES records(id) ON DELETE CASCADE,
-    author_name VARCHAR(128) NOT NULL,
+    author_name TEXT NOT NULL,
     body TEXT NOT NULL,
     created_at VARCHAR(64) NOT NULL DEFAULT TO_CHAR(CURRENT_TIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS')
 );
@@ -106,16 +111,16 @@ CREATE INDEX IF NOT EXISTS idx_record_jira_key ON record_jira(jira_key);
 CREATE TABLE IF NOT EXISTS schedule_events (
     id BIGINT PRIMARY KEY,  -- timestamp ms
     owner_id INTEGER REFERENCES users(id),
-    owner_name VARCHAR(128) NOT NULL,
+    owner_name TEXT NOT NULL,
     owner_dept_id VARCHAR(64) NOT NULL,
-    owner_email VARCHAR(255) NOT NULL DEFAULT '',
+    owner_email TEXT NOT NULL DEFAULT '',
     type VARCHAR(64) NOT NULL,
-    title VARCHAR(512) NOT NULL,
+    title TEXT NOT NULL,
     start_date VARCHAR(64) NOT NULL,
     end_date VARCHAR(64) NOT NULL,
     memo TEXT NOT NULL DEFAULT '',
     approval_status VARCHAR(32) NOT NULL DEFAULT 'approved', -- 'pending' | 'approved' | 'rejected'
-    approved_by VARCHAR(128) DEFAULT '',
+    approved_by TEXT DEFAULT '',
     approved_at VARCHAR(64) DEFAULT '',
     reject_reason TEXT DEFAULT '',
     created_at VARCHAR(64) NOT NULL DEFAULT TO_CHAR(CURRENT_TIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS')
@@ -127,9 +132,9 @@ CREATE INDEX IF NOT EXISTS idx_schedule_dates ON schedule_events(start_date, end
 CREATE TABLE IF NOT EXISTS schedule_participants (
     id SERIAL PRIMARY KEY,
     event_id BIGINT NOT NULL REFERENCES schedule_events(id) ON DELETE CASCADE,
-    user_name VARCHAR(128) NOT NULL,
+    user_name TEXT NOT NULL,
     user_dept_id VARCHAR(64) NOT NULL,
-    user_email VARCHAR(255) NOT NULL DEFAULT '',
+    user_email TEXT NOT NULL DEFAULT '',
     is_owner INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_schedule_participants_event ON schedule_participants(event_id);
@@ -161,7 +166,7 @@ CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE TABLE IF NOT EXISTS product_attachments (
     id SERIAL PRIMARY KEY,
     product_id VARCHAR(64) NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    filename VARCHAR(512) NOT NULL,
+    filename TEXT NOT NULL,
     file_size BIGINT DEFAULT 0,
     uploaded_at VARCHAR(64) NOT NULL DEFAULT TO_CHAR(CURRENT_TIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS')
 );
@@ -192,7 +197,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     session_id VARCHAR(64) NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
     role VARCHAR(32) NOT NULL,
     content TEXT NOT NULL DEFAULT '',
-    author_name VARCHAR(128) NOT NULL,
+    author_name TEXT NOT NULL,
     metadata TEXT,
     created_at VARCHAR(64) NOT NULL
 );
@@ -249,10 +254,10 @@ CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at);
 CREATE TABLE IF NOT EXISTS notifications (
     id VARCHAR(128) PRIMARY KEY,
     recipient_email VARCHAR(255) NOT NULL DEFAULT '',
-    recipient_name VARCHAR(128) NOT NULL DEFAULT '',
-    sender_name VARCHAR(128) NOT NULL DEFAULT '시스템',
+    recipient_name TEXT NOT NULL DEFAULT '',
+    sender_name TEXT NOT NULL DEFAULT '시스템',
     type VARCHAR(64) NOT NULL DEFAULT 'assign',
-    title VARCHAR(512) NOT NULL,
+    title TEXT NOT NULL,
     content TEXT NOT NULL,
     link_id VARCHAR(128) DEFAULT '',
     tag VARCHAR(64) DEFAULT '',
@@ -286,10 +291,10 @@ CREATE TABLE IF NOT EXISTS jira_issues (
     status VARCHAR(64) DEFAULT '',
     status_name VARCHAR(64) DEFAULT '',
     priority VARCHAR(64) DEFAULT 'Medium',
-    assignee_name VARCHAR(128) DEFAULT '',
+    assignee_name TEXT DEFAULT '',
     assignee_account_id VARCHAR(128) DEFAULT '',
     assignee_avatar TEXT DEFAULT '',
-    reporter_name VARCHAR(128) DEFAULT '',
+    reporter_name TEXT DEFAULT '',
     dept_id VARCHAR(64) DEFAULT '',
     start_date VARCHAR(64) DEFAULT '',
     due_date VARCHAR(64) DEFAULT '',
@@ -321,7 +326,7 @@ CREATE INDEX IF NOT EXISTS idx_jira_comments_author ON jira_comments(author_name
 CREATE TABLE IF NOT EXISTS jira_attachments (
     attachment_id VARCHAR(128) PRIMARY KEY,
     jira_key VARCHAR(64) NOT NULL REFERENCES jira_issues(jira_key) ON DELETE CASCADE,
-    filename VARCHAR(512) NOT NULL,
+    filename TEXT NOT NULL,
     file_size BIGINT DEFAULT 0,
     mime_type VARCHAR(128) DEFAULT '',
     jira_url TEXT DEFAULT '',
@@ -361,12 +366,12 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     id SERIAL PRIMARY KEY,
     timestamp VARCHAR(64) NOT NULL DEFAULT TO_CHAR(CURRENT_TIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS'),
     user_id INTEGER,
-    username VARCHAR(128) NOT NULL DEFAULT '',
+    username TEXT NOT NULL DEFAULT '',
     dept_id VARCHAR(64) NOT NULL DEFAULT '',
     ip VARCHAR(64) NOT NULL DEFAULT '',
     action VARCHAR(64) NOT NULL,
     target_type VARCHAR(64) NOT NULL,
-    target_id VARCHAR(128) NOT NULL DEFAULT '',
+    target_id TEXT NOT NULL DEFAULT '',
     details_json TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_logs(timestamp);
@@ -402,6 +407,17 @@ CREATE TABLE IF NOT EXISTS ai_usage (
 );
 CREATE INDEX IF NOT EXISTS idx_ai_usage_user ON ai_usage(user_name, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_usage_dept ON ai_usage(dept_id, created_at);
+
+-- 21. Login Attempts (persistent brute-force lockout)
+-- Must match schema.sql: without this table PostgreSQL silently degrades the
+-- account/IP lockout to an in-memory fallback (see services/auth.py).
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id BIGSERIAL PRIMARY KEY,
+    ip VARCHAR(64) NOT NULL,
+    identifier VARCHAR(255) NOT NULL,
+    failed_at DOUBLE PRECISION NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_ident ON login_attempts(ip, identifier, failed_at);
 
 -- Baseline Department & License Seeds for PostgreSQL (Korean Native B2B)
 INSERT INTO departments (id, name, color_index, local_prefix, jira_key, custom_categories) VALUES

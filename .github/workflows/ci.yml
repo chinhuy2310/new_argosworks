@@ -7,29 +7,12 @@ on:
     branches: [ "main", "master" ]
 
 jobs:
-  test-matrix:
-    name: Test Matrix (${{ matrix.engine }})
+  # ---------------------------------------------------------------------------
+  # Engine 1: SQLite (native / Windows zero-infra deployments)
+  # ---------------------------------------------------------------------------
+  sqlite-tests:
+    name: Test (SQLite)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        engine: [sqlite, postgresql]
-
-    services:
-      postgres:
-        image: ${{ matrix.engine == 'postgresql' && 'postgres:16-alpine' || '' }}
-        env:
-          POSTGRES_DB: argos_works
-          POSTGRES_USER: argos_admin
-          POSTGRES_PASSWORD: ci_postgres_password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U argos_admin -d argos_works"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -45,24 +28,95 @@ jobs:
           pip install -r requirements.lock
 
       - name: Python Syntax Gate (compileall)
-        run: |
-          python -m compileall -q server scripts
+        run: python -m compileall -q server scripts tests
 
       - name: Frontend Syntax Gate (node --check)
-        run: |
-          find web -name '*.js' -print0 | xargs -0 -n1 node --check
+        run: find web -name '*.js' -print0 | xargs -0 -n1 node --check
 
-      - name: Run Full Test Suite (${{ matrix.engine }})
+      - name: Run Full Test Suite (SQLite)
         env:
           ARGOS_MASTER_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-          DATABASE_URL: ${{ matrix.engine == 'postgresql' && 'postgresql://argos_admin:ci_postgres_password@localhost:5432/argos_works' || '' }}
-        run: |
-          pytest -v
+          DATABASE_URL: ""
+        run: pytest -v
 
+  # ---------------------------------------------------------------------------
+  # Engine 2: PostgreSQL — the default for docker-compose / enterprise deploys.
+  # Runs the SAME suite; conftest gives the whole session (and every tmp_db test)
+  # an isolated schema, so results are reproducible and never share state.
+  # ---------------------------------------------------------------------------
+  postgres-tests:
+    name: Test (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: argos_works
+          POSTGRES_USER: argos_admin
+          POSTGRES_PASSWORD: ci_postgres_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U argos_admin -d argos_works"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://argos_admin:ci_postgres_password@localhost:5432/argos_works
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+
+      - name: Wait for PostgreSQL and assert the engine
+        env:
+          ARGOS_MASTER_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        run: |
+          python - <<'PY'
+          import os, sys, time
+          import psycopg2
+
+          dsn = os.environ["DATABASE_URL"]
+          last = None
+          for _ in range(30):
+              try:
+                  psycopg2.connect(dsn).close()
+                  break
+              except Exception as exc:  # noqa: BLE001
+                  last = exc
+                  time.sleep(2)
+          else:
+              sys.exit(f"PostgreSQL not reachable: {last}")
+
+          sys.path.insert(0, "server")
+          import db
+          if db.ENGINE != "postgres":
+              sys.exit(f"DATABASE_URL must select the postgres engine, got {db.ENGINE!r}")
+          db.init_db()
+          print("engine:", db.ENGINE, "tables:", len(db.list_tables()))
+          PY
+
+      - name: Run Full Test Suite (PostgreSQL)
+        env:
+          ARGOS_MASTER_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        run: pytest -v
+
+  # ---------------------------------------------------------------------------
+  # Supply chain / static analysis
+  # ---------------------------------------------------------------------------
   security-scan:
     name: Security & Vulnerability Audit
     runs-on: ubuntu-latest
-    needs: test-matrix
+    needs: [ sqlite-tests, postgres-tests ]
 
     steps:
       - name: Checkout Repository
@@ -86,7 +140,7 @@ jobs:
   docker-build-verify:
     name: Container Build & PostgreSQL Client Verification
     runs-on: ubuntu-latest
-    needs: test-matrix
+    needs: [ sqlite-tests, postgres-tests ]
 
     steps:
       - name: Checkout Repository
@@ -103,3 +157,55 @@ jobs:
         run: |
           docker run --rm argos-works:ci-test pg_dump --version
           docker run --rm argos-works:ci-test pg_restore --version
+
+  # ---------------------------------------------------------------------------
+  # Real end-to-end smoke on the shipped stack: the same docker-compose.yml that
+  # customers run (PostgreSQL + app + Caddy). This is the only job that proves
+  # "the product boots on Postgres", not just that unit tests pass.
+  # ---------------------------------------------------------------------------
+  container-smoke:
+    name: Docker Compose Smoke (App + PostgreSQL + Caddy)
+    runs-on: ubuntu-latest
+    needs: [ docker-build-verify ]
+    env:
+      POSTGRES_PASSWORD: ci_smoke_postgres_password
+      DOMAIN: localhost
+      TZ: Asia/Seoul
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Start the production stack
+        run: docker compose up -d --build
+
+      - name: Wait for /api/health (app + PostgreSQL)
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/api/health > /dev/null; then
+              echo "healthy after ${i} attempts"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "application did not become healthy"
+          docker compose logs --no-color
+          exit 1
+
+      - name: Verify public endpoints on the shipped stack
+        run: |
+          set -e
+          curl -fsS http://localhost:8080/api/health
+          curl -fsS http://localhost:8080/api/version
+          curl -fsS http://localhost:8080/api/setup/status
+          # Unauthenticated API must be rejected (security smoke)
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/records)
+          echo "GET /api/records -> $code"
+          test "$code" = "401"
+
+      - name: Container logs
+        if: always()
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v --remove-orphans

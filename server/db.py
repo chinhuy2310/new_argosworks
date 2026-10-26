@@ -13,6 +13,7 @@ import os
 import re
 import threading
 import logging
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,25 @@ _RE_INSERT_OR_REPLACE = re.compile(
     r"INSERT\s+OR\s+REPLACE\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)",
     re.IGNORECASE,
 )
+# Header-only variant: used to determine the conflict target / update columns without
+# assuming a single VALUES row.
+_RE_INSERT_OR_REPLACE_HEAD = re.compile(
+    r"INSERT\s+OR\s+REPLACE\s+INTO\s+(\w+)\s*\(([^)]+)\)",
+    re.IGNORECASE,
+)
+# Primary keys used as the ON CONFLICT target when rewriting INSERT OR REPLACE.
+_REPLACE_PK_MAP = {
+    "record_jira": "record_id",
+    "card_sequences": "dept_id",
+    "departments": "id",
+    "users": "id",
+    "records": "id",
+    "products": "id",
+    "license_info": "id",
+    "schema_migrations": "version",
+    "product_categories": "id",
+    "document_embeddings": "doc_id",
+}
 _RE_STRFTIME_NOW = re.compile(
     r"strftime\s*\(\s*'[^']*'\s*,\s*'now'\s*\)",
     re.IGNORECASE,
@@ -73,38 +93,43 @@ def _translate_sql(sql):
             sql = sql.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
 
     # 4. INSERT OR REPLACE → INSERT ... ON CONFLICT (pk) DO UPDATE SET col = EXCLUDED.col
-    m_replace = _RE_INSERT_OR_REPLACE.search(sql)
-    if m_replace:
-        table = m_replace.group(1).lower()
-        cols_str = m_replace.group(2)
-        vals_str = m_replace.group(3)
-        cols = [c.strip() for c in cols_str.split(",")]
-        # Standard primary key mapping for ARGOS enterprise tables
-        table_pk_map = {
-            "record_jira": "record_id",
-            "card_sequences": "dept_id",
-            "departments": "id",
-            "users": "id",
-            "records": "id",
-            "products": "id",
-            "license_info": "id",
-            "schema_migrations": "version",
-            "product_categories": "id",
-            "document_embeddings": "doc_id",
-        }
-        pk = table_pk_map.get(table, cols[0])
-        update_cols = [c for c in cols if c.lower() != pk.lower()]
-        if update_cols:
-            update_clause = ", ".join([f"{c} = EXCLUDED.{c}" for c in update_cols])
-            conflict_clause = f"ON CONFLICT ({pk}) DO UPDATE SET {update_clause}"
-        else:
-            conflict_clause = f"ON CONFLICT ({pk}) DO NOTHING"
+    #    NOTE: the ON CONFLICT clause is appended at the END of the statement. Rewriting
+    #    the VALUES clause only worked for single-row inserts; a multi-row insert
+    #    (`VALUES (...), (...)`) produced `ON CONFLICT ... , (...)` → syntax error.
+    if re.search(r"INSERT\s+OR\s+REPLACE\s+INTO", sql, re.IGNORECASE):
+        head = _RE_INSERT_OR_REPLACE_HEAD.search(sql)
+        conflict_pk = None
+        update_cols = []
+        if head:
+            table = head.group(1).lower()
+            cols = [c.strip() for c in head.group(2).split(",") if c.strip()]
+            conflict_pk = _REPLACE_PK_MAP.get(table, cols[0] if cols else "id")
+            update_cols = [c for c in cols if c.lower() != conflict_pk.lower()]
 
-        sql = _RE_INSERT_OR_REPLACE.sub(f"INSERT INTO {m_replace.group(1)} ({cols_str}) VALUES ({vals_str}) {conflict_clause}", sql)
-    elif re.search(r"INSERT\s+OR\s+REPLACE\s+INTO", sql, re.IGNORECASE):
         sql = re.sub(r"INSERT\s+OR\s+REPLACE\s+INTO", "INSERT INTO", sql, flags=re.IGNORECASE)
         if "ON CONFLICT" not in sql.upper():
-            sql = sql.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
+            stripped = sql.rstrip()
+            trailing = ""
+            if stripped.endswith(";"):
+                stripped = stripped[:-1].rstrip()
+                trailing = ";"
+            if conflict_pk and update_cols:
+                conflict_clause = (
+                    f" ON CONFLICT ({conflict_pk}) DO UPDATE SET "
+                    + ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+                )
+            elif conflict_pk:
+                conflict_clause = f" ON CONFLICT ({conflict_pk}) DO NOTHING"
+            else:
+                conflict_clause = " ON CONFLICT DO NOTHING"
+            sql = stripped + conflict_clause + trailing
+
+    # 4b. Escape literal percent signs.
+    #     psycopg2 applies %-style interpolation whenever parameters are supplied,
+    #     so a query containing a literal `%` (e.g. "... LIKE 'test_%'") raises
+    #     `IndexError: tuple index out of range`. Doubling them keeps the literal
+    #     intact; the ? → %s placeholders are introduced afterwards.
+    sql = sql.replace("%", "%%")
 
     # 5. ? → %s (parameter placeholders) - ONLY outside string literals
     parts = re.split(r"('(?:''|[^'])*')", sql)
@@ -359,6 +384,33 @@ if ENGINE == "sqlite":
             finally:
                 _tls.conn = None
 
+    def get_search_path():
+        """SQLite has no schemas — provided for cross-engine code/fixtures."""
+        return ""
+
+    def set_search_path(schema):
+        """No-op on SQLite (isolation is done with a temp database file)."""
+        return None
+
+    def drop_schema(schema):
+        """No-op on SQLite."""
+        return None
+
+    def list_tables():
+        """Table names in the current database (portable across both engines)."""
+        rows = query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+        return [r["name"] for r in rows]
+
+    def list_indexes():
+        """Index names in the current database (portable across both engines)."""
+        rows = query("SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+        return [r["name"] for r in rows]
+
+    def table_columns(table):
+        """Column names of a table (portable across both engines)."""
+        rows = query(f"PRAGMA table_info({table})")
+        return [r["name"] for r in rows]
+
     def query(sql, params=()):
         """Executes a SELECT query and returns a list of dictionaries."""
         conn = get_connection()
@@ -474,10 +526,93 @@ else:
     import psycopg2
     import psycopg2.pool
     import psycopg2.extras
+    import psycopg2.extensions
 
     # ---- Connection Pool (thread-safe) ----
     _pool = None
     _pool_lock = threading.Lock()
+
+    # Optional search_path override. Production leaves this empty; the test suite
+    # uses it to give every test its own isolated PostgreSQL schema instead of
+    # sharing the CI database (SQLite gets the same isolation via a temp file).
+    _search_path = ""
+
+    # Pool sizing. Enterprise default is 10..128; the test suite lowers it through
+    # ARGOS_PG_POOL_MIN/MAX because it creates a fresh pool per isolated schema
+    # (10 connections per test would exhaust a 100-connection test server).
+    def _env_int(name, default):
+        try:
+            return max(1, int(os.environ.get(name, "") or default))
+        except (TypeError, ValueError):
+            return default
+
+    _POOL_MIN = _env_int("ARGOS_PG_POOL_MIN", 10)
+    _POOL_MAX = max(_POOL_MIN, _env_int("ARGOS_PG_POOL_MAX", 128))
+
+    def _connection_dsn():
+        """DATABASE_URL, with the optional isolated search_path as a libpq option."""
+        if not _search_path:
+            return DATABASE_URL
+        separator = "&" if "?" in DATABASE_URL else "?"
+        options = quote(f"-c search_path={_search_path}", safe="")
+        return f"{DATABASE_URL}{separator}options={options}"
+
+    def get_search_path():
+        """Current search_path override ('' when using the default schema)."""
+        return _search_path
+
+    def set_search_path(schema):
+        """
+        Point all pooled connections at `schema` ('' restores the default).
+
+        Existing connections are discarded so the new search_path takes effect.
+        """
+        global _search_path
+        _search_path = (schema or "").strip()
+        close_connection(force=True)
+
+    def _quote_identifier(name):
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name or ""):
+            raise ValueError(f"Invalid SQL identifier: {name!r}")
+        return '"' + name + '"'
+
+    def _release(pool, conn):
+        """
+        Return a connection to the pool **without** leaving an open transaction.
+
+        psycopg2 opens a transaction on the first execute(). Returning a connection
+        that only ran a SELECT back to the pool leaves it "idle in transaction",
+        which keeps ACCESS SHARE locks (blocking DDL such as CREATE/DROP SCHEMA and
+        autovacuum) until the next statement. That made the PostgreSQL test suite
+        hang on schema teardown and is equally wrong in production.
+        """
+        try:
+            if conn is not None and not conn.closed:
+                if conn.get_transaction_status() != psycopg2.extensions.TRANSACTION_STATUS_IDLE:
+                    conn.rollback()
+        except Exception:
+            pass
+        try:
+            if conn is not None:
+                pool.putconn(conn)
+        except Exception:
+            pass
+
+    def drop_schema(schema):
+        """Drop an isolated schema (test-fixture cleanup). Refuses unsafe names."""
+        if not schema:
+            return
+        pool = _get_pool()
+        conn = pool.getconn()
+        try:
+            if conn.get_transaction_status() != psycopg2.extensions.TRANSACTION_STATUS_IDLE:
+                conn.rollback()
+            conn.autocommit = True
+            with conn.cursor() as cur:
+                cur.execute(f"DROP SCHEMA IF EXISTS {_quote_identifier(schema)} CASCADE")
+        finally:
+            conn.autocommit = False
+            _release(pool, conn)
 
     def _get_pool():
         """Lazily initializes and returns the PostgreSQL connection pool."""
@@ -487,11 +622,14 @@ else:
                 if _pool is None or _pool.closed:
                     # Sizing connection pool to match worker thread capacity (up to 128 workers)
                     _pool = psycopg2.pool.ThreadedConnectionPool(
-                        minconn=10,
-                        maxconn=128,
-                        dsn=DATABASE_URL,
+                        minconn=_POOL_MIN,
+                        maxconn=_POOL_MAX,
+                        dsn=_connection_dsn(),
                     )
-                    logger.info("[db/postgres] High-capacity pool created (min=10, max=128)")
+                    logger.info(
+                        "[db/postgres] Connection pool created (min=%s, max=%s)",
+                        _POOL_MIN, _POOL_MAX,
+                    )
         return _pool
 
     def get_db_path():
@@ -514,6 +652,10 @@ else:
         try:
             conn.autocommit = True
             cur = conn.cursor()
+
+            # 0. Ensure the isolated schema exists (test fixtures / dedicated schema)
+            if _search_path:
+                cur.execute(f"CREATE SCHEMA IF NOT EXISTS {_quote_identifier(_search_path)}")
 
             # 1. Ensure schema_migrations table exists
             cur.execute("""
@@ -552,7 +694,76 @@ else:
                 """)
                 logger.info("[db/postgres] Migration v2 (users unique constraints) applied.")
 
+            # Migration 3: login_attempts table for deployments created before it was
+            # added to the baseline schema. Without it the brute-force lockout silently
+            # falls back to per-process memory (see services/auth.py).
+            if 3 not in applied_versions:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS login_attempts (
+                        id BIGSERIAL PRIMARY KEY,
+                        ip VARCHAR(64) NOT NULL,
+                        identifier VARCHAR(255) NOT NULL,
+                        failed_at DOUBLE PRECISION NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_ident
+                        ON login_attempts(ip, identifier, failed_at);
+                    INSERT INTO schema_migrations (version, name)
+                    VALUES (3, 'v2.4_login_attempts_persistence')
+                    ON CONFLICT (version) DO NOTHING;
+                """)
+                logger.info("[db/postgres] Migration v3 (login_attempts) applied.")
 
+            # Migration 4: password metadata columns for deployments created before
+            # they were added to the baseline schema. Without them create_user()
+            # fails (INSERT references hash_algo/iterations) and legacy PBKDF2 hashes
+            # can never be auto-upgraded.
+            if 4 not in applied_versions:
+                cur.execute("""
+                    ALTER TABLE users ADD COLUMN IF NOT EXISTS hash_algo VARCHAR(32) NOT NULL DEFAULT 'pbkdf2_sha256';
+                    ALTER TABLE users ADD COLUMN IF NOT EXISTS iterations INTEGER NOT NULL DEFAULT 600000;
+                    INSERT INTO schema_migrations (version, name)
+                    VALUES (4, 'v2.5_users_password_metadata')
+                    ON CONFLICT (version) DO NOTHING;
+                """)
+                logger.info("[db/postgres] Migration v4 (users password metadata) applied.")
+
+            # Migration 5: widen free-text columns to TEXT.
+            # PostgreSQL enforces VARCHAR(n) while SQLite does not, so long titles /
+            # comments / filenames that are valid on SQLite raised 500 errors on
+            # PostgreSQL. Widening is non-destructive (no data rewrite semantics
+            # change, indexes are rebuilt automatically).
+            if 5 not in applied_versions:
+                cur.execute("""
+                    ALTER TABLE users ALTER COLUMN name TYPE TEXT;
+                    ALTER TABLE users ALTER COLUMN email TYPE TEXT;
+                    ALTER TABLE records ALTER COLUMN category TYPE TEXT;
+                    ALTER TABLE records ALTER COLUMN title TYPE TEXT;
+                    ALTER TABLE records ALTER COLUMN project TYPE TEXT;
+                    ALTER TABLE records ALTER COLUMN assignee_name TYPE TEXT;
+                    ALTER TABLE records ALTER COLUMN assignee_email TYPE TEXT;
+                    ALTER TABLE record_attachments ALTER COLUMN filename TYPE TEXT;
+                    ALTER TABLE product_attachments ALTER COLUMN filename TYPE TEXT;
+                    ALTER TABLE jira_attachments ALTER COLUMN filename TYPE TEXT;
+                    ALTER TABLE record_comments ALTER COLUMN author_name TYPE TEXT;
+                    ALTER TABLE schedule_events ALTER COLUMN title TYPE TEXT;
+                    ALTER TABLE schedule_events ALTER COLUMN owner_name TYPE TEXT;
+                    ALTER TABLE schedule_events ALTER COLUMN owner_email TYPE TEXT;
+                    ALTER TABLE schedule_events ALTER COLUMN approved_by TYPE TEXT;
+                    ALTER TABLE schedule_participants ALTER COLUMN user_name TYPE TEXT;
+                    ALTER TABLE schedule_participants ALTER COLUMN user_email TYPE TEXT;
+                    ALTER TABLE chat_messages ALTER COLUMN author_name TYPE TEXT;
+                    ALTER TABLE notifications ALTER COLUMN title TYPE TEXT;
+                    ALTER TABLE notifications ALTER COLUMN sender_name TYPE TEXT;
+                    ALTER TABLE notifications ALTER COLUMN recipient_name TYPE TEXT;
+                    ALTER TABLE jira_issues ALTER COLUMN assignee_name TYPE TEXT;
+                    ALTER TABLE jira_issues ALTER COLUMN reporter_name TYPE TEXT;
+                    ALTER TABLE audit_logs ALTER COLUMN username TYPE TEXT;
+                    ALTER TABLE audit_logs ALTER COLUMN target_id TYPE TEXT;
+                    INSERT INTO schema_migrations (version, name)
+                    VALUES (5, 'v2.6_widen_free_text_columns')
+                    ON CONFLICT (version) DO NOTHING;
+                """)
+                logger.info("[db/postgres] Migration v5 (free-text columns widened) applied.")
 
             cur.close()
         except psycopg2.Error as e:
@@ -560,7 +771,7 @@ else:
             raise
         finally:
             conn.autocommit = False
-            pool.putconn(conn)
+            _release(pool, conn)
 
     def get_connection():
         """
@@ -599,6 +810,34 @@ else:
         """Creates a cursor that returns dictionaries."""
         return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
+    def list_tables():
+        """Table names visible through the current search_path."""
+        rows = query(
+            """SELECT table_name AS name FROM information_schema.tables
+               WHERE table_schema = ANY (current_schemas(false))
+               ORDER BY table_name"""
+        )
+        return [r["name"] for r in rows]
+
+    def list_indexes():
+        """Index names visible through the current search_path."""
+        rows = query(
+            """SELECT indexname AS name FROM pg_indexes
+               WHERE schemaname = ANY (current_schemas(false))
+               ORDER BY indexname"""
+        )
+        return [r["name"] for r in rows]
+
+    def table_columns(table):
+        """Column names of a table (portable across both engines)."""
+        rows = query(
+            """SELECT column_name AS name FROM information_schema.columns
+               WHERE table_name = ? AND table_schema = ANY (current_schemas(false))
+               ORDER BY ordinal_position""",
+            (str(table or "").lower(),),
+        )
+        return [r["name"] for r in rows]
+
     def query(sql, params=()):
         """Executes a SELECT query and returns a list of dictionaries."""
         translated = _translate_sql(sql)
@@ -620,7 +859,7 @@ else:
             logger.error(f"[db/postgres] Error executing query: {sql}\nTranslated: {translated}\nParams: {params}\nError: {e}")
             raise
         finally:
-            pool.putconn(conn)
+            _release(pool, conn)
 
     def get_one(sql, params=()):
         """Executes a SELECT query and returns a single row as a dictionary, or None."""
@@ -642,7 +881,49 @@ else:
             logger.error(f"[db/postgres] Error executing get_one: {sql}\nTranslated: {translated}\nParams: {params}\nError: {e}")
             raise
         finally:
-            pool.putconn(conn)
+            _release(pool, conn)
+
+    # Tables that have an "id" column, so INSERT ... RETURNING id is valid.
+    # Cached per (schema, table): the schema matters because the test suite switches
+    # search_path between isolated schemas.
+    _insert_id_cache = {}
+    _insert_id_lock = threading.Lock()
+    _RE_INSERT_TABLE = re.compile(r"INSERT\s+INTO\s+([A-Za-z_][A-Za-z0-9_\.]*)", re.IGNORECASE)
+
+    def _table_has_id_column(cur, translated_sql):
+        """
+        True when the INSERT target table exposes an `id` column.
+
+        Used to decide whether `RETURNING id` can be appended. Previously it was
+        appended unconditionally, so every INSERT into a table without an `id`
+        column (record_jira, card_sequences) failed once, was rolled back and had
+        to be retried — two round-trips plus a rollback per insert.
+        """
+        match = _RE_INSERT_TABLE.search(translated_sql)
+        if not match:
+            return False
+        table = match.group(1).split(".")[-1].strip('"').lower()
+        cache_key = (_search_path, table)
+        cached = _insert_id_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        has_id = False
+        try:
+            cur.execute(
+                """
+                SELECT 1 FROM information_schema.columns
+                 WHERE table_name = %s AND column_name = 'id'
+                   AND table_schema = ANY (current_schemas(false))
+                 LIMIT 1
+                """,
+                (table,),
+            )
+            has_id = cur.fetchone() is not None
+        except psycopg2.Error:
+            has_id = False
+        with _insert_id_lock:
+            _insert_id_cache[cache_key] = has_id
+        return has_id
 
     def execute(sql, params=()):
         """Executes an INSERT, UPDATE, or DELETE query and returns the last inserted row id."""
@@ -655,36 +936,33 @@ else:
         conn = pool.getconn()
         try:
             cur = conn.cursor()
-            # Try to get RETURNING id for INSERT statements
             sql_upper = translated.strip().upper()
             if sql_upper.startswith("INSERT") and "RETURNING" not in sql_upper:
-                # Append RETURNING to get lastrowid equivalent
-                exec_sql = translated.rstrip().rstrip(";") + " RETURNING id"
-                try:
+                if _table_has_id_column(cur, translated):
+                    exec_sql = translated.rstrip().rstrip(";") + " RETURNING id"
                     cur.execute(exec_sql, params)
                     row = cur.fetchone()
+                    if row is not None:
+                        # cursor asked with RealDictCursor below? use positional fallback
+                        try:
+                            new_id = row["id"]
+                        except (TypeError, KeyError, IndexError):
+                            new_id = row[0]
+                    else:
+                        new_id = 0
                     conn.commit()
                     cur.close()
-                    return row[0] if row else 0
-                except psycopg2.Error:
-                    # Table might not have 'id' column — fall back to normal execute
-                    conn.rollback()
-                    cur = conn.cursor()
-                    cur.execute(translated, params)
-                    conn.commit()
-                    cur.close()
-                    return 0
-            else:
-                cur.execute(translated, params)
-                conn.commit()
-                cur.close()
-                return 0
+                    return new_id
+            cur.execute(translated, params)
+            conn.commit()
+            cur.close()
+            return 0
         except psycopg2.Error as e:
             conn.rollback()
             logger.error(f"[db/postgres] Error executing statement: {sql}\nTranslated: {translated}\nParams: {params}\nError: {e}")
             raise
         finally:
-            pool.putconn(conn)
+            _release(pool, conn)
 
     def execute_rowcount(sql, params=()):
         """Executes an UPDATE or DELETE query and returns the number of modified rows."""
@@ -707,7 +985,7 @@ else:
             logger.error(f"[db/postgres] Error executing statement for rowcount: {sql}\nTranslated: {translated}\nParams: {params}\nError: {e}")
             raise
         finally:
-            pool.putconn(conn)
+            _release(pool, conn)
 
     def executemany(sql, params_list):
         """Executes a batch INSERT/UPDATE/DELETE using psycopg2's optimized execute_batch."""
@@ -730,7 +1008,7 @@ else:
             logger.error(f"[db/postgres] Error executing executemany: {sql}\nTranslated: {translated}\nError: {e}")
             raise
         finally:
-            pool.putconn(conn)
+            _release(pool, conn)
 
     _tls_tx_pg = threading.local()
 
@@ -761,7 +1039,7 @@ else:
             finally:
                 _tls_tx_pg.depth = 0
                 _tls_tx_pg.conn = None
-                pool.putconn(conn)
+                _release(pool, conn)
         else:
             conn = _tls_tx_pg.conn
             _tls_tx_pg.depth = depth + 1

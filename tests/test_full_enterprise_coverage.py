@@ -97,13 +97,20 @@ class TestFullEnterpriseCoverage(unittest.TestCase):
 
     def test_pim_create_and_edit_lifecycle(self):
         """Test Admin creates product, Manager edits product, Member & Viewer get 403."""
-        model_name = f"ARGOS-GW-{int(datetime.now().timestamp())}"
+        import time as _time
+        from services.data_store import read_product_categories
+
+        # Use a category that really exists in this database (SQLite dev DBs have
+        # customised categories, a fresh PostgreSQL schema has the seeded defaults).
+        cats = read_product_categories()
+        category = cats[0]["name"] if cats else "일반"
+        model_name = f"ARGOS-GW-{int(_time.time() * 1000)}"
         mem_handler = DummyHandler(self.mem_dev_sess)
         payload_create = {
             "mode": "create",
             "displayName": "Enterprise Security Gateway Pro",
             "model": model_name,
-            "category": "산업용 엣지 게이트웨이 (Edge Gateway)",
+            "category": category,
             "price": 1250000,
             "summary": "Industrial AI Edge Gateway"
         }
@@ -140,7 +147,7 @@ class TestFullEnterpriseCoverage(unittest.TestCase):
             "revision": created_prod.get("revision", 1),
             "displayName": "Enterprise Security Gateway Pro V2",
             "model": model_name,
-            "category": "산업용 엣지 게이트웨이 (Edge Gateway)",
+            "category": category,
             "price": 1350000,
             "summary": "Industrial AI Edge Gateway V2 with Dual Gigabit LAN"
         }

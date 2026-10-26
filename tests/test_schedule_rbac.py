@@ -82,6 +82,11 @@ class TestScheduleRBACPartitioning(unittest.TestCase):
 
     def tearDown(self):
         self.license_patch.stop()
+        # Remove schedule rows before users: schedule_events.owner_id references
+        # users(id) without ON DELETE, so deleting a referenced user raises
+        # (PostgreSQL enforces this; SQLite would too when the owner resolves).
+        execute("DELETE FROM schedule_participants")
+        execute("DELETE FROM schedule_events")
         execute("DELETE FROM users WHERE username LIKE 'sched_test_%'")
 
     def test_member_only_sees_own_department(self):

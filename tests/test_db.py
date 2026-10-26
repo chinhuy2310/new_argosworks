@@ -11,6 +11,12 @@ if SERVER_DIR not in sys.path:
 
 import db
 
+
+@unittest.skipUnless(
+    getattr(db, "ENGINE", "sqlite") == "sqlite",
+    "SQLite-specific initialisation test (PostgreSQL is covered by test_postgres_smoke.py "
+    "and test_engine_contract.py)",
+)
 class TestDatabase(unittest.TestCase):
     def setUp(self):
         # Use an in-memory or temporary sqlite database for tests

@@ -511,14 +511,17 @@ def handle_get_notifications_stream(handler, parsed, ip):
     handler._start_sse()
     import queue
     from services.notification_service import subscribe_notifications, unsubscribe_notifications
-    from services.auth import is_admin_user
 
     q = queue.Queue(maxsize=32)
     # Each subscriber only receives its own notifications (no cross-user fan-out).
+    try:
+        is_notif_admin = is_admin_user(session)
+    except Exception:
+        is_notif_admin = False
     subscribe_notifications(q, {
         "email": user_email,
         "name": user_name,
-        "is_admin": is_admin_user(session),
+        "is_admin": is_notif_admin,
     })
 
     # Initial ping

@@ -97,13 +97,25 @@ class TestEnterpriseSetupWizard(unittest.TestCase):
         self.original_sessions = query("SELECT * FROM sessions")
         self.original_license = get_one("SELECT * FROM license_info WHERE id = 1")
         execute("DELETE FROM sessions")
+        self._detach_user_references()
         execute("DELETE FROM users")
+
+    @staticmethod
+    def _detach_user_references():
+        """
+        `DELETE FROM users` is blocked by FKs that have no ON DELETE action
+        (schedule_events.owner_id, records.assignee_id). Production deletes go
+        through auth.safe_delete_user(), which NULLs them first — mirror that here.
+        """
+        execute("UPDATE schedule_events SET owner_id = NULL")
+        execute("UPDATE records SET assignee_id = NULL")
 
     def tearDown(self):
         from handlers.setup_handler import reset_setup_cache
         reset_setup_cache()
         # Restore database
         execute("DELETE FROM sessions")
+        self._detach_user_references()
         execute("DELETE FROM users")
         for u in self.original_users:
             execute("""

@@ -7,6 +7,120 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Security / RBAC
+
+- **Private cards could be read through the card-code lookup path.**
+  `data_store.find_record_by_key_or_code()` returned a record dict without
+  `is_private`, so `can_view_record()` treated private cards as public whenever a
+  record was resolved by card code / Jira key (AI chat `get_issue_details`,
+  `/api/records/hierarchy`, attachment download, subtask creation).
+  The field is now always included.
+- **`/api/schedule` leaked private cards of the same department** to members who
+  were not the assignee (calendar events + "unassigned tasks" panel). Private
+  records are now additionally filtered with `can_view_record()`.
+- **Notification SSE stream broadcast every notification to every client.**
+  `/api/notifications/stream` now keeps a per-subscriber identity and only
+  delivers notifications addressed to that user (or system broadcasts).
+- **Notification/chat identity matching hardened for duplicate display names.**
+  Name-only matching is disabled when the same display name exists in several
+  departments (notifications), and chat session ownership now requires the
+  (name, department) pair. Prevents two employees with the same name from
+  reading/marking each other's data.
+- **Login no longer invents a department.** Accounts without `dept_id` used to be
+  silently placed in `dev`, granting that department's records; the stored
+  (empty) department is now used and non-active account statuses are rejected at
+  login.
+- **Self-service department change now requires admin approval.** The profile
+  update endpoint keeps the current department and creates a
+  "부서 변경 승인 요청" notification for admins (previously the caller could move
+  themselves into another department and inherit its records/prices).
+- **Report download is restricted to Manager/Admin**, matching report generation
+  (generated workbooks contain company-wide data).
+- Avatar uploads are validated as real raster images, the file extension is
+  derived from the actual format, and `avatar_url` only accepts app-relative or
+  HTTPS values.
+- Admin self-protection (`cannot disable/demote yourself`, `last admin` guard) now
+  also works when the JSON body sends the user id as a string.
+
+### Fixed — PostgreSQL parity (docker-compose / enterprise default)
+
+PostgreSQL is the default engine for the shipped `docker-compose.yml`, but the
+suite only ever exercised SQLite, so several defects could only appear at a
+customer. They are now fixed **and** covered by tests that run on both engines.
+
+- **`login_attempts` table was missing from `schema.postgres.sql`.** The
+  persistent brute-force lockout silently degraded to an in-memory fallback on
+  PostgreSQL (failures were never stored, so a restart cleared every lockout).
+  Added to the baseline schema and to a migration (`v2.4`).
+- **`users.hash_algo` / `users.iterations` were missing from the PostgreSQL
+  schema.** `create_user()` inserts both columns, so user creation (setup wizard,
+  admin create, registration) failed on PostgreSQL, and legacy PBKDF2 hashes could
+  never be auto-upgraded. Added to the baseline schema + migration (`v2.5`).
+- **Free-text columns were `VARCHAR(n)` on PostgreSQL while SQLite stores TEXT.**
+  A 5000-character task title (valid on SQLite) raised
+  `value too long for type character varying(512)`. Titles, comments, filenames,
+  notification text, names and audit fields are now `TEXT` + migration (`v2.6`).
+- **`ORDER BY rowid`** (SQLite-only) is translated to `ORDER BY id`; it made
+  `read_departments()` / `read_product_categories()` fail on PostgreSQL.
+- **`close_connection()` no longer tears down the whole PostgreSQL pool after
+  every request.** It is a no-op per request and only closes the pool with
+  `close_connection(force=True)` (backup restore / shutdown).
+- **Connections are returned to the pool without an open transaction.** A SELECT
+  used to leave the connection "idle in transaction", holding ACCESS SHARE locks
+  (DDL such as CREATE/DROP SCHEMA and autovacuum blocked — the PostgreSQL test
+  suite hung on schema teardown).
+- **`INSERT OR REPLACE` rewriting now appends `ON CONFLICT` at the end of the
+  statement.** The old rewrite only handled a single `VALUES (...)` row; a
+  multi-row insert produced `ON CONFLICT ... , (...)` → syntax error.
+- **Literal `%` in SQL is escaped for psycopg2.** `... LIKE 'test_%'` raised
+  `IndexError: tuple index out of range` because psycopg2 applies %-formatting
+  whenever parameters are supplied.
+- **`INSERT ... RETURNING id` is only used for tables that actually have an `id`
+  column** (record_jira / card_sequences used to fail once, roll back and retry).
+- **`/api/admin/ai-usage`** grouped by `user_name` while selecting `dept_id`
+  (PostgreSQL error 42803 → HTTP 500). Now grouped by `(user_name, dept_id)`.
+- **`write_schedule()` lost `schedule_events.owner_id` on PostgreSQL** (`row[0]`
+  on a dict row raised `KeyError`, swallowed by `except`).
+- **Audit-log user search** uses `LOWER(username) LIKE LOWER(?)` so behaviour no
+  longer differs between SQLite (case-insensitive LIKE) and PostgreSQL.
+
+### Added — cross-engine test infrastructure
+
+- `tests/test_engine_contract.py`: schema parity (same tables **and** columns in
+  `schema.sql` / `schema.postgres.sql`), engine selection guard, and identical
+  DB-facade behaviour on both engines (execute/transaction/owner-link/lockout).
+- `conftest.tmp_db` is engine-aware: SQLite gets a temp file, PostgreSQL gets a
+  **temporary schema** (search_path) that is dropped afterwards. The whole
+  PostgreSQL session also runs in its own throw-away schema, so repeated runs are
+  reproducible instead of accumulating rows.
+- `db` exposes `list_tables()`, `list_indexes()`, `table_columns()` and
+  `set_search_path()` so tests no longer query `sqlite_master`/`PRAGMA` directly.
+- CI now runs **two real jobs** (`sqlite-tests`, `postgres-tests` — same suite on a
+  live PostgreSQL 16 service, with an engine assertion) plus a
+  `container-smoke` job that boots the shipped `docker-compose.yml`
+  (app + PostgreSQL + Caddy) and checks `/api/health`, `/api/version`,
+  `/api/setup/status` and the 401 on unauthenticated `/api/records`.
+
+### Fixed — Data & robustness
+
+- `/api/account/update-profile` no longer wipes the email when the field is absent,
+  and the current session row is updated using the hashed token (it previously
+  never matched the SHA-256 `sessions.token` value).
+- Expired-session cleanup honours the sliding TTL (`last_active_at`) instead of
+  `created_at`, so active users are not logged out after 24h.
+- `/api/attachments/avatars/<file>` now serves profile images (previously 404);
+  record attachments are resolved from the record's real id even when the URL uses
+  a card code.
+- `/api/chat/history`: non-numeric `limit` no longer raises 500, negative limits
+  are clamped, and unknown sessions return 404.
+- AI chat schedule writes (create/schedule_issue) now use the global schedule lock
+  (`data_store.mutate_schedule`) so concurrent saves cannot drop events.
+- Setup wizard rejects a department list without ids instead of raising
+  `IndexError`; `/api/schedule/assign-task` accepts non-string dates without 500.
+- `product_categories` DDL runs once per database instead of on every read.
+- Login responses include the stored avatar, and PBKDF2 iterations are read from
+  the user row in the same query.
+
 ## [1.0.0] — 2026-10-23
 
 First commercially sellable on-premise release (B2B, one instance per customer).

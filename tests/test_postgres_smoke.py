@@ -9,7 +9,9 @@ which makes PostgreSQL raise a syntax error.
 Two layers:
   * TestSqlTranslation — pure-Python, runs everywhere (no database needed).
   * TestPostgresEngine — runs only when DATABASE_URL points at PostgreSQL
-    (CI job `test-postgres` provisions a real server).
+    (CI job `postgres-tests` provisions a real PostgreSQL 16 service and asserts
+    that the engine really is PostgreSQL; `tests/test_engine_contract.py` covers
+    the cross-engine contract and schema parity).
 """
 import os
 import sys
@@ -85,7 +87,7 @@ class TestSqlTranslation(unittest.TestCase):
 @unittest.skipUnless(
     IS_POSTGRES,
     "set DATABASE_URL=postgresql://... to exercise the PostgreSQL engine "
-    "(CI job `test-postgres` provides a live server)",
+    "(CI job `postgres-tests` provides a live server)",
 )
 class TestPostgresEngine(unittest.TestCase):
     @classmethod
@@ -98,10 +100,9 @@ class TestPostgresEngine(unittest.TestCase):
         self.assertEqual(db.ENGINE, "postgres")
 
     def test_02_baseline_schema_is_present(self):
-        rows = db.query(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
-        )
-        tables = {row["table_name"] for row in rows}
+        # list_tables() follows the active search_path (the test suite runs in an
+        # isolated schema; production uses the default one).
+        tables = set(db.list_tables())
         for expected in (
             "users",
             "records",

@@ -184,7 +184,7 @@ def get_user_notifications(user_email=None, user_name=None, is_admin=False, limi
     # two employees with the same name in different departments would see (and could
     # mark as read) each other's notifications.
     name_matching = bool(clean_name) and _name_is_unambiguous(clean_name)
-    if clean_email or name_matching:
+    if clean_email or name_matching or is_admin:
         where_clauses = [
             "recipient_email = 'all'",
             "(recipient_email = '' AND (recipient_name = '' OR recipient_name = 'all'))"
@@ -264,7 +264,7 @@ def mark_all_notifications_as_read(user_email=None, user_name=None, is_admin=Fal
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     name_matching = bool(clean_name) and _name_is_unambiguous(clean_name)
-    if clean_email or name_matching:
+    if clean_email or name_matching or is_admin:
         where_clauses = [
             "recipient_email = 'all'",
             "(recipient_email = '' AND (recipient_name = '' OR recipient_name = 'all'))"

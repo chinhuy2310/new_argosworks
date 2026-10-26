@@ -10,6 +10,7 @@ import shutil
 import tempfile
 import sqlite3
 import threading
+import uuid
 import pytest
 from http.server import HTTPServer
 from unittest.mock import MagicMock, patch
@@ -28,14 +29,80 @@ os.environ.setdefault("ARGOS_MASTER_KEY", "test-master-key-for-unit-tests-2026")
 # password hash/verify take ~0.3s. Production default is untouched.
 os.environ.setdefault("ARGOS_PBKDF2_ROUNDS", "2000")
 
+# The suite creates a fresh pool for every isolated PostgreSQL schema; a 10-connection
+# minimum per test would exhaust a 100-connection server. Must be set before db import.
+os.environ.setdefault("ARGOS_PG_POOL_MIN", "1")
+os.environ.setdefault("ARGOS_PG_POOL_MAX", "8")
+
+
+# PostgreSQL: run the whole session inside a throw-away schema.
+# Without this the suite shared the CI/developer database, so a second run saw the
+# rows left by the first one (unique-constraint and FK failures that never happen
+# on a fresh CI database). tmp_db creates a nested per-test schema and restores
+# this one afterwards.
+_SESSION_PG_SCHEMA = ""
+
+
+def _bootstrap_database():
+    """Create the baseline schema before any unittest setUpClass() runs."""
+    import db as db_module
+    global _SESSION_PG_SCHEMA
+    if getattr(db_module, "ENGINE", "sqlite") == "postgres":
+        _SESSION_PG_SCHEMA = "argos_test_run_" + uuid.uuid4().hex[:10]
+        db_module.set_search_path(_SESSION_PG_SCHEMA)
+    db_module.init_db()
+
+
+try:
+    _bootstrap_database()
+except Exception as _boot_exc:  # pragma: no cover
+    print(f"[conftest] bootstrap init_db() failed: {_boot_exc}", file=sys.stderr)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolated_session_database():
+    """Drop the session schema (PostgreSQL) after the last test."""
+    yield
+    import db as db_module
+    if getattr(db_module, "ENGINE", "sqlite") == "postgres" and _SESSION_PG_SCHEMA:
+        try:
+            db_module.set_search_path("")
+            db_module.drop_schema(_SESSION_PG_SCHEMA)
+        except Exception as exc:  # pragma: no cover
+            print(f"[conftest] session schema cleanup failed: {exc}", file=sys.stderr)
+
 
 # ---------------------------------------------------------------------------
 # Database Fixture — Fresh SQLite per test session
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="function")
 def tmp_db(tmp_path, monkeypatch):
-    """Tạo database SQLite tạm cho mỗi test function."""
+    """
+    Isolated database for a single test — works on both engines.
+
+    * SQLite   → temporary database file (get_db_path is patched).
+    * Postgres → temporary *schema* exposed through search_path, dropped after the
+      test. The SQLite patch has no effect on the PostgreSQL pool DSN, so without
+      this every Postgres test shared one database (isolation was silently lost).
+    """
     import db as db_module
+
+    if getattr(db_module, "ENGINE", "sqlite") == "postgres":
+        schema = "argos_test_" + uuid.uuid4().hex[:12]
+        # Point pooled connections at a fresh schema, then build the baseline there.
+        db_module.set_search_path(schema)
+        try:
+            db_module.init_db()
+            yield db_module
+        finally:
+            # Restore the session schema (not the default one).
+            db_module.set_search_path(_SESSION_PG_SCHEMA)
+            try:
+                db_module.drop_schema(schema)
+            except Exception:
+                pass
+        return
+
     db_path = str(tmp_path / "test.sqlite")
 
     # Monkey-patch get_db_path to use test db

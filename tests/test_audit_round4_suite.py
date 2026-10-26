@@ -157,6 +157,7 @@ class TestAuditRound4Suite(unittest.TestCase):
     def tearDown(self):
         execute("DELETE FROM records WHERE id IN (?, ?)", (PRIV_REC_ID, PUB_REC_ID))
         execute("DELETE FROM notifications WHERE recipient_name LIKE 'R4 %' OR title LIKE 'R4 %'")
+        execute("DELETE FROM notifications WHERE content LIKE '%R4 Profile%'")
         execute("DELETE FROM chat_sessions WHERE user_name LIKE 'R4 %'")
         execute("DELETE FROM users WHERE username LIKE 'r4_%'")
         execute("DELETE FROM sessions WHERE user_name LIKE 'R4 %'")
@@ -166,6 +167,12 @@ class TestAuditRound4Suite(unittest.TestCase):
                 os.remove(fpath)
             except OSError:
                 pass
+        rec_dir = os.path.join(ATTACH_DIR, str(PRIV_REC_ID))
+        try:
+            if os.path.isdir(rec_dir) and not os.listdir(rec_dir):
+                os.rmdir(rec_dir)
+        except OSError:
+            pass
 
     # ---------------------------------------------------------------- 1. PG SQL
     def test_translate_sql_order_by_rowid_uses_primary_key(self):
@@ -440,6 +447,42 @@ class TestAuditRound4Suite(unittest.TestCase):
             def _drop(events):
                 events[:] = [e for e in events if str(e.get("id")) != str(event_id)]
             mutate_schedule(_drop)
+
+
+    # ------------------------------------------- 16. avatar route (previously 404)
+    def test_avatar_route_serves_images_and_blocks_traversal(self):
+        avatars_dir = os.path.join(ATTACH_DIR, "avatars")
+        os.makedirs(avatars_dir, exist_ok=True)
+        fname = "r4_avatar_check.png"
+        fpath = os.path.join(avatars_dir, fname)
+        with open(fpath, "wb") as f:
+            f.write(b"\x89PNG\r\n\x1a\n")
+        try:
+            ok = MockHandler(DEV_MEMBER)
+            handle_get_local_attachment(ok, urlparse(f"/api/attachments/avatars/{fname}"), "127.0.0.1")
+            self.assertEqual(ok.status, 200)
+            self.assertTrue(ok.streamed and ok.streamed.endswith(fname))
+
+            traversal = MockHandler(DEV_MEMBER)
+            handle_get_local_attachment(
+                traversal,
+                urlparse("/api/attachments/avatars/..%2F..%2Fserver%2Fconfig.json"),
+                "127.0.0.1"
+            )
+            self.assertEqual(traversal.status, 404)
+            self.assertIsNone(traversal.streamed)
+
+            non_image = MockHandler(DEV_MEMBER)
+            handle_get_local_attachment(
+                non_image, urlparse("/api/attachments/avatars/r4_page.html"), "127.0.0.1"
+            )
+            self.assertEqual(non_image.status, 404)
+        finally:
+            if os.path.isfile(fpath):
+                try:
+                    os.remove(fpath)
+                except OSError:
+                    pass
 
 
 if __name__ == "__main__":

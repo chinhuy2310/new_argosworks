@@ -279,6 +279,5 @@ class TestSQLInjectionDefense:
         # User should be created with the literal string
         assert user is not None
         # DB should still be intact
-        from db import query
-        tables = query("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-        assert len(tables) > 0
+        from db import list_tables
+        assert "users" in list_tables()

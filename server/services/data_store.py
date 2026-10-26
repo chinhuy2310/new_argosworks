@@ -634,7 +634,10 @@ def write_schedule(events):
                     (ev.get("ownerName", ""), ev.get("ownerOrg", ""))
                 ).fetchone()
                 if row:
-                    owner_id = row[0]
+                    # PostgreSQL transactions use RealDictCursor (dict rows); SQLite
+                    # uses tuples. row[0] would raise KeyError on Postgres and the
+                    # except below would silently drop the owner link.
+                    owner_id = row["id"] if isinstance(row, dict) else row[0]
             except Exception:
                 pass
 
@@ -860,6 +863,11 @@ def _ensure_product_categories_table():
     try:
         from db import get_db_path
         key = str(get_db_path())
+        try:
+            from db import get_search_path
+            key += "|" + str(get_search_path())
+        except Exception:
+            pass
     except Exception:
         key = "__unknown_db__"
     if key in _PRODUCT_CATEGORIES_READY:

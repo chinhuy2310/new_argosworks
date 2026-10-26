@@ -18,6 +18,14 @@ if SERVER_DIR not in sys.path:
 os.environ.setdefault("ARGOS_MASTER_KEY", "test-master-key-for-unit-tests-2026")
 os.environ.setdefault("ARGOS_PBKDF2_ROUNDS", "2000")
 
+import db as _db  # noqa: E402
+
+pytestmark = pytest.mark.skipif(
+    getattr(_db, "ENGINE", "sqlite") != "sqlite",
+    reason="SQLite file backup/restore round-trip; PostgreSQL is covered by "
+           "test_postgres_backup_restore.py",
+)
+
 
 @pytest.fixture
 def isolated_backup_env(tmp_path, monkeypatch):
