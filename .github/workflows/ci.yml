@@ -1,0 +1,105 @@
+name: ARGOS WORKS Enterprise CI/CD & Multi-Engine Test Pipeline
+
+on:
+  push:
+    branches: [ "main", "master", "develop" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  test-matrix:
+    name: Test Matrix (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [sqlite, postgresql]
+
+    services:
+      postgres:
+        image: ${{ matrix.engine == 'postgresql' && 'postgres:16-alpine' || '' }}
+        env:
+          POSTGRES_DB: argos_works
+          POSTGRES_USER: argos_admin
+          POSTGRES_PASSWORD: ci_postgres_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U argos_admin -d argos_works"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+
+      - name: Python Syntax Gate (compileall)
+        run: |
+          python -m compileall -q server scripts
+
+      - name: Frontend Syntax Gate (node --check)
+        run: |
+          find web -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      - name: Run Full Test Suite (${{ matrix.engine }})
+        env:
+          ARGOS_MASTER_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          DATABASE_URL: ${{ matrix.engine == 'postgresql' && 'postgresql://argos_admin:ci_postgres_password@localhost:5432/argos_works' || '' }}
+        run: |
+          pytest -v
+
+  security-scan:
+    name: Security & Vulnerability Audit
+    runs-on: ubuntu-latest
+    needs: test-matrix
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Dependency Vulnerability Audit (pip-audit)
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.lock
+
+      - name: Static Security Analysis (Bandit)
+        run: |
+          pip install bandit
+          bandit -r server/ -ll -ii
+
+  docker-build-verify:
+    name: Container Build & PostgreSQL Client Verification
+    runs-on: ubuntu-latest
+    needs: test-matrix
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Image
+        run: |
+          docker build -t argos-works:ci-test .
+
+      - name: Verify PostgreSQL Client Installed in Container
+        run: |
+          docker run --rm argos-works:ci-test pg_dump --version
+          docker run --rm argos-works:ci-test pg_restore --version

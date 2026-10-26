@@ -148,6 +148,21 @@ if ENGINE == "sqlite":
 
         logger.info(f"Initializing SQLite database at {db_path}")
 
+        # Pre-migration safety snapshot: Protect on-premise customer data before DDL
+        if os.path.exists(db_path) and os.path.getsize(db_path) > 0:
+            try:
+                from datetime import datetime
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                data_dir = os.path.dirname(db_path)
+                snap_dir = os.path.join(data_dir, "backups")
+                os.makedirs(snap_dir, exist_ok=True)
+                snap_file = os.path.join(snap_dir, f"argos_safety_before_migration_{ts}.tmp.db")
+                with sqlite3.connect(db_path) as s_conn, sqlite3.connect(snap_file) as d_conn:
+                    s_conn.backup(d_conn)
+                logger.info(f"[db] Pre-migration safety snapshot created: {snap_file}")
+            except Exception as e:
+                logger.warning(f"[db] Pre-migration safety snapshot notice: {e}")
+
         conn = sqlite3.connect(db_path, isolation_level=None)
         try:
             conn.execute("PRAGMA journal_mode = WAL;")
@@ -544,11 +559,18 @@ else:
 
     def close_connection():
         """
-        Returns connection to pool (does NOT close it).
-        In PostgreSQL mode, this is a no-op for safety —
-        connections are managed per-operation.
+        Closes and clears pool connections if needed during restore or shutdown.
+        Subsequent queries will lazily re-initialize the pool via _get_pool().
         """
-        pass
+        global _pool
+        if _pool is not None and not _pool.closed:
+            with _pool_lock:
+                if _pool is not None and not _pool.closed:
+                    try:
+                        _pool.closeall()
+                    except Exception:
+                        pass
+                    _pool = None
 
     def _dict_cursor(conn):
         """Creates a cursor that returns dictionaries."""

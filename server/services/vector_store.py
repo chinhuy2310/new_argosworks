@@ -844,6 +844,18 @@ def can_view_vector_doc(session, doc_type, meta, ctx=None):
 
     meta = meta or {}
     if doc_type == "record":
+        r_id = meta.get("id") or meta.get("record_id")
+        if r_id:
+            try:
+                from db import get_one
+                live_r = get_one("SELECT id, dept_id, is_private, assignee_id, assignee_name FROM records WHERE id = ? LIMIT 1", (r_id,))
+                if live_r:
+                    meta = dict(meta)
+                    meta["is_private"] = live_r.get("is_private")
+                    meta["dept_id"] = live_r.get("dept_id")
+                    meta["assignee_id"] = live_r.get("assignee_id")
+            except Exception:
+                pass
         return can_view_record(session, meta)
 
     if doc_type == "jira":
@@ -928,6 +940,12 @@ def search_vector_store(cfg, query_text, limit=6, min_similarity=0.42, session=N
                 # Privacy isolation: doc_type별 RBAC (record / jira / schedule)
                 if session is not None and not can_view_vector_doc(session, row["doc_type"], meta, perm_ctx):
                     continue
+                elif session is None:
+                    # Unauthenticated search: never expose private records or internal schedules
+                    if row["doc_type"] in ("record", "jira") and bool(meta.get("is_private")):
+                        continue
+                    if row["doc_type"] == "schedule":
+                        continue
 
                 counter += 1
 

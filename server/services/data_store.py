@@ -135,6 +135,7 @@ def read_records():
             "title": r["title"],
             "project": r["project"],
             "assignee": r["assignee_name"],
+            "assignee_id": r.get("assignee_id"),
             "assigneeEmail": r["assignee_email"],
             "date": r["work_date"],
             "startDate": r.get("start_date") or r.get("work_date") or "",
@@ -187,6 +188,7 @@ def get_record_by_id(record_id):
         "title": r["title"],
         "project": r["project"],
         "assignee": r["assignee_name"],
+        "assignee_id": r.get("assignee_id"),
         "assigneeEmail": r["assignee_email"],
         "date": r["work_date"],
         "startDate": r.get("start_date") or r.get("work_date") or "",
@@ -254,11 +256,13 @@ def find_record_by_key_or_code(key_or_code):
     r = rows[0]
     rec = {
         "id": r["id"],
+        "dept_id": r["dept_id"],
         "org": r["dept_id"],
         "category": r["category"],
         "title": r["title"],
         "project": r["project"],
         "assignee": r["assignee_name"],
+        "assignee_id": r.get("assignee_id"),
         "assigneeEmail": r["assignee_email"],
         "date": r["work_date"],
         "startDate": r.get("start_date") or r.get("work_date") or "",
@@ -428,18 +432,35 @@ def append_record(record):
         priority = "보통"
 
     is_private_val = 1 if record.get("is_private") else 0
+    dept_val = str(record.get("dept_id") or record.get("org") or "").strip()
+    assignee_name = str(record.get("assignee") or record.get("assignee_name") or "").strip()
+    assignee_email = str(record.get("assigneeEmail") or record.get("assignee_email") or "").strip()
+    assignee_id = record.get("assignee_id")
+    if not assignee_id and assignee_name:
+        try:
+            u_row = get_one("SELECT id, email FROM users WHERE (name = ? OR username = ?) AND dept_id = ? LIMIT 1", (assignee_name, assignee_name, dept_val))
+            if not u_row:
+                u_row = get_one("SELECT id, email FROM users WHERE name = ? OR username = ? LIMIT 1", (assignee_name, assignee_name))
+            if u_row:
+                assignee_id = u_row["id"]
+                if not assignee_email and u_row.get("email"):
+                    assignee_email = u_row["email"]
+        except Exception:
+            pass
+
     execute(
-        """INSERT INTO records(id, dept_id, category, title, project,
+        """INSERT INTO records(id, dept_id, category, title, project, assignee_id,
            assignee_name, assignee_email, start_date, due_date, work_date, summary, tags, memo, status, priority, card_code, participants, parent_key, is_scheduled, is_private)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             rec_id,
-            record.get("org", record.get("dept_id", "")),
+            dept_val,
             record.get("category", ""),
             record.get("title", ""),
             record.get("project", "프로젝트 미지정"),
-            record.get("assignee", record.get("assignee_name", "")),
-            record.get("assigneeEmail", record.get("assignee_email", "")),
+            assignee_id,
+            assignee_name,
+            assignee_email,
             start_date,
             due_date,
             work_date,
@@ -984,8 +1005,19 @@ def update_record_details(record_id_or_code, title=None, memo=None, assignee_nam
         params.append(str(memo).strip())
 
     if assignee_name is not None:
+        new_assignee_str = str(assignee_name).strip()
         updates.append("assignee_name = ?")
-        params.append(str(assignee_name).strip())
+        params.append(new_assignee_str)
+        try:
+            r_dept = rec.get("dept_id") or rec.get("org") or ""
+            u_row = get_one("SELECT id FROM users WHERE (name = ? OR username = ?) AND dept_id = ? LIMIT 1", (new_assignee_str, new_assignee_str, r_dept))
+            if not u_row:
+                u_row = get_one("SELECT id FROM users WHERE name = ? OR username = ? LIMIT 1", (new_assignee_str, new_assignee_str))
+            if u_row:
+                updates.append("assignee_id = ?")
+                params.append(u_row["id"])
+        except Exception:
+            pass
 
     if assignee_email is not None:
         updates.append("assignee_email = ?")

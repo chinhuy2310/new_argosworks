@@ -223,7 +223,13 @@ def create_backup(note="수동 백업", backup_type="manual"):
             if is_postgres:
                 # 1. PostgreSQL Enterprise Backup via pg_dump -Fc (Custom compressed format)
                 cmd = ["pg_dump", "-Fc", "-d", DATABASE_URL, "-f", temp_db_path]
-                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                try:
+                    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                except FileNotFoundError:
+                    raise FileNotFoundError(
+                        "PostgreSQL 클라이언트 도구(pg_dump)가 시스템에 설치되어 있지 않습니다. "
+                        "Dockerfile 또는 호스트에 postgresql-client 패키지를 설치해주세요."
+                    )
                 if res.returncode != 0:
                     raise RuntimeError(f"PostgreSQL pg_dump 백업 실패 (code {res.returncode}): {res.stderr}")
 
@@ -386,12 +392,15 @@ def restore_backup(backup_filename):
         try:
             if is_postgres:
                 safety_tmp = os.path.join(bdir, f"{safety_name}.dump")
-                res = subprocess.run(["pg_dump", "-Fc", "-d", DATABASE_URL, "-f", safety_tmp], capture_output=True)
-                if res.returncode == 0:
-                    with tarfile.open(safety_path, "w:gz", compresslevel=6) as star:
-                        star.add(safety_tmp, arcname="argos.dump")
-                        if os.path.exists(ATTACH_DIR):
-                            star.add(ATTACH_DIR, arcname="attachments")
+                try:
+                    res = subprocess.run(["pg_dump", "-Fc", "-d", DATABASE_URL, "-f", safety_tmp], capture_output=True)
+                    if res.returncode == 0:
+                        with tarfile.open(safety_path, "w:gz", compresslevel=6) as star:
+                            star.add(safety_tmp, arcname="argos.dump")
+                            if os.path.exists(ATTACH_DIR):
+                                star.add(ATTACH_DIR, arcname="attachments")
+                except FileNotFoundError:
+                    logger.warning("pg_dump를 찾을 수 없어 사전 안전 백업 생성을 건너뜁니다.")
                 if os.path.exists(safety_tmp):
                     os.remove(safety_tmp)
             elif os.path.exists(src_db_path):
@@ -453,7 +462,13 @@ def restore_backup(backup_filename):
             if is_postgres:
                 # PostgreSQL pg_restore execution with clean drop/create
                 cmd = ["pg_restore", "--clean", "--if-exists", "-d", DATABASE_URL, temp_restore_db]
-                res = subprocess.run(cmd, capture_output=True, text=True)
+                try:
+                    res = subprocess.run(cmd, capture_output=True, text=True)
+                except FileNotFoundError:
+                    raise FileNotFoundError(
+                        "PostgreSQL 복원 도구(pg_restore)가 시스템에 설치되어 있지 않습니다. "
+                        "Dockerfile 또는 호스트에 postgresql-client 패키지를 설치해주세요."
+                    )
                 # pg_restore may return 1 on warnings (e.g. notices), returncode > 1 is failure
                 if res.returncode > 1:
                     raise RuntimeError(f"PostgreSQL pg_restore 복원 실패 (code {res.returncode}): {res.stderr}")

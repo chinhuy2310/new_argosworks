@@ -14,11 +14,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install runtime utilities (curl for container healthcheck, tzdata for timezone, gosu for safe privilege drop)
+# Install runtime utilities (curl for container healthcheck, tzdata for timezone, gosu for safe privilege drop, postgresql-client for pg_dump/pg_restore)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata \
     curl \
     gosu \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies from lockfile

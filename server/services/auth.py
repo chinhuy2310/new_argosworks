@@ -333,62 +333,83 @@ def verify_password(password, salt_hex, hash_hex, iterations=None, user_id=None)
 
     return False
 
-def is_admin_user(user_or_session, email=None):
-    """
-    사용자가 Admin 권한(users.role == 'admin')을 가지고 있는지 ID/고유계정 기준으로 엄격하게 판정한다.
-    동명이인 혼동 및 OR 쿼리로 인한 권한 상승 취약점을 완전히 제거하고 users.id / username을 기준으로 검증한다.
-    """
-    if not user_or_session:
-        return False
-
-    # 1. Dict 형태 세션 또는 사용자 객체
-    if isinstance(user_or_session, dict):
-        u_id = user_or_session.get("id") or user_or_session.get("user_id")
-        if u_id:
-            row = get_one("SELECT role, is_admin FROM users WHERE id = ? LIMIT 1", (u_id,))
-            return bool(row and (row.get("role") == "admin" or row.get("is_admin") == 1))
-        username = user_or_session.get("username")
-        if username:
-            row = get_one("SELECT role, is_admin FROM users WHERE username != '' AND LOWER(username) = LOWER(?) LIMIT 1", (username,))
-            return bool(row and (row.get("role") == "admin" or row.get("is_admin") == 1))
-        # ID나 Username이 없는 레거시 세션인 경우 세션 내 명시적 admin role 검증
-        if user_or_session.get("role") == "admin" or user_or_session.get("is_admin") == 1:
-            return True
-        return False
-
-    # 2. Integer user_id 또는 Numeric ID string
-    if isinstance(user_or_session, int) or (isinstance(user_or_session, str) and user_or_session.isdigit()):
-        row = get_one("SELECT role, is_admin FROM users WHERE id = ? LIMIT 1", (int(user_or_session),))
-        return bool(row and (row.get("role") == "admin" or row.get("is_admin") == 1))
-
-    # 3. String username
-    if isinstance(user_or_session, str):
-        login_str = user_or_session.strip()
-        if login_str:
-            row = get_one("SELECT role, is_admin FROM users WHERE username != '' AND LOWER(username) = LOWER(?) LIMIT 1", (login_str,))
-            return bool(row and (row.get("role") == "admin" or row.get("is_admin") == 1))
-
-    return False
-
-
 def get_user_role(user_or_session):
-    """사용자의 시스템 권한 등급을 반환한다 ('admin', 'manager', 'member', 'viewer')."""
+    """
+    사용자의 시스템 권한 등급을 반환한다 ('admin', 'manager', 'member', 'viewer').
+    Single Source of Truth: 'role' 컬럼을 표준으로 하여 권한 모순을 방지한다.
+    """
     if not user_or_session:
         return "viewer"
     if isinstance(user_or_session, dict):
-        role = user_or_session.get("role")
-        if role in ("admin", "manager", "member", "viewer"):
-            return role
+        # 1. Look up by verified user ID in DB if available
         u_id = user_or_session.get("id") or user_or_session.get("user_id")
         if u_id:
             row = get_one("SELECT role, is_admin FROM users WHERE id = ? LIMIT 1", (u_id,))
             if row:
-                if row.get("role") == "admin" or row.get("is_admin") == 1:
+                r = row.get("role")
+                if r in ("admin", "manager", "member", "viewer"):
+                    return r
+                if row.get("is_admin") == 1:
                     return "admin"
-                return row.get("role") or "member"
-    if is_admin_user(user_or_session):
-        return "admin"
+                return "member"
+
+        # 2. Look up by verified username in DB if available
+        username = user_or_session.get("username")
+        if username:
+            row = get_one("SELECT role, is_admin FROM users WHERE username != '' AND LOWER(username) = LOWER(?) LIMIT 1", (username,))
+            if row:
+                r = row.get("role")
+                if r in ("admin", "manager", "member", "viewer"):
+                    return r
+                if row.get("is_admin") == 1:
+                    return "admin"
+                return "member"
+
+        # 3. Session dictionary fallback
+        role = user_or_session.get("role")
+        if role in ("admin", "manager", "member", "viewer"):
+            return role
+        if user_or_session.get("isAdmin") or user_or_session.get("is_admin"):
+            return "admin"
+        if user_or_session.get("isManager"):
+            return "manager"
+        return "member"
+
+    # Numeric user_id
+    if isinstance(user_or_session, int) or (isinstance(user_or_session, str) and user_or_session.isdigit()):
+        row = get_one("SELECT role, is_admin FROM users WHERE id = ? LIMIT 1", (int(user_or_session),))
+        if row:
+            r = row.get("role")
+            if r in ("admin", "manager", "member", "viewer"):
+                return r
+            if row.get("is_admin") == 1:
+                return "admin"
+            return "member"
+
+    # String username
+    if isinstance(user_or_session, str):
+        login_str = user_or_session.strip()
+        if login_str:
+            row = get_one("SELECT role, is_admin FROM users WHERE username != '' AND LOWER(username) = LOWER(?) LIMIT 1", (login_str,))
+            if row:
+                r = row.get("role")
+                if r in ("admin", "manager", "member", "viewer"):
+                    return r
+                if row.get("is_admin") == 1:
+                    return "admin"
+                return "member"
+
     return "member"
+
+
+def is_admin_user(user_or_session, email=None):
+    """
+    사용자가 Admin 권한을 가지고 있는지 검증한다.
+    Single Source of Truth: get_user_role(user_or_session) == 'admin'.
+    """
+    if not user_or_session:
+        return False
+    return get_user_role(user_or_session) == "admin"
 
 def is_manager_or_admin(user_or_session):
     """사용자가 Manager(부서장) 이상(Admin/Master 포함)의 관리 권한을 가지고 있는지 판정한다."""
@@ -492,13 +513,14 @@ def can_modify_record(user_or_session, record):
     rec_assignee_id = record.get("assignee_id")
     rec_assignee = (record.get("assignee_name") or record.get("assignee") or "").strip().lower()
 
-    if role == "manager" and u_dept == rec_dept:
+    if role == "manager" and u_dept and rec_dept and u_dept == rec_dept:
         return True
-    if u_id and rec_assignee_id and str(u_id) == str(rec_assignee_id):
+    if u_id and rec_assignee_id:
+        if str(u_id) == str(rec_assignee_id):
+            return True
+    elif u_username and u_username == rec_assignee:
         return True
-    if u_username and u_username == rec_assignee:
-        return True
-    if u_name and u_name == rec_assignee:
+    elif u_name and u_name == rec_assignee:
         is_private = bool(record.get("is_private"))
         if not is_private or u_dept == rec_dept or not rec_dept:
             return True
