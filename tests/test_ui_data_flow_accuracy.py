@@ -11,7 +11,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 from db import query, get_one, execute
 from services.auth import create_session
 
-BASE_URL = "http://127.0.0.1:8089"
+BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:8080")
 
 def run_tests():
     print("=" * 70)

@@ -798,23 +798,35 @@ function renderHomePortalSection(){
 window.renderHomeQuickActions = renderHomeQuickActions;
 window.renderHomePortalSection = renderHomePortalSection;
 
+function refreshHomePortal(){
+  var btn = document.getElementById("homePortalRefreshBtn");
+  if(btn) btn.classList.add("spinning");
+  var p = (typeof loadRecords === "function") ? loadRecords() : Promise.resolve();
+  return Promise.resolve(p).then(function(){
+    renderHomePortalSection();
+    return true;
+  }).catch(function(err){
+    console.warn("[HomePortal] Live refresh failed:", err);
+    return false;
+  }).finally(function(){
+    if(btn){
+      setTimeout(function(){ btn.classList.remove("spinning"); }, 400);
+    }
+  });
+}
+window.refreshHomePortal = refreshHomePortal;
+
 // Initialize Refresh button
 (function initHomePortalRefresh(){
   var btn = document.getElementById("homePortalRefreshBtn");
   if(!btn) return;
+  btn.onclick = function(e){
+    if(e && typeof e.preventDefault === "function") e.preventDefault();
+    return refreshHomePortal();
+  };
   btn.addEventListener("click", function(e){
     e.preventDefault();
-    btn.classList.add("spinning");
-    if(typeof loadRecords === "function"){
-      loadRecords().then(function(){
-        renderHomePortalSection();
-      }).finally(function(){
-        setTimeout(function(){ btn.classList.remove("spinning"); }, 400);
-      });
-    } else {
-      renderHomePortalSection();
-      setTimeout(function(){ btn.classList.remove("spinning"); }, 400);
-    }
+    refreshHomePortal();
   });
 })();
 

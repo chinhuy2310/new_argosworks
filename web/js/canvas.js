@@ -427,7 +427,7 @@
     var curUser = (typeof getCurrentUser === "function") ? getCurrentUser() : null;
     var canEditRecord = false;
     if(curUser){
-      var curRole = curUser.role || (curUser.isAdmin || curUser.is_admin ? "admin" : "member");
+      var curRole = (typeof getSessionRole === "function") ? getSessionRole() : (curUser.role || ((curUser.isAdmin || curUser.is_admin) ? "admin" : (curUser.isManager ? "manager" : "member")));
       if(curRole === "admin" || curUser.isAdmin || curUser.is_admin){
         canEditRecord = true;
       } else if(curRole !== "viewer"){
@@ -440,7 +440,7 @@
         var rAssigneeId = String(d.assignee_id || "");
         var rAssignee = String(d.assignee_name || d.assignee || "").trim().toLowerCase();
 
-        if(curRole === "manager" && uDept && rDept && uDept === rDept){
+        if((curRole === "manager" || curUser.isManager) && uDept && rDept && uDept === rDept){
           canEditRecord = true;
         } else if(uId && rAssigneeId && uId === rAssigneeId){
           canEditRecord = true;
@@ -602,10 +602,10 @@
     var canDeleteRecord = false;
     var curUser = (typeof getCurrentUser === "function") ? getCurrentUser() : null;
     if(curUser){
-      var curRole = curUser.role || (curUser.isAdmin || curUser.is_admin ? "admin" : "member");
+      var curRole = (typeof getSessionRole === "function") ? getSessionRole() : (curUser.role || ((curUser.isAdmin || curUser.is_admin) ? "admin" : (curUser.isManager ? "manager" : "member")));
       if(curRole === "admin" || curUser.isAdmin || curUser.is_admin){
         canDeleteRecord = true;
-      } else if(curRole === "manager"){
+      } else if(curRole === "manager" || curUser.isManager){
         var uDept = String(curUser.dept_id || curUser.org || "").trim().toLowerCase();
         var rDept = String(d.dept_id || d.org || "").trim().toLowerCase();
         if(uDept && rDept && uDept === rDept){
@@ -1006,10 +1006,10 @@
     var isAdm = false;
     var isMgr = false;
     if(curUser){
-      var curRole = curUser.role || (curUser.isAdmin || curUser.is_admin ? "admin" : "member");
+      var curRole = (typeof getSessionRole === "function") ? getSessionRole() : (curUser.role || ((curUser.isAdmin || curUser.is_admin) ? "admin" : (curUser.isManager ? "manager" : "member")));
       if(curRole === "admin" || curUser.isAdmin || curUser.is_admin){
         isAdm = true;
-      } else if(curRole === "manager"){
+      } else if(curRole === "manager" || curUser.isManager){
         isMgr = true;
       }
     }
@@ -1844,7 +1844,7 @@
       var curUser = (typeof getCurrentUser === "function") ? getCurrentUser() : null;
       var canEdit = false;
       if(curUser){
-        var curRole = curUser.role || (curUser.isAdmin || curUser.is_admin ? "admin" : "member");
+        var curRole = (typeof getSessionRole === "function") ? getSessionRole() : (curUser.role || ((curUser.isAdmin || curUser.is_admin) ? "admin" : (curUser.isManager ? "manager" : "member")));
         if(curRole === "admin" || curUser.isAdmin || curUser.is_admin){
           canEdit = true;
         } else if(curRole !== "viewer"){
@@ -1857,7 +1857,7 @@
           var rAssigneeId = String(d.assignee_id || "");
           var rAssignee = String(d.assignee_name || d.assignee || "").trim().toLowerCase();
 
-          if(curRole === "manager" && uDept && rDept && uDept === rDept){
+          if((curRole === "manager" || curUser.isManager) && uDept && rDept && uDept === rDept){
             canEdit = true;
           } else if(uId && rAssigneeId && uId === rAssigneeId){
             canEdit = true;

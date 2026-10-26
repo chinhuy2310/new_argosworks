@@ -1079,13 +1079,13 @@ window.isCurrentUserAdmin = isCurrentUserAdmin;
 function isCurrentUserManagerOrAdmin() {
   if (typeof window.getCurrentUser === "function") {
     var u = window.getCurrentUser();
-    if (u) return Boolean(u.isAdmin || u.role === "admin" || u.is_admin || u.role === "manager");
+    if (u) return Boolean(u.isAdmin || u.role === "admin" || u.is_admin || u.role === "manager" || u.isManager);
   }
   var curUser = null;
   try {
     curUser = JSON.parse(localStorage.getItem("argosUser") || sessionStorage.getItem("argosUser") || localStorage.getItem("jarvisUser") || sessionStorage.getItem("jarvisUser") || "{}");
   } catch (e) {}
-  return Boolean(curUser && (curUser.isAdmin || curUser.role === "admin" || curUser.is_admin || curUser.role === "manager"));
+  return Boolean(curUser && (curUser.isAdmin || curUser.role === "admin" || curUser.is_admin || curUser.role === "manager" || curUser.isManager));
 }
 window.isCurrentUserManagerOrAdmin = isCurrentUserManagerOrAdmin;
 
@@ -1688,7 +1688,7 @@ window.renderSettingsProductCategoryTable = renderSettingsProductCategoryTable;
 async function loadAdminBackups() {
   var tbody = document.getElementById("backupListTableBody");
   var statsEl = document.getElementById("backupDbStatsText");
-  var secHttpsEl = document.getElementById("secHttpsStatusText");
+  var bannerHttpsWarning = document.getElementById("bannerHttpsWarning");
   if (!tbody) return;
 
   var btnManual = document.getElementById("btnTriggerManualBackup");
@@ -1744,12 +1744,9 @@ async function loadAdminBackups() {
       statsEl.innerHTML = '<strong>현재 CSDL 크기:</strong> ' + (mb >= 1 ? mb + ' MB' : kb + ' KB') + ' (총 ' + backups.length + '개 백업 보관 중)';
     }
 
-    if (secHttpsEl) {
-      if (sec.https_active) {
-        secHttpsEl.innerHTML = '<span style="color:#16a34a;">🌐 HTTPS 암호화 활성화됨</span>';
-      } else {
-        secHttpsEl.innerHTML = '<span style="color:#eab308;">🌐 HTTP 연결 (HTTPS 권장)</span>';
-      }
+    if (bannerHttpsWarning) {
+      var isHttps = (sec && sec.https_active) || window.location.protocol === "https:";
+      bannerHttpsWarning.style.display = isHttps ? "none" : "flex";
     }
 
     if (backups.length === 0) {

@@ -64,7 +64,9 @@ function getSessionRole(){
   } catch(e){}
   if (!u) return "";
   if (u.role) return u.role;
-  return (u.isAdmin || u.is_admin) ? "admin" : "member";
+  if (u.isAdmin || u.is_admin) return "admin";
+  if (u.isManager) return "manager";
+  return "member";
 }
 
 function isViewerUser(){

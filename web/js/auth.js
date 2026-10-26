@@ -34,7 +34,8 @@ function updateSubmitAvailability(){
 }
 
 function fillSubmitterFromLogin(){
-  var isMgr = Boolean(isAdm || (loggedInUser && (loggedInUser.role === 'manager' || loggedInUser.role === 'admin')));
+  var isAdm = Boolean(loggedInUser && (loggedInUser.isAdmin || loggedInUser.is_admin || loggedInUser.role === 'admin'));
+  var isMgr = Boolean(isAdm || (loggedInUser && (loggedInUser.role === 'manager' || loggedInUser.isManager)));
   if(orgSelect) {
     orgSelect.value = loggedInUser.org;
     orgSelect.disabled = !isMgr;
@@ -146,6 +147,10 @@ function applyLogin(user){
 
   var isAdm = Boolean(user.isAdmin || user.role === 'admin' || user.is_admin);
   user.isAdmin = isAdm;
+  user.is_admin = isAdm;
+
+  var isMgr = Boolean(isAdm || user.role === 'manager' || user.isManager);
+  user.isManager = isMgr;
 
   try {
     sessionStorage.setItem("argosUser", JSON.stringify(user)); 
@@ -178,8 +183,7 @@ function applyLogin(user){
   if(guestGate) { guestGate.hidden = true; guestGate.style.display = "none"; }
   if(submitForm) { submitForm.hidden = false; submitForm.style.display = ""; }
 
-  var isMgr = Boolean(isAdm || user.role === 'manager');
-  user.isManager = isMgr;
+
 
   // 관리자(Admin) 및 매니저(Manager) 권한에 따른 관리 탭 표시 제어
   if(el.tabHistory){

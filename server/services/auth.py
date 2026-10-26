@@ -352,7 +352,7 @@ def is_admin_user(user_or_session, email=None):
             row = get_one("SELECT role, is_admin FROM users WHERE username != '' AND LOWER(username) = LOWER(?) LIMIT 1", (username,))
             return bool(row and (row.get("role") == "admin" or row.get("is_admin") == 1))
         # ID나 Username이 없는 레거시 세션인 경우 세션 내 명시적 admin role 검증
-        if user_or_session.get("role") == "admin":
+        if user_or_session.get("role") == "admin" or user_or_session.get("is_admin") == 1:
             return True
         return False
 

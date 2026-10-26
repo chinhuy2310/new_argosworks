@@ -8,7 +8,7 @@ window.isCurrentUserAdmin = isCurrentUserAdmin;
 function isCurrentUserManagerOrAdmin(){
   var u = getCurrentUser();
   if(!u) return false;
-  return Boolean(u.isAdmin || u.role === "admin" || u.is_admin || u.role === "manager");
+  return Boolean(u.isAdmin || u.role === "admin" || u.is_admin || u.role === "manager" || u.isManager);
 }
 window.isCurrentUserManagerOrAdmin = isCurrentUserManagerOrAdmin;
 
@@ -82,7 +82,11 @@ function showTab(which, updateHash){
 
   // Restore scroll position for the target tab (or default to 0 if entering new tab)
   var targetScroll = tabScrollPositions[which] || 0;
-  window.scrollTo({ top: targetScroll, behavior: "instant" });
+  try {
+    window.scrollTo({ top: targetScroll, behavior: "instant" });
+  } catch(e) {
+    try { window.scrollTo(0, targetScroll); } catch(e2){}
+  }
 
   if(el.tabHome) { el.tabHome.classList.toggle("active", which === "home"); el.tabHome.setAttribute("aria-selected", String(which === "home")); }
   if(el.tabDash) { el.tabDash.classList.toggle("active", which === "dash"); el.tabDash.setAttribute("aria-selected", String(which === "dash")); }
@@ -166,11 +170,32 @@ function tabFromHash(){
   var h = (location.hash || "").replace(/^#/, "").toLowerCase();
   if(h === "sched" || h === "schedule") return "schedule";
   if(h === "dash" || h === "dashboard") return "dash";
-  if(h === "form") return "form";
+  if(h === "form" || h === "new"){
+    if(typeof isViewerUser === "function" && isViewerUser()){
+      if(typeof showToast === "function") showToast("조회 전용(Viewer) 계정은 업무를 등록할 수 없습니다.");
+      try { history.replaceState(null, "", "#home"); } catch(e){}
+      return "home";
+    }
+    return "form";
+  }
   if(h === "pim" || h === "product") return "pim";
   if(h === "chat" || h === "ai") return getCurrentUser() ? "chat" : "home";
-  if(h === "history" || h === "activity" || h === "activities") return isCurrentUserManagerOrAdmin() ? "history" : "home";
-  if(h === "settings" || h === "api") return isCurrentUserManagerOrAdmin() ? "settings" : "home";
+  if(h === "history" || h === "activity" || h === "activities"){
+    if(!isCurrentUserManagerOrAdmin()){
+      if(typeof showToast === "function") showToast("부서장(Manager) 이상의 권한이 있는 사용자만 접근할 수 있습니다.");
+      try { history.replaceState(null, "", "#home"); } catch(e){}
+      return "home";
+    }
+    return "history";
+  }
+  if(h === "settings" || h === "api"){
+    if(!isCurrentUserManagerOrAdmin()){
+      if(typeof showToast === "function") showToast("부서장(Manager) 이상의 권한이 있는 사용자만 접근할 수 있습니다.");
+      try { history.replaceState(null, "", "#home"); } catch(e){}
+      return "home";
+    }
+    return "settings";
+  }
   return "home";
 }
 
@@ -179,6 +204,13 @@ window.addEventListener("hashchange", function(){
 });
 
 // ---- 초기 로딩 ----
+try {
+  if (typeof isViewerUser === "function" && isViewerUser()) {
+    if (el.tabForm) el.tabForm.hidden = true;
+    var addSchedBtnSync = document.getElementById("btnSchedOpenCreateModal");
+    if (addSchedBtnSync) addSchedBtnSync.style.display = "none";
+  }
+} catch(e){}
 var initialTab = tabFromHash();
 showTab(initialTab, false);
 var antiFlash = document.getElementById("anti-flash-style");

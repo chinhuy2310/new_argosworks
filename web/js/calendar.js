@@ -294,7 +294,7 @@ function loadSchedule(){
       }
     }
 
-    var isViewer = loggedInUser && loggedInUser.role === "viewer";
+    var isViewer = (typeof isViewerUser === "function") ? isViewerUser() : (loggedInUser && loggedInUser.role === "viewer");
     if (btnSchedOpenCreateModal) {
       btnSchedOpenCreateModal.style.display = isViewer ? "none" : "";
     }
@@ -936,8 +936,8 @@ function startEditEventForm(ev){
 
   var isJira = ev.source === "jira";
   var isLocal = ev.source === "local" || !!ev.cardCode;
-  var isAdmin = loggedInUser && (loggedInUser.isAdmin || loggedInUser.role === "admin");
-  var isManager = loggedInUser && loggedInUser.role === "manager";
+  var isAdmin = loggedInUser && (loggedInUser.isAdmin || loggedInUser.is_admin || loggedInUser.role === "admin");
+  var isManager = loggedInUser && (loggedInUser.isManager || loggedInUser.role === "manager");
   var isSameDept = loggedInUser && ev.ownerOrg && (String(loggedInUser.org).toLowerCase() === String(ev.ownerOrg).toLowerCase());
   var isManagerInDept = isManager && isSameDept;
   var isOwner = !ev.ownerKey || ev.ownerKey === myUserKey || (loggedInUser && ev.ownerName === loggedInUser.name);
@@ -993,7 +993,7 @@ function startEditEventForm(ev){
   // Xử lý nút Duyệt / Từ chối (Dành cho Manager hoặc Admin)
   var schedApprovalActions = document.getElementById("schedApprovalActions");
   if(schedApprovalActions){
-    var isManagerOrAdmin = loggedInUser && (loggedInUser.isAdmin || loggedInUser.role === "admin" || loggedInUser.role === "manager");
+    var isManagerOrAdmin = loggedInUser && (loggedInUser.isAdmin || loggedInUser.is_admin || loggedInUser.role === "admin" || loggedInUser.role === "manager" || loggedInUser.isManager);
     var isPending = ev.approval_status === "pending";
     if(isManagerOrAdmin && isPending){
       schedApprovalActions.style.display = "flex";
@@ -1331,6 +1331,11 @@ function formatYMD(d){
 function openSchedEventModal(dateStr, ev){
   if(!loggedInUser){
     if(typeof showToast === "function") showToast("먼저 우측 상단에서 로그인해주세요.");
+    return;
+  }
+  var isViewer = (typeof isViewerUser === "function") ? isViewerUser() : (loggedInUser && loggedInUser.role === "viewer");
+  if(!ev && isViewer){
+    if(typeof showToast === "function") showToast("조회 전용(Viewer) 계정은 새 일정을 추가할 수 없습니다.");
     return;
   }
   if(ev){
@@ -1888,6 +1893,11 @@ function handleEventChipClick(evId){
 function assignTaskToDate(taskId, targetDate, endDate){
   if(!loggedInUser){
     if(typeof showToast === "function") showToast("먼저 로그인해주세요.");
+    return;
+  }
+  var isViewer = (typeof isViewerUser === "function") ? isViewerUser() : (loggedInUser && loggedInUser.role === "viewer");
+  if(isViewer){
+    if(typeof showToast === "function") showToast("조회 전용(Viewer) 계정은 일정을 배정할 수 없습니다.");
     return;
   }
   var payload = { taskId: taskId, date: targetDate };

@@ -701,6 +701,7 @@ def write_products(products, target_source=None):
     사내 제품 저장 시 라이브 제품이 지워지거나, 라이브 제품 동기화 시 사내 제품이 지워지는 문제를 원천 방지한다.
     """
     def _do(conn):
+        cur = conn.cursor()
         # Delete and reinsert products based on target_source or sources of provided products
         sources_to_delete = set()
         if target_source:

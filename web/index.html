@@ -1777,48 +1777,11 @@
 
         <!-- 5. Enterprise Security & Database Backup Tab Pane -->
         <div class="settings-tab-pane" id="paneSettingsSecurity" data-pane="security" hidden style="display: none;">
-          <!-- 5-1. Enterprise Security Status Card -->
-          <div class="settings-card" id="cardEnterpriseSecurity">
-            <div class="settings-card-header">
-              <h3 class="settings-card-title">
-                <span>🛡️</span> 엔터프라이즈 보안 및 무결성 보호 (Enterprise Security)
-              </h3>
-              <span class="card-badge connected" id="badgeSecurityStatus">보안 규격 준수</span>
-            </div>
-            <p class="settings-card-desc">
-              기업 보안 감사(Security Audit) 요건을 충족하기 위한 다중 보안 방어 및 데이터 무결성 보호 상태입니다.
-            </p>
-
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 16px;">
-              <div style="background: var(--bg-hover, rgba(0,0,0,0.02)); border: 1px solid var(--border-color, #e0e0e0); border-radius: 8px; padding: 12px 14px;">
-                <div style="font-size: 11px; color: var(--text-muted); font-weight: 600;">세션 토큰 보호</div>
-                <div style="font-size: 13.5px; font-weight: 700; color: #16a34a; margin-top: 4px; display: flex; align-items: center; gap: 6px;">
-                  <span>🔒</span> HttpOnly Secure Cookie
-                </div>
-                <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">
-                  브라우저 F12 콘솔 및 XSS 스크립트 탈취 원천 차단
-                </div>
-              </div>
-
-              <div style="background: var(--bg-hover, rgba(0,0,0,0.02)); border: 1px solid var(--border-color, #e0e0e0); border-radius: 8px; padding: 12px 14px;">
-                <div style="font-size: 11px; color: var(--text-muted); font-weight: 600;">전송 계층 암호화 (SSL/TLS)</div>
-                <div style="font-size: 13.5px; font-weight: 700; color: #0284c7; margin-top: 4px; display: flex; align-items: center; gap: 6px;" id="secHttpsStatusText">
-                  <span>🌐</span> HTTPS 암호화 지원
-                </div>
-                <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">
-                  Nginx / Cloudflare / Native TLS 인증서 연동
-                </div>
-              </div>
-
-              <div style="background: var(--bg-hover, rgba(0,0,0,0.02)); border: 1px solid var(--border-color, #e0e0e0); border-radius: 8px; padding: 12px 14px;">
-                <div style="font-size: 11px; color: var(--text-muted); font-weight: 600;">동시 수정 덮어쓰기 방지</div>
-                <div style="font-size: 13.5px; font-weight: 700; color: #7c3aed; margin-top: 4px; display: flex; align-items: center; gap: 6px;">
-                  <span>⚡</span> 낙관적 락 (Optimistic Lock)
-                </div>
-                <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">
-                  버전(version) 검증 기반 409 Conflict 동시성 보호
-                </div>
-              </div>
+          <!-- 5-1. HTTPS Warning Banner (only displayed if HTTP is in use) -->
+          <div id="bannerHttpsWarning" style="display: none; margin-bottom: 16px; padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.08); color: var(--text, #92400e); font-size: 12.5px; line-height: 1.5; align-items: center; gap: 10px;">
+            <span style="font-size: 16px; flex-shrink: 0;">⚠️</span>
+            <div>
+              <strong style="color: #b45309;">보안 권장:</strong> 현재 암호화되지 않은 HTTP 연결을 사용 중입니다. 프로덕션 환경에서는 Nginx, Cloudflare 또는 SSL 인증서를 적용하여 HTTPS 보안 연결을 권장합니다.
             </div>
           </div>
 
