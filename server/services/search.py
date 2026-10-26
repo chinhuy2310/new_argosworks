@@ -242,10 +242,13 @@ def merged_records(cfg):
     records.sort(key=lambda r: (r.get("date", "") or r.get("startDate", "")), reverse=True)
     return records, cache
 
-def product_as_search_record(p):
+def product_as_search_record(p, allow_price=True):
     """제품정보 한 건을 search_records()가 이해하는 '기록' 모양으로 변환한다.
     /api/ask(홈 자연어 검색)가 인수인계 기록/Jira 티켓뿐 아니라 제품정보(공통정보+
-    조달정보)까지 검색 범위에 넣기 위해 쓴다."""
+    조달정보)까지 검색 범위에 넣기 위해 쓴다.
+
+    allow_price=False(가격 열람 권한 없음)이면 조달 단가를 검색 컨텍스트에 넣지 않는다.
+    """
     cat = p.get("category") or "카메라"
     model = p.get("model", "")
     disp_name = p.get("displayName", "")
@@ -272,7 +275,7 @@ def product_as_search_record(p):
             proc_bits.append("나라장터 등록명: " + proc["registeredName"])
         if proc.get("identificationNo"):
             proc_bits.append("물품식별번호: " + proc["identificationNo"])
-        if proc.get("price"):
+        if allow_price and proc.get("price"):
             proc_bits.append(f"단가: {proc['price']:,}원" if isinstance(proc['price'], (int, float)) else f"단가: {proc['price']}원")
         if proc.get("configuration"):
             proc_bits.append("구성: " + proc["configuration"])

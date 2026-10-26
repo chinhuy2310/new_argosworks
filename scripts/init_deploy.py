@@ -5,9 +5,9 @@ ARGOS WORKS - first-run deployment bootstrap.
 Idempotent. Safe to run on every deploy/upgrade.
 
   1. Creates .env from .env.example (or fills gaps in an existing .env) with
-     freshly generated secrets: ARGOS_MASTER_KEY, POSTGRES_PASSWORD,
-     ARGOS_LICENSE_SECRET. Placeholder values shipped in the template are
-     detected and replaced, never trusted.
+     freshly generated secrets: ARGOS_MASTER_KEY, POSTGRES_PASSWORD.
+     Placeholder values shipped in the template are detected and replaced,
+     never trusted.
   2. Makes sure server/config.json exists as a *file* (Docker bind-mounts it;
      when the file is missing Docker creates a directory instead, the app then
      silently falls back to defaults and can no longer persist settings).
@@ -38,7 +38,6 @@ DEFAULT_TRUSTED_PROXIES = "127.0.0.1,::1,172.16.0.0/12"
 # Values copied verbatim from .env.example that must never reach production.
 PLACEHOLDER_VALUES = {
     "YOUR_STRONG_PASSWORD_HERE",
-    "ENTERPRISE_LICENSE_SIGNING_SECRET_HERE",
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 }
 
@@ -108,10 +107,9 @@ def prepare_env(check_only=False, rotate=False):
     original = text
     values = parse_env_text(text)
 
-    secret_keys = ("ARGOS_MASTER_KEY", "POSTGRES_PASSWORD", "ARGOS_LICENSE_SECRET")
+    secret_keys = ("ARGOS_MASTER_KEY", "POSTGRES_PASSWORD")
     generators = {
         "ARGOS_MASTER_KEY": lambda: secrets.token_hex(32),
-        "ARGOS_LICENSE_SECRET": lambda: secrets.token_urlsafe(24),
         "POSTGRES_PASSWORD": lambda: strong_password(),
     }
     missing = [key for key in secret_keys if not values.get(key)]
@@ -244,7 +242,7 @@ def main():
     parser.add_argument(
         "--rotate",
         action="store_true",
-        help="regenerate ARGOS_MASTER_KEY / POSTGRES_PASSWORD / ARGOS_LICENSE_SECRET",
+        help="regenerate ARGOS_MASTER_KEY / POSTGRES_PASSWORD",
     )
     args = parser.parse_args()
 

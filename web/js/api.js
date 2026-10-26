@@ -53,6 +53,12 @@ function apiGet(path){
       }
     }
     return safeParseJson(r);
+  }).catch(function(networkErr){
+    console.warn("[apiGet] Network or fetch error:", networkErr);
+    if(typeof showToast === "function"){
+      showToast("네트워크 연결을 확인해주세요. (서버와 통신할 수 없습니다)", 4000, true);
+    }
+    return { ok: false, error: "네트워크 연결 오류: " + (networkErr.message || "서버에 연결할 수 없습니다.") };
   });
 }
 window.apiGet = apiGet;
@@ -108,6 +114,12 @@ function apiPostJson(path, body){
       }
     }
     return safeParseJson(r);
+  }).catch(function(networkErr){
+    console.warn("[apiPostJson] Network or fetch error:", networkErr);
+    if(typeof showToast === "function"){
+      showToast("네트워크 연결을 확인해주세요. (서버와 통신할 수 없습니다)", 4000, true);
+    }
+    return { ok: false, error: "네트워크 연결 오류: " + (networkErr.message || "서버에 연결할 수 없습니다.") };
   });
 }
 window.apiPostJson = apiPostJson;
@@ -185,6 +197,9 @@ function loadRecords(limit, offset){
       }
     }
     refresh();
+    if(typeof renderHomePortalSection === "function"){
+      try { renderHomePortalSection(); } catch(e){}
+    }
     return res;
   });
 }

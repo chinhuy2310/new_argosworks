@@ -439,10 +439,52 @@ if(homeAskResult){
 // --------------------------------------------------------------------------
 // Google-style Quick Action Navigation Buttons with Auth Requirement Check
 // --------------------------------------------------------------------------
-(function initHomeQuickActions(){
+// --------------------------------------------------------------------------
+// Executive Portal & Role-based Quick Actions (Option 2)
+// --------------------------------------------------------------------------
+
+function getPortalUserRole(){
+  var user = (typeof getCurrentUser === "function") ? getCurrentUser() : (window.loggedInUser || null);
+  if(!user) return { user: null, role: "guest" };
+  if(user.isAdmin || user.role === "admin" || user.is_admin) return { user: user, role: "admin" };
+  if(user.isManager || user.role === "manager") return { user: user, role: "manager" };
+  if(user.role === "viewer") return { user: user, role: "viewer" };
+  return { user: user, role: "member" };
+}
+
+function renderHomeQuickActions(){
   var container = document.getElementById("homeQuickActions");
   if(!container) return;
 
+  var info = getPortalUserRole();
+  var role = info.role;
+
+  // Define action buttons configuration per role
+  var allActions = [
+    { target: "dash", icon: "📋", label: "업무 보드 (Board)", roles: ["guest", "viewer", "member", "manager", "admin"] },
+    { target: "form", icon: "✍️", label: "업무 등록 (New)", roles: ["member", "manager", "admin"] },
+    { target: "schedule", icon: "📅", label: "일정 관리 (Calendar)", roles: ["viewer", "member", "manager", "admin"] },
+    { target: "chat", icon: "💬", label: "AI 어시스턴트 (Chat)", roles: ["viewer", "member", "manager", "admin"] },
+    { target: "history", icon: "📊", label: "주간 보고 / 이력", roles: ["manager", "admin"] },
+    { target: "settings", icon: "⚙️", label: "시스템 설정", roles: ["manager", "admin"] },
+    { target: "pim", icon: "🔍", label: "PIM 부품 카탈로그", roles: ["guest", "viewer", "member", "manager", "admin"] },
+    { target: "login", icon: "🔐", label: "로그인 (Login)", roles: ["guest"] }
+  ];
+
+  var filtered = allActions.filter(function(item){
+    return item.roles.indexOf(role) !== -1;
+  });
+
+  var html = filtered.map(function(act){
+    return '<button type="button" class="home-quick-btn" data-target="' + act.target + '">' +
+      '<span class="home-quick-icon">' + act.icon + '</span>' +
+      '<span class="home-quick-label">' + act.label + '</span>' +
+    '</button>';
+  }).join("");
+
+  container.innerHTML = html;
+
+  // Attach event handlers
   var btns = container.querySelectorAll(".home-quick-btn");
   btns.forEach(function(btn){
     btn.addEventListener("click", function(e){
@@ -450,18 +492,20 @@ if(homeAskResult){
       var target = btn.getAttribute("data-target");
       if(!target) return;
 
-      // chatbot (chat) yêu cầu phải đăng nhập
+      if(target === "login"){
+        window.location.href = "/login";
+        return;
+      }
+
       if(target === "chat"){
-        var user = (typeof getCurrentUser === "function") ? getCurrentUser() : loggedInUser;
+        var user = (typeof getCurrentUser === "function") ? getCurrentUser() : window.loggedInUser;
         if(!user){
           if(typeof showToast === "function"){
             showToast("챗봇은 로그인 후 이용할 수 있는 기능입니다. 먼저 로그인해 주세요.");
           }
-          if(typeof idForm !== "undefined" && idForm && idForm.hidden){
-            idForm.hidden = false;
-            if(typeof resetIdForm === "function") resetIdForm();
-            if(typeof idNameInput !== "undefined" && idNameInput) idNameInput.focus();
-          }
+          setTimeout(function(){
+            window.location.href = "/login";
+          }, 800);
           return;
         }
       }
@@ -471,7 +515,315 @@ if(homeAskResult){
       }
     });
   });
+}
+
+function getPortalStatusBadge(status){
+  var s = (status || "todo").toLowerCase();
+  var label = "대기";
+  var cls = "status-todo";
+  if(s === "inprogress" || s === "inprog" || s === "doing"){
+    label = "진행중";
+    cls = "status-inprog";
+  } else if(s === "review" || s === "pending"){
+    label = "검토중";
+    cls = "status-review";
+  } else if(s === "delayed"){
+    label = "지연";
+    cls = "status-delayed";
+  } else if(s === "done" || s === "completed"){
+    label = "완료";
+    cls = "status-done";
+  }
+  return '<span class="portal-status-pill ' + cls + '">' + label + '</span>';
+}
+
+function renderPortalTaskItem(r){
+  var taskId = r.id || (r.jira && r.jira.key) || r.cardCode || "";
+  var title = r.title || r.summary || "(제목 없음)";
+  var dept = r.org || "";
+  var date = r.date || r.dueDate || "";
+  var metaParts = [];
+  if(dept) metaParts.push(dept);
+  if(r.assignee) metaParts.push(r.assignee);
+  if(date) metaParts.push(date);
+
+  var escapeFn = (typeof escapeHtml === "function") ? escapeHtml : function(s){ return String(s || ""); };
+
+  return '<div class="portal-task-item" data-task-id="' + escapeFn(String(taskId)) + '">' +
+    getPortalStatusBadge(r.status) +
+    '<span class="portal-task-title" title="' + escapeFn(title) + '">' + escapeFn(title) + '</span>' +
+    '<span class="portal-task-meta">' + escapeFn(metaParts.join(" · ")) + '</span>' +
+  '</div>';
+}
+
+function renderHomePortalSection(){
+  var section = document.getElementById("homePortalSection");
+  var greetingEl = document.getElementById("homePortalGreeting") || document.getElementById("homePortalTitle");
+  var roleBadgeEl = document.getElementById("homePortalRoleBadge");
+  var gridEl = document.getElementById("homePortalGrid");
+  if(!section || !gridEl) return;
+
+  var info = getPortalUserRole();
+  var user = info.user;
+  var role = info.role;
+
+  var escapeFn = (typeof escapeHtml === "function") ? escapeHtml : function(s){ return String(s || ""); };
+
+  // 1. Header greeting & role badge
+  var roleConfig = {
+    guest: { text: "게스트 (Guest)", cls: "badge-guest", greeting: "ARGOS WORKS 엔터프라이즈 포털에 오신 것을 환영합니다!" },
+    viewer: { text: "조회 전용 (Viewer)", cls: "badge-viewer", greeting: "안녕하세요, " + (user ? (user.name || user.id) : "") + " 님!" },
+    member: { text: "팀원 (Member)", cls: "badge-member", greeting: "안녕하세요, " + (user ? (user.name || user.id) : "") + " 님!" },
+    manager: { text: "부서 관리자 (Manager)", cls: "badge-manager", greeting: "안녕하세요, " + (user ? (user.name || user.id) : "") + " 관리자님!" },
+    admin: { text: "시스템 최고관리자 (Admin)", cls: "badge-admin", greeting: "시스템 최고관리자 포털 — " + (user ? (user.name || user.id) : "") + " 님" }
+  };
+
+  var cfg = roleConfig[role] || roleConfig.guest;
+  if(greetingEl) greetingEl.textContent = cfg.greeting;
+  if(roleBadgeEl){
+    roleBadgeEl.textContent = cfg.text;
+    roleBadgeEl.className = "home-portal-badge " + cfg.cls;
+  }
+
+  // 2. Data pool
+  var allRecords = (typeof records !== "undefined" && Array.isArray(records)) ? records : ((window.records && Array.isArray(window.records)) ? window.records : []);
+  var userName = user ? (user.name || user.id || "") : "";
+  var userOrg = user ? (user.org || "") : "";
+
+  // 3. Render grid cards based on role
+  var cardsHtml = "";
+
+  if(role === "guest"){
+    cardsHtml += '<div class="portal-widget-card">' +
+      '<div class="portal-card-header">' +
+        '<h3 class="portal-card-title">👋 시작하기 (Login)</h3>' +
+      '</div>' +
+      '<div class="portal-card-body" style="display:flex; flex-direction:column; justify-content:space-between; flex:1;">' +
+        '<p style="font-size:12px; color:var(--ink-soft); line-height:1.45; margin:0 0 8px 0;">부서별 업무 현황 확인, 내 할 일 관리, AI 어시스턴트 대화를 이용하세요.</p>' +
+        '<button type="button" class="portal-guest-btn" id="portalGuestLoginBtn" onclick="window.location.href=\'/login\'" style="width:100%; justify-content:center; padding:6px 12px; font-size:12.5px; cursor:pointer;">🔐 지금 로그인하기</button>' +
+      '</div>' +
+    '</div>';
+
+    cardsHtml += '<div class="portal-widget-card">' +
+      '<div class="portal-card-header">' +
+        '<h3 class="portal-card-title">🔍 부품 & 기술 카탈로그 (PIM)</h3>' +
+      '</div>' +
+      '<div class="portal-card-body" style="display:flex; flex-direction:column; justify-content:space-between; flex:1;">' +
+        '<p style="font-size:12px; color:var(--ink-soft); line-height:1.45; margin:0 0 8px 0;">로그인 없이도 부품 규격서, 데이터시트, 카탈로그 PDF를 검색할 수 있습니다.</p>' +
+        '<button type="button" class="portal-guest-btn btn-secondary" style="width:100%; justify-content:center; padding:6px 12px; font-size:12.5px;" onclick="showTab(\'pim\')">카탈로그 바로가기 →</button>' +
+      '</div>' +
+    '</div>';
+
+    cardsHtml += '<div class="portal-widget-card">' +
+      '<div class="portal-card-header">' +
+        '<h3 class="portal-card-title">📋 업무 보드 미리보기</h3>' +
+      '</div>' +
+      '<div class="portal-card-body" style="display:flex; flex-direction:column; justify-content:space-between; flex:1;">' +
+        '<p style="font-size:12px; color:var(--ink-soft); line-height:1.45; margin:0 0 8px 0;">조직의 공개 업무 진행 상황과 프로젝트 일정을 한눈에 파악하세요.</p>' +
+        '<button type="button" class="portal-guest-btn btn-secondary" style="width:100%; justify-content:center; padding:6px 12px; font-size:12.5px;" onclick="showTab(\'dash\')">업무 보드 열기 →</button>' +
+      '</div>' +
+    '</div>';
+
+  } else if(role === "member" || role === "viewer"){
+    // Member: My Tasks & Department Tasks
+    var myTasks = allRecords.filter(function(r){
+      var isMine = (r.assignee === userName || (user && r.assignee === user.id) || (r.all_assignees && r.all_assignees.indexOf(userName) !== -1));
+      var isNotDone = r.status !== "done" && r.status !== "completed";
+      return isMine && isNotDone;
+    });
+
+    var deptTasks = allRecords.filter(function(r){
+      return userOrg ? (r.org === userOrg) : true;
+    }).slice(0, 5);
+
+    // Card 1: My Tasks
+    cardsHtml += '<div class="portal-widget-card">' +
+      '<div class="portal-card-header">' +
+        '<h3 class="portal-card-title">📌 내 진행 중인 업무</h3>' +
+        '<span class="portal-counter">' + myTasks.length + '건</span>' +
+      '</div>' +
+      '<div class="portal-card-body">' +
+        (myTasks.length === 0
+          ? '<div class="portal-empty-state"><div class="portal-empty-icon">🎉</div><div>진행 중인 배정 업무가 없습니다.</div></div>'
+          : '<div class="portal-task-list">' + myTasks.slice(0, 5).map(renderPortalTaskItem).join("") + '</div>'
+        ) +
+      '</div>' +
+      '<div class="portal-widget-footer">' +
+        '<a href="javascript:void(0)" onclick="showTab(\'dash\')">업무 보드에서 전체 확인하기 →</a>' +
+      '</div>' +
+    '</div>';
+
+    // Card 2: Dept Tasks
+    var deptLabel = userOrg ? (typeof orgLabel === "function" ? orgLabel(userOrg) : userOrg) : "전체";
+    cardsHtml += '<div class="portal-widget-card">' +
+      '<div class="portal-card-header">' +
+        '<h3 class="portal-card-title">🏢 ' + escapeFn(deptLabel) + ' 팀 업무 현황</h3>' +
+        '<span class="portal-counter">' + deptTasks.length + '건</span>' +
+      '</div>' +
+      '<div class="portal-card-body">' +
+        (deptTasks.length === 0
+          ? '<div class="portal-empty-state"><div class="portal-empty-icon">📂</div><div>등록된 팀 업무가 없습니다.</div></div>'
+          : '<div class="portal-task-list">' + deptTasks.map(renderPortalTaskItem).join("") + '</div>'
+        ) +
+      '</div>' +
+      '<div class="portal-widget-footer">' +
+        '<a href="javascript:void(0)" onclick="showTab(\'dash\')">팀 전체 업무 보기 →</a>' +
+      '</div>' +
+    '</div>';
+
+  } else if(role === "manager"){
+    // Manager: Pending Approvals & Dept Overview Stats
+    var reviewTasks = allRecords.filter(function(r){
+      var isReview = (r.status === "review" || r.status === "pending" || r.status_review);
+      var matchOrg = userOrg ? (r.org === userOrg) : true;
+      return isReview && matchOrg;
+    });
+
+    var deptRecords = userOrg ? allRecords.filter(function(r){ return r.org === userOrg; }) : allRecords;
+    var inprogCount = deptRecords.filter(function(r){ return r.status === "inprogress" || r.status === "inprog" || r.status === "doing"; }).length;
+    var delayedCount = deptRecords.filter(function(r){ return r.status === "delayed"; }).length;
+    var doneCount = deptRecords.filter(function(r){ return r.status === "done" || r.status === "completed"; }).length;
+
+    // Card 1: Pending Approvals
+    cardsHtml += '<div class="portal-widget-card">' +
+      '<div class="portal-card-header">' +
+        '<h3 class="portal-card-title">⏳ 결재 / 검토 대기 업무</h3>' +
+        '<span class="portal-counter ' + (reviewTasks.length > 0 ? 'warning' : '') + '">' + reviewTasks.length + '건</span>' +
+      '</div>' +
+      '<div class="portal-card-body">' +
+        (reviewTasks.length === 0
+          ? '<div class="portal-empty-state"><div class="portal-empty-icon">✅</div><div>모든 검토가 완료되었습니다. 대기 중인 업무가 없습니다.</div></div>'
+          : '<div class="portal-task-list">' + reviewTasks.slice(0, 5).map(renderPortalTaskItem).join("") + '</div>'
+        ) +
+      '</div>' +
+      '<div class="portal-widget-footer">' +
+        '<a href="javascript:void(0)" onclick="showTab(\'dash\')">보드에서 결재 진행하기 →</a>' +
+      '</div>' +
+    '</div>';
+
+    // Card 2: Department Health & Overview Stats
+    var deptLabel = userOrg ? (typeof orgLabel === "function" ? orgLabel(userOrg) : userOrg) : "부서";
+    cardsHtml += '<div class="portal-widget-card">' +
+      '<div class="portal-card-header">' +
+        '<h3 class="portal-card-title">📊 ' + escapeFn(deptLabel) + ' 업무 지표</h3>' +
+        '<span class="portal-counter">' + deptRecords.length + '건</span>' +
+      '</div>' +
+      '<div class="portal-card-body">' +
+        '<div class="portal-stat-grid">' +
+          '<div class="portal-stat-item"><span class="portal-stat-num" style="color:#2563eb;">' + inprogCount + '</span><span class="portal-stat-lbl">진행 중</span></div>' +
+          '<div class="portal-stat-item"><span class="portal-stat-num" style="color:#d97706;">' + reviewTasks.length + '</span><span class="portal-stat-lbl">검토 대기</span></div>' +
+          '<div class="portal-stat-item"><span class="portal-stat-num" style="color:#dc2626;">' + delayedCount + '</span><span class="portal-stat-lbl">지연/병목</span></div>' +
+          '<div class="portal-stat-item"><span class="portal-stat-num" style="color:#059669;">' + doneCount + '</span><span class="portal-stat-lbl">완료</span></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="portal-widget-footer">' +
+        '<a href="javascript:void(0)" onclick="showTab(\'history\')">주간 업무 보고서 작성 및 확인 →</a>' +
+      '</div>' +
+    '</div>';
+
+  } else if(role === "admin"){
+    // Admin: System-wide Reviews & System Overview
+    var globalReviews = allRecords.filter(function(r){
+      return (r.status === "review" || r.status === "pending" || r.status_review);
+    });
+
+    var urgentTasks = allRecords.filter(function(r){
+      return (r.priority === "urgent" || r.priority === "high" || r.status === "delayed") && (r.status !== "done" && r.status !== "completed");
+    });
+
+    var inprogAll = allRecords.filter(function(r){ return r.status === "inprogress" || r.status === "inprog" || r.status === "doing"; }).length;
+    var doneAll = allRecords.filter(function(r){ return r.status === "done" || r.status === "completed"; }).length;
+
+    // Card 1: Global Reviews
+    cardsHtml += '<div class="portal-widget-card">' +
+      '<div class="portal-card-header">' +
+        '<h3 class="portal-card-title">⏳ 전사 검토 / 승인 대기</h3>' +
+        '<span class="portal-counter ' + (globalReviews.length > 0 ? 'warning' : '') + '">' + globalReviews.length + '건</span>' +
+      '</div>' +
+      '<div class="portal-card-body">' +
+        (globalReviews.length === 0
+          ? '<div class="portal-empty-state"><div class="portal-empty-icon">✅</div><div>전사 검토 대기 건이 없습니다.</div></div>'
+          : '<div class="portal-task-list">' + globalReviews.slice(0, 5).map(renderPortalTaskItem).join("") + '</div>'
+        ) +
+      '</div>' +
+      '<div class="portal-widget-footer">' +
+        '<a href="javascript:void(0)" onclick="showTab(\'dash\')">전체 보드 바로가기 →</a>' +
+      '</div>' +
+    '</div>';
+
+    // Card 2: System Health & Overview
+    cardsHtml += '<div class="portal-widget-card">' +
+      '<div class="portal-card-header">' +
+        '<h3 class="portal-card-title">⚙️ 시스템 현황 & 데이터 지표</h3>' +
+        '<span class="portal-counter">정상 가동</span>' +
+      '</div>' +
+      '<div class="portal-card-body">' +
+        '<div class="portal-stat-grid">' +
+          '<div class="portal-stat-item"><span class="portal-stat-num">' + allRecords.length + '</span><span class="portal-stat-lbl">총 업무 건수</span></div>' +
+          '<div class="portal-stat-item"><span class="portal-stat-num" style="color:#2563eb;">' + inprogAll + '</span><span class="portal-stat-lbl">진행 중</span></div>' +
+          '<div class="portal-stat-item"><span class="portal-stat-num" style="color:#dc2626;">' + urgentTasks.length + '</span><span class="portal-stat-lbl">긴급/지연</span></div>' +
+          '<div class="portal-stat-item"><span class="portal-stat-num" style="color:#059669;">' + doneAll + '</span><span class="portal-stat-lbl">완료 누적</span></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="portal-widget-footer">' +
+        '<a href="javascript:void(0)" onclick="showTab(\'settings\')">시스템 설정 및 사용자 관리 →</a>' +
+      '</div>' +
+    '</div>';
+  }
+
+  gridEl.innerHTML = cardsHtml;
+
+  // Add click handlers to task items
+  var taskItems = gridEl.querySelectorAll(".portal-task-item");
+  taskItems.forEach(function(item){
+    item.addEventListener("click", function(){
+      var tid = item.getAttribute("data-task-id");
+      if(tid && typeof window.showIssueInCanvas === "function"){
+        window.showIssueInCanvas(tid);
+      }
+    });
+  });
+
+  // Guest login button
+  var guestLoginBtn = document.getElementById("portalGuestLoginBtn");
+  if(guestLoginBtn){
+    guestLoginBtn.addEventListener("click", function(e){
+      e.preventDefault();
+      window.location.href = "/login";
+    });
+  }
+}
+
+// Make functions available globally
+window.renderHomeQuickActions = renderHomeQuickActions;
+window.renderHomePortalSection = renderHomePortalSection;
+
+// Initialize Refresh button
+(function initHomePortalRefresh(){
+  var btn = document.getElementById("homePortalRefreshBtn");
+  if(!btn) return;
+  btn.addEventListener("click", function(e){
+    e.preventDefault();
+    btn.classList.add("spinning");
+    if(typeof loadRecords === "function"){
+      loadRecords().then(function(){
+        renderHomePortalSection();
+      }).finally(function(){
+        setTimeout(function(){ btn.classList.remove("spinning"); }, 400);
+      });
+    } else {
+      renderHomePortalSection();
+      setTimeout(function(){ btn.classList.remove("spinning"); }, 400);
+    }
+  });
 })();
+
+// Auto-run on script load
+try {
+  renderHomeQuickActions();
+  renderHomePortalSection();
+} catch(e){}
+
 
 // ==========================================================================
 // REALTIME INTERACTIVE CANVAS BACKGROUND ANIMATION

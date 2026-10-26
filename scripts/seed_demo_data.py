@@ -276,12 +276,22 @@ def run_seed():
         lounge_msgs
     )
 
-    print("[8/8] Seeding Enterprise License & Initial Audit Logs...")
+    print("[8/8] Seeding Enterprise Trial License & Initial Audit Logs...")
+    # Trial license is a signed artifact kept in licenses/trial-50.lic; never
+    # hardcode an unsigned license string (it would be rejected at runtime).
+    trial_license_key = ""
+    trial_license_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "licenses", "trial-50.lic")
+    try:
+        with open(trial_license_path, "r", encoding="utf-8") as f:
+            trial_license_key = f.read().strip()
+    except Exception as e:
+        print(f"  [WARN] trial license not found ({trial_license_path}): {e}")
+
     cur.execute(
         """INSERT INTO license_info (id, customer_name, license_key, max_seats, expiry_date, modules_json, is_active, updated_at)
-           VALUES (1, '주식회사 아르고스 솔루션즈', 'ARGOS-KOREA-ENT-2026-LOCAL', 50, '2029-12-31',
-                   '[\"canvas\",\"rag\",\"jira\",\"pim\",\"schedule\",\"audit\"]', 1, ?)""",
-        (now_iso,)
+           VALUES (1, 'Argos Enterprise Trial', ?, 50, '2027-12-31',
+                   '[\"canvas\",\"pim\",\"jira\",\"rag\",\"schedule\",\"audit\"]', 1, ?)""",
+        (trial_license_key, now_iso)
     )
 
     audit_logs = [

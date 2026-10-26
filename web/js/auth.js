@@ -34,7 +34,11 @@ function updateSubmitAvailability(){
 }
 
 function fillSubmitterFromLogin(){
-  if(orgSelect) orgSelect.value = loggedInUser.org;
+  var isMgr = Boolean(isAdm || (loggedInUser && (loggedInUser.role === 'manager' || loggedInUser.role === 'admin')));
+  if(orgSelect) {
+    orgSelect.value = loggedInUser.org;
+    orgSelect.disabled = !isMgr;
+  }
   if(submitterField) submitterField.value = loggedInUser.name + " (" + orgLabel(loggedInUser.org) + ")" + (loggedInUser.email ? " · " + loggedInUser.email : "");
   if(typeof populateCatSelect === "function") populateCatSelect(loggedInUser.org);
   if(typeof populateParentKeySelect === "function") populateParentKeySelect(loggedInUser.org);
@@ -138,6 +142,7 @@ function applyLogin(user){
   // Ensure token is never stored in JS user profile
   if (user.token) delete user.token;
   loggedInUser = user;
+  window.loggedInUser = user;
 
   var isAdm = Boolean(user.isAdmin || user.role === 'admin' || user.is_admin);
   user.isAdmin = isAdm;
@@ -205,21 +210,30 @@ function applyLogin(user){
     addSchedBtn.style.display = viewerOnly ? "none" : "";
   }
 
-  // Nút "제품 수정" chỉ hiển thị với Admin hoặc Manager phòng Sales/Biz/Exec/Management
+  // Nút "제품 수정" và "새 제품 등록" chỉ hiển thị với Admin hoặc Manager
   var pimEditBtn = document.getElementById("pimModalEditBtn");
   if(pimEditBtn){
     pimEditBtn.hidden = !(typeof canModifyPimUser === "function" && canModifyPimUser());
+  }
+  var pimNewBtnEl = document.getElementById("pimNewBtn");
+  if(pimNewBtnEl){
+    var canModPim = (typeof canModifyPimUser === "function") && canModifyPimUser();
+    pimNewBtnEl.style.display = canModPim ? "" : "none";
+    pimNewBtnEl.hidden = !canModPim;
   }
 
   if(!el.schedule.hidden && typeof loadSchedule === "function") loadSchedule();
   if(el.history && !el.history.hidden && typeof loadHistoryActivities === "function") loadHistoryActivities();
   if(typeof renderDeptCards === "function") renderDeptCards();
+  if(typeof renderHomePortalSection === "function") renderHomePortalSection();
+  if(typeof renderHomeQuickActions === "function") renderHomeQuickActions();
 }
 
 function applyLogout(){
   var wasLoggedIn = Boolean(loggedInUser || localStorage.getItem("argosUser") || sessionStorage.getItem("argosUser"));
   var csrfToken = sessionStorage.getItem("argosCsrfToken") || localStorage.getItem("argosCsrfToken") || "";
   loggedInUser = null;
+  window.loggedInUser = null;
 
   // 1. Send server logout request with current CSRF token before clearing storage
   var logoutPromise = Promise.resolve();
@@ -292,12 +306,16 @@ function applyLogout(){
 
   if(el.schedule && !el.schedule.hidden && typeof renderSchedule === "function"){ schedEvents = []; renderSchedule(); }
   if(typeof renderDeptCards === "function") renderDeptCards();
+  if(typeof renderHomePortalSection === "function") renderHomePortalSection();
+  if(typeof renderHomeQuickActions === "function") renderHomeQuickActions();
 
   return logoutPromise;
 }
 
 var _authExpiredDebounce = null;
 function handleAuthExpired(){
+  var wasLoggedIn = Boolean(loggedInUser || localStorage.getItem("argosUser") || sessionStorage.getItem("argosUser"));
+  if (!wasLoggedIn) return;
   if (_authExpiredDebounce) return;
   _authExpiredDebounce = setTimeout(function(){ _authExpiredDebounce = null; }, 4000);
   applyLogout();
@@ -316,7 +334,7 @@ idForm.addEventListener("submit", function(e){
   var org = idOrgSelect.value;
   var email = idEmailInput.value.trim();
   if(!name || !org){
-    idFormError.textContent = "이름과 업무 카테고리를 입력해주세요.";
+    idFormError.textContent = "이름과 소속 부서를 입력해주세요.";
     return;
   }
 

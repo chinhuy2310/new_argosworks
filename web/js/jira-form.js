@@ -21,9 +21,25 @@ var participantsSelect = document.getElementById("participantsSelect");
 var prioritySelect = document.getElementById("prioritySelect");
 
 function updatePrioritySelectColor(selectEl){
+  if(window.updatePrioritySelectColor && window.updatePrioritySelectColor !== updatePrioritySelectColor){
+    return window.updatePrioritySelectColor(selectEl);
+  }
   if(!selectEl) return;
-  var colors = { "낮음": "#22c55e", "보통": "#eab308", "높음": "#f97316", "긴급": "#ef4444" };
-  selectEl.style.color = colors[selectEl.value] || "#eab308";
+  var isDark = document.documentElement.getAttribute("data-theme") === "dark" ||
+    (!document.documentElement.getAttribute("data-theme") && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  var colors = isDark ? {
+    "낮음": "#4ade80",
+    "보통": "#facc15",
+    "높음": "#fb923c",
+    "긴급": "#f87171"
+  } : {
+    "낮음": "#16a34a",
+    "보통": "#ca8a04",
+    "높음": "#ea580c",
+    "긴급": "#dc2626"
+  };
+  var val = (selectEl.value || "보통").trim();
+  selectEl.style.color = colors[val] || (isDark ? "#facc15" : "#ca8a04");
   selectEl.style.fontWeight = "600";
 }
 

@@ -13,6 +13,7 @@ function isCurrentUserManagerOrAdmin(){
 window.isCurrentUserManagerOrAdmin = isCurrentUserManagerOrAdmin;
 
 function getCurrentUser(){
+  if(typeof window.loggedInUser !== "undefined" && window.loggedInUser) return window.loggedInUser;
   if(typeof loggedInUser !== "undefined" && loggedInUser) return loggedInUser;
   try {
     var saved = sessionStorage.getItem("argosUser") || localStorage.getItem("argosUser") || sessionStorage.getItem("jarvisUser") || localStorage.getItem("jarvisUser") || sessionStorage.getItem("batonUser") || localStorage.getItem("batonUser");
@@ -45,11 +46,9 @@ function showTab(which, updateHash){
 
   if(which === "chat" && !getCurrentUser()){
     showToast("로그인 후 이용할 수 있는 기능입니다. 먼저 로그인해 주세요.");
-    if(idForm && idForm.hidden){
-      idForm.hidden = false;
-      if(typeof resetIdForm === "function") resetIdForm();
-      if(idNameInput) idNameInput.focus();
-    }
+    setTimeout(function(){
+      window.location.href = "/login";
+    }, 800);
     showTab("home");
     return;
   }
@@ -115,6 +114,8 @@ function showTab(which, updateHash){
   if(which === "home") {
     if(typeof resumeHomeBgAnimation === "function") resumeHomeBgAnimation();
     if(typeof triggerHomeBrandAnimation === "function") triggerHomeBrandAnimation();
+    if(typeof renderHomePortalSection === "function") renderHomePortalSection();
+    if(typeof renderHomeQuickActions === "function") renderHomeQuickActions();
   } else {
     if(typeof pauseHomeBgAnimation === "function") pauseHomeBgAnimation();
     if(typeof stopHomeBrandAnimation === "function") stopHomeBrandAnimation();
@@ -299,6 +300,10 @@ function initDaouSidebarAndTheme(){
       document.documentElement.setAttribute("data-theme", nextTheme);
       localStorage.setItem("jarvisTheme", nextTheme);
       updateThemeIcon();
+      var pri = document.getElementById("prioritySelect");
+      if(pri && typeof window.updatePrioritySelectColor === "function"){
+        window.updatePrioritySelectColor(pri);
+      }
     });
   }
 

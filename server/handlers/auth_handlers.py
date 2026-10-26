@@ -327,7 +327,7 @@ def handle_account_update_profile(handler, raw_body, ip):
     from db import get_one, execute, transaction
     # Find current user row by name/email/dept from session
     user_row = get_one(
-        "SELECT id, username, name, dept_id, email, avatar_url, salt, password_hash, is_admin FROM users WHERE (name = ? AND dept_id = ?) OR (email != '' AND email = ?) LIMIT 1",
+        "SELECT id, username, name, dept_id, email, avatar_url, salt, password_hash, iterations, is_admin FROM users WHERE (name = ? AND dept_id = ?) OR (email != '' AND email = ?) LIMIT 1",
         (cur_name, cur_org, cur_email)
     )
 
@@ -338,6 +338,7 @@ def handle_account_update_profile(handler, raw_body, ip):
     user_id = user_row["id"]
     salt = user_row["salt"]
     pwd_hash = user_row["password_hash"]
+    pwd_iterations = user_row.get("iterations") or 600000
     cur_avatar = user_row.get("avatar_url") or ""
     new_avatar = cur_avatar
 
@@ -368,7 +369,9 @@ def handle_account_update_profile(handler, raw_body, ip):
         if len(new_password) < 8:
             handler._send_json(400, {"ok": False, "error": "보안 강화를 위해 비밀번호는 최소 8자 이상이어야 합니다."})
             return
+        from services.auth import _effective_pbkdf2_rounds
         salt, pwd_hash = hash_password(new_password)
+        pwd_iterations = _effective_pbkdf2_rounds()
 
     if new_org:
         depts = read_departments()
@@ -390,9 +393,9 @@ def handle_account_update_profile(handler, raw_body, ip):
             cur = conn.cursor()
             cur.execute(
                 """UPDATE users 
-                   SET name = ?, email = ?, dept_id = ?, avatar_url = ?, salt = ?, password_hash = ?
+                   SET name = ?, email = ?, dept_id = ?, avatar_url = ?, salt = ?, password_hash = ?, iterations = ?
                    WHERE id = ?""",
-                (new_name, new_email, new_org, new_avatar, salt, pwd_hash, user_id)
+                (new_name, new_email, new_org, new_avatar, salt, pwd_hash, pwd_iterations, user_id)
             )
             # Update current session table via extracted cookie or bearer token
             token = handler._extract_token()

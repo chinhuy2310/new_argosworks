@@ -73,12 +73,11 @@ function isViewerUser(){
 
 function canModifyPimUser(){
   var role = getSessionRole();
-  if (role === "admin") return true;
-  if (role !== "manager") return false;
-  var u = null;
-  try { u = (typeof window.getCurrentUser === "function") ? window.getCurrentUser() : null; } catch(e){}
-  var dept = String((u && (u.org || u.dept_id)) || "").toLowerCase();
-  return ["sales", "biz", "exec", "management", "경영", "영업"].indexOf(dept) !== -1;
+  if (role === "admin" || role === "manager") return true;
+  if (typeof window.isCurrentUserManagerOrAdmin === "function") {
+    return window.isCurrentUserManagerOrAdmin();
+  }
+  return false;
 }
 
 window.getSessionRole = getSessionRole;
@@ -174,13 +173,20 @@ function showToast(msg, duration, isError){
 
 window.updatePrioritySelectColor = function(selectEl){
   if(!selectEl) return;
-  var colors = {
-    "낮음": "#22c55e",
-    "보통": "#eab308",
-    "높음": "#f97316",
-    "긴급": "#ef4444"
+  var isDark = document.documentElement.getAttribute("data-theme") === "dark" ||
+    (!document.documentElement.getAttribute("data-theme") && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  var colors = isDark ? {
+    "낮음": "#4ade80",
+    "보통": "#facc15",
+    "높음": "#fb923c",
+    "긴급": "#f87171"
+  } : {
+    "낮음": "#16a34a",
+    "보통": "#ca8a04",
+    "높음": "#ea580c",
+    "긴급": "#dc2626"
   };
   var val = (selectEl.value || "보통").trim();
-  selectEl.style.color = colors[val] || "#eab308";
+  selectEl.style.color = colors[val] || (isDark ? "#facc15" : "#ca8a04");
   selectEl.style.fontWeight = "600";
 };

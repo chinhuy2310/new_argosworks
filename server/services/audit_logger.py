@@ -65,6 +65,56 @@ def log_audit(session_or_user=None, ip=None, action="", target_type="", target_i
     except Exception as e:
         logger.error(f"[AuditLogger] Failed to write audit log: {e}")
 
+def build_audit_export(logs, export_format="csv"):
+    """
+    Serialize audit log rows for download.
+
+    - CSV is UTF-8 with BOM so Excel opens Korean/Vietnamese text correctly.
+    - Cells starting with = + - @ are prefixed with an apostrophe to block CSV
+      formula injection (audit details can contain user-controlled text).
+    Returns (bytes, content_type, file_extension).
+    """
+    fmt = (export_format or "csv").strip().lower()
+
+    if fmt == "json":
+        payload = json.dumps(logs, ensure_ascii=False, indent=2, default=str)
+        return payload.encode("utf-8"), "application/json; charset=utf-8", "json"
+
+    import csv
+    import io
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\r\n")
+    writer.writerow([
+        "timestamp", "username", "dept_id", "ip", "action",
+        "target_type", "target_id", "details_json"
+    ])
+
+    def _safe(value):
+        text = "" if value is None else str(value)
+        if text[:1] in ("=", "+", "-", "@", "\t", "\r"):
+            text = "'" + text
+        return text
+
+    for row in logs:
+        details = row.get("details_json")
+        if not details and isinstance(row.get("details"), (dict, list)):
+            details = json.dumps(row["details"], ensure_ascii=False)
+        writer.writerow([
+            _safe(row.get("timestamp")),
+            _safe(row.get("username")),
+            _safe(row.get("dept_id")),
+            _safe(row.get("ip")),
+            _safe(row.get("action")),
+            _safe(row.get("target_type")),
+            _safe(row.get("target_id")),
+            _safe(details),
+        ])
+
+    # UTF-8 BOM keeps Excel from mangling non-ASCII audit content.
+    return ("\ufeff" + buffer.getvalue()).encode("utf-8"), "text/csv; charset=utf-8", "csv"
+
+
 def get_audit_logs(limit=100, action=None, username=None, user_name=None, target_type=None, from_date=None, to_date=None):
     """Query recent audit logs with optional filters."""
     if username is None and user_name is not None:

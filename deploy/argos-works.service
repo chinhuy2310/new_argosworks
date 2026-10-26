@@ -1,0 +1,57 @@
+# =============================================================================
+# ARGOS WORKS — systemd unit (Linux / on-premise)
+#
+# Install:
+#   sudo useradd --system --home /opt/argos-works --shell /usr/sbin/nologin argos
+#   sudo mkdir -p /opt/argos-works && sudo chown -R argos:argos /opt/argos-works
+#   # copy the release bundle into /opt/argos-works, then:
+#   sudo cp deploy/argos-works.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now argos-works
+#   sudo systemctl status argos-works
+#
+# Logs: journalctl -u argos-works -f
+# =============================================================================
+[Unit]
+Description=ARGOS WORKS — On-premise Knowledge & Work Platform
+Documentation=https://github.com/argos-works
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=argos
+Group=argos
+WorkingDirectory=/opt/argos-works
+
+# Environment file holds ARGOS_MASTER_KEY, DATABASE_URL, SESSION_TTL_HOURS, ...
+# Keep it root:argos 0640 — it contains secrets.
+EnvironmentFile=/opt/argos-works/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=HOST=0.0.0.0
+Environment=PORT=8080
+
+# waitress is a production WSGI server that works on Windows and Linux.
+ExecStart=/opt/argos-works/.venv/bin/python -m waitress --listen=0.0.0.0:8080 server.wsgi:application
+ExecReload=/bin/kill -HUP $MAINPID
+
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+# --- Hardening -------------------------------------------------------------
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/argos-works/data /opt/argos-works/logs
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryMax=4G
+
+[Install]
+WantedBy=multi-user.target

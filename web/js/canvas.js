@@ -423,6 +423,40 @@
       titleEl.textContent = displayBadge;
     }
 
+    // RBAC: Quyen sua the (Chi Admin, Manager cung phong ban, hoac Assignee truc tiep)
+    var curUser = (typeof getCurrentUser === "function") ? getCurrentUser() : null;
+    var canEditRecord = false;
+    if(curUser){
+      var curRole = curUser.role || (curUser.isAdmin || curUser.is_admin ? "admin" : "member");
+      if(curRole === "admin" || curUser.isAdmin || curUser.is_admin){
+        canEditRecord = true;
+      } else if(curRole !== "viewer"){
+        var uId = String(curUser.id || curUser.user_id || "");
+        var uName = String(curUser.name || "").trim().toLowerCase();
+        var uUsername = String(curUser.username || "").trim().toLowerCase();
+        var uDept = String(curUser.dept_id || curUser.org || "").trim().toLowerCase();
+
+        var rDept = String(d.dept_id || d.org || "").trim().toLowerCase();
+        var rAssigneeId = String(d.assignee_id || "");
+        var rAssignee = String(d.assignee_name || d.assignee || "").trim().toLowerCase();
+
+        if(curRole === "manager" && uDept && rDept && uDept === rDept){
+          canEditRecord = true;
+        } else if(uId && rAssigneeId && uId === rAssigneeId){
+          canEditRecord = true;
+        } else if(uUsername && rAssignee && uUsername === rAssignee){
+          canEditRecord = true;
+        } else if(uName && rAssignee && uName === rAssignee){
+          canEditRecord = true;
+        }
+      }
+    }
+
+    var headerEditBtn = document.getElementById("btnCanvasEditTask");
+    if(headerEditBtn){
+      headerEditBtn.style.display = canEditRecord ? "inline-flex" : "none";
+    }
+
     var rawStart = d.startDate || d.start_date || null;
     var rawDue = d.dueDate || d.due_date || null;
     var sDate = cleanDate(rawStart);
@@ -533,15 +567,28 @@
 
     // 4. Action Buttons Template (Choivis Style)
     // ARGOS WORKS hỗ trợ phả hệ đa tầng (N-levels hierarchy): mọi thẻ đều có thể tạo công việc con
-    var canCreateSubtask = true;
+    var canCreateSubtask = false;
+    if(curUser && curRole !== "viewer"){
+      if(curRole === "admin"){
+        canCreateSubtask = true;
+      } else {
+        var uDept = String(curUser.dept_id || curUser.org || "").trim().toLowerCase();
+        var rDept = String(d.dept_id || d.org || "").trim().toLowerCase();
+        if(uDept && rDept && uDept === rDept){
+          canCreateSubtask = true;
+        }
+      }
+    }
 
     var actionButtons = "";
     var actionBtnList = [];
 
     // Comprehensive Edit Button (Title, Assignee, Participants, Dates, Memo)
+    if(canEditRecord){
     actionBtnList.push(
       '<button type="button" onclick="window.openEditRecordModal(\'' + escapeHtml(key) + '\')" class="canvas-action-btn canvas-btn-edit" title="업무 수정 (담당자, 참여자, 제목, 내용, 마감일)" style="display:inline-flex; align-items:center; gap:5px; background:var(--accent-2, #0284c7); color:#ffffff; border:none; padding:6px 13px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; box-shadow:0 1px 4px rgba(2, 132, 199, 0.25);"><span style="font-size:12.5px;">✏️</span> 수정</button>'
     );
+    }
 
     // Local Record (Not on Jira): Provide "Push to Jira" and "Delete" buttons
     // [요구사항] 'Jira로 내보내기' 버튼은 관리자가 Jira 연동을 활성화하고 연결 오류가 없을 때에만 표시
@@ -887,9 +934,15 @@
 
         // Status & Assignee Pills (Bên trên chỉ có nhãn tên người đảm nhận thẻ đó)
         '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">' +
-          '<span style="padding:4px 12px; border-radius:12px; font-size:12px; font-weight:600; background:' + statusColor + '18; color:' + statusColor + '; border:1px solid ' + statusColor + '40; cursor:pointer;" title="상태 변경 (클릭)" onclick="window.toggleStatusDropdown(\'' + escapeHtml(key) + '\', this)">' +
-            escapeHtml(displayStatus) + ' ▾' +
-          '</span>' +
+          (canEditRecord ? (
+            '<span style="padding:4px 12px; border-radius:12px; font-size:12px; font-weight:600; background:' + statusColor + '18; color:' + statusColor + '; border:1px solid ' + statusColor + '40; cursor:pointer;" title="상태 변경 (클릭)" onclick="window.toggleStatusDropdown(\'' + escapeHtml(key) + '\', this)">' +
+              escapeHtml(displayStatus) + ' ▾' +
+            '</span>'
+          ) : (
+            '<span style="padding:4px 12px; border-radius:12px; font-size:12px; font-weight:600; background:' + statusColor + '18; color:' + statusColor + '; border:1px solid ' + statusColor + '40;">' +
+              escapeHtml(displayStatus) +
+            '</span>'
+          )) +
           '<span style="padding:4px 12px; border-radius:12px; font-size:12px; background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-light);">' +
             '👤 ' + escapeHtml(displayAssignee) +
           '</span>' +
@@ -960,7 +1013,14 @@
         isMgr = true;
       }
     }
-    var canComplete = isAdm || isMgr;
+    var record = (window.records || []).find(function(r){ return String(r.id) === String(issueKey) || (r.cardCode && r.cardCode === issueKey) || (r.jira && r.jira.key === issueKey); });
+    var isSameDept = false;
+    if(curUser && record){
+      var uDept = String(curUser.dept_id || curUser.org || "").trim().toLowerCase();
+      var rDept = String(record.dept_id || record.org || "").trim().toLowerCase();
+      if(uDept && rDept && uDept === rDept) isSameDept = true;
+    }
+    var canComplete = isAdm || (isMgr && isSameDept);
 
     var rect = badgeEl.getBoundingClientRect();
     var statuses = [
@@ -1213,6 +1273,10 @@
             extraMsg = " (상위 " + res.pushed_parents.length + "개 작업도 함께 발행됨)";
           }
           if(typeof showToast === "function") showToast("🚀 " + jKey + " 티켓으로 성공적으로 발행되었습니다!" + extraMsg);
+          // 담당자/필드가 Jira 정책상 빠졌을 수 있으므로 서버가 준 안내를 함께 표시한다.
+          if(res.note && typeof showToast === "function"){
+            setTimeout(function(){ showToast("ℹ️ " + res.note, 4500); }, 400);
+          }
           if(typeof loadRecords === "function") loadRecords();
           if(typeof cleanupCb === "function") cleanupCb();
           if(res.jira_key){
@@ -1776,6 +1840,38 @@
       if(!key) return;
 
       var d = window.currentCanvasIssueDetail || {};
+      // RBAC Security Check: Kiem tra quyen sua truoc khi mo modal
+      var curUser = (typeof getCurrentUser === "function") ? getCurrentUser() : null;
+      var canEdit = false;
+      if(curUser){
+        var curRole = curUser.role || (curUser.isAdmin || curUser.is_admin ? "admin" : "member");
+        if(curRole === "admin" || curUser.isAdmin || curUser.is_admin){
+          canEdit = true;
+        } else if(curRole !== "viewer"){
+          var uId = String(curUser.id || curUser.user_id || "");
+          var uName = String(curUser.name || "").trim().toLowerCase();
+          var uUsername = String(curUser.username || "").trim().toLowerCase();
+          var uDept = String(curUser.dept_id || curUser.org || "").trim().toLowerCase();
+
+          var rDept = String(d.dept_id || d.org || "").trim().toLowerCase();
+          var rAssigneeId = String(d.assignee_id || "");
+          var rAssignee = String(d.assignee_name || d.assignee || "").trim().toLowerCase();
+
+          if(curRole === "manager" && uDept && rDept && uDept === rDept){
+            canEdit = true;
+          } else if(uId && rAssigneeId && uId === rAssigneeId){
+            canEdit = true;
+          } else if(uUsername && rAssignee && uUsername === rAssignee){
+            canEdit = true;
+          } else if(uName && rAssignee && uName === rAssignee){
+            canEdit = true;
+          }
+        }
+      }
+      if(!canEdit){
+        alert("해당 업무 카드를 수정할 권한이 없습니다.\n(작성자, 담당자 또는 해당 부서의 관리자만 수정 가능합니다)");
+        return;
+      }
       if(d.key !== key && d.cardCode !== key && d.id !== key){
         // Fetch fresh if detail not matching
         if(typeof apiGet === "function"){

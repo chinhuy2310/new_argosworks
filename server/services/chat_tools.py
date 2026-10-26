@@ -576,6 +576,10 @@ def _tool_search_issues(args, current_user, cfg):
 
     records, _cache = merged_records(cfg)
 
+    # RBAC: Filter records strictly by user view permissions before searching & feeding to AI
+    from services.auth import visible_records
+    records = visible_records(current_user, records)
+
     
 
     # If assignee filter is present, filter by assignee or participants
@@ -785,6 +789,8 @@ def _tool_get_issue_details(args, current_user, cfg):
     local_rec = find_record_by_key_or_code(issue_key)
 
     all_merged, _ = merged_records(cfg)
+    from services.auth import visible_records, can_view_record
+    all_merged = visible_records(current_user, all_merged)
 
 
 
@@ -962,6 +968,9 @@ def _tool_get_issue_details(args, current_user, cfg):
 
         return {"found": False, "error": f"'{raw_key}' 업무 카드를 찾을 수 없습니다."}
 
+    if not can_view_record(current_user, target_record):
+        return {"found": False, "error": "해당 업무 카드를 열람할 권한이 없습니다."}
+
 
 
     jira = target_record.get("jira") or {}
@@ -1086,6 +1095,22 @@ def _tool_get_child_issues(args, current_user, cfg):
 
     records, _ = merged_records(cfg)
 
+    # RBAC: Verify parent issue permission and filter child issues
+    from services.auth import visible_records, can_view_record
+    from services.data_store import find_record_by_key_or_code
+
+    parent_rec = find_record_by_key_or_code(parent_key)
+    if not parent_rec:
+        for r in records:
+            k = (r.get("cardCode") or (r.get("jira") or {}).get("key") or "").strip().upper()
+            if k == parent_key:
+                parent_rec = r
+                break
+    if parent_rec and not can_view_record(current_user, parent_rec):
+        return {"parent_key": parent_key, "children": [], "children_count": 0, "error": "해당 상위 업무 카드를 열람할 권한이 없습니다."}
+
+    records = visible_records(current_user, records)
+
     children = []
 
     for r in records:
@@ -1150,7 +1175,7 @@ def _tool_search_internal_records(args, current_user, cfg):
 
 
 
-    from services.auth import visible_records
+    from services.auth import visible_records, visible_schedule_events
 
     all_records = visible_records(current_user)
 
@@ -1176,9 +1201,9 @@ def _tool_search_internal_records(args, current_user, cfg):
 
 
 
-    # Also search local schedule events
+    # Also search local schedule events (RBAC: 부서/본인/참여 일정만 — REST API와 동일 기준)
 
-    schedule_events = read_schedule()
+    schedule_events = visible_schedule_events(current_user, read_schedule())
 
     if resolved_assignee:
 
@@ -1253,6 +1278,10 @@ def _tool_get_active_tasks(args, current_user, cfg):
     
 
     records, _ = merged_records(cfg)
+
+    # RBAC: Filter records strictly by user view permissions before filtering active tasks
+    from services.auth import visible_records
+    records = visible_records(current_user, records)
 
     
 
@@ -1823,6 +1852,19 @@ def _tool_create_issue(args, current_user, cfg):
 
     parent_key = (args.get("parent_key") or "").strip().upper() or None
 
+    # RBAC: 상위 업무 카드에 대한 열람/작업 권한 검증 (타 부서·비공개 카드에 하위 작업 생성 차단)
+    if parent_key:
+        from services.auth import can_view_record
+        from services.data_store import find_record_by_key_or_code as _find_parent
+
+        parent_rec = _find_parent(parent_key)
+        if parent_rec and not can_view_record(current_user, parent_rec):
+            log_line(f"[Security Guard] 권한 없는 상위 카드({parent_key})에 하위 작업 생성 시도 차단: {current_user.get('name')}")
+            return {
+                "success": False,
+                "error": "상위 업무 카드에 접근할 권한이 없어 하위 작업을 생성할 수 없습니다."
+            }
+
     target_status = (args.get("status") or "").strip() or "대기"
 
     start_date = (args.get("start_date") or "").strip() or None
@@ -2227,7 +2269,13 @@ def _tool_get_calendar_schedule(args, current_user, cfg):
 
     
 
-    events = read_schedule() + all_jira_due_date_events(cfg)
+    from services.auth import visible_records, visible_schedule_events
+    from services.jira_client import get_cached_jira_records
+    jira_cache = get_cached_jira_records(cfg)
+    vis_jira_records = visible_records(current_user, jira_cache.get("records") or [])
+    # RBAC: 로컬 일정은 부서/본인/참여 기준으로 필터 (REST /api/schedule 과 동일)
+    local_events = visible_schedule_events(current_user, read_schedule())
+    events = local_events + all_jira_due_date_events(cfg, records=vis_jira_records)
 
     
 
@@ -2326,6 +2374,9 @@ def _tool_schedule_issue(args, current_user, cfg):
 
 
     local_rec = find_record_by_key_or_code(issue_key)
+    from services.auth import can_modify_record
+    if local_rec and not can_modify_record(current_user, local_rec):
+        return {"success": False, "error": "해당 업무 카드의 일정을 변경할 권한이 없습니다."}
 
     jira_enabled = bool(cfg.get("jira", {}).get("enabled", False))
 
@@ -2568,35 +2619,35 @@ def _tool_search_products(args, current_user, cfg):
     if category_filter:
 
         matched = [p for p in matched if category_filter in (p.get("category") or "")]
+    from services.auth import can_view_pim_price
+    allow_price = can_view_pim_price(current_user)
 
-        
+    formatted_products = []
+    for p in matched[:20]:
+        proc = dict(p.get("procurement") or {}) if isinstance(p.get("procurement"), dict) else {}
+        if not allow_price:
+            for pk in ("price", "unitPrice", "cost", "supplierPrice", "targetPrice"):
+                if pk in proc:
+                    proc[pk] = 0
+            proc["priceHidden"] = True
+
+        formatted_products.append({
+            "id": p.get("id"),
+            "model": p.get("model", ""),
+            "displayName": p.get("displayName", ""),
+            "family": p.get("family", ""),
+            "lifecycle": p.get("lifecycle", "판매 중"),
+            "category": p.get("category", "일반"),
+            "summary": p.get("summary", ""),
+            "price": p.get("price") if allow_price else 0,
+            "priceHidden": not allow_price,
+            "procurement": proc if proc else None,
+            "updatedAt": (p.get("updatedAt") or "")[:10]
+        })
 
     return {
-
         "count": len(matched),
-
-        "products": [{
-
-            "id": p.get("id"),
-
-            "model": p.get("model", ""),
-
-            "displayName": p.get("displayName", ""),
-
-            "family": p.get("family", ""),
-
-            "lifecycle": p.get("lifecycle", "판매 중"),
-
-            "category": p.get("category", "일반"),
-
-            "summary": p.get("summary", ""),
-
-            "procurement": p.get("procurement"),
-
-            "updatedAt": (p.get("updatedAt") or "")[:10]
-
-        } for p in matched[:20]]
-
+        "products": formatted_products
     }
 
 
@@ -2642,37 +2693,32 @@ def _tool_get_product_details(args, current_user, cfg):
     if not target:
 
         return {"found": False, "error": f"제품(ID: {product_id}, 모델명: {model})을 찾을 수 없습니다."}
+    from services.auth import can_view_pim_price
+    allow_price = can_view_pim_price(current_user)
 
-        
+    proc = dict(target.get("procurement") or {}) if isinstance(target.get("procurement"), dict) else {}
+    if not allow_price:
+        for pk in ("price", "unitPrice", "cost", "supplierPrice", "targetPrice"):
+            if pk in proc:
+                proc[pk] = 0
+        proc["priceHidden"] = True
 
     return {
-
         "found": True,
-
         "id": target.get("id"),
-
         "model": target.get("model", ""),
-
         "displayName": target.get("displayName", ""),
-
         "family": target.get("family", ""),
-
         "lifecycle": target.get("lifecycle", "판매 중"),
-
         "category": target.get("category", "일반"),
-
         "summary": target.get("summary", ""),
-
         "memo": target.get("memo", ""),
-
         "specs": target.get("specs", {}),
-
-        "procurement": target.get("procurement"),
-
+        "price": target.get("price") if allow_price else 0,
+        "priceHidden": not allow_price,
+        "procurement": proc if proc else None,
         "attachments": [a.get("name") for a in (target.get("attachments") or []) if a.get("name")],
-
         "updatedAt": target.get("updatedAt", "")
-
     }
 
 

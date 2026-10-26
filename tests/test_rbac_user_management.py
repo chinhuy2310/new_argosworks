@@ -1,6 +1,7 @@
 import unittest
 import os
 import sys
+from unittest.mock import patch
 
 # Add server directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "server"))
@@ -116,6 +117,11 @@ class TestDirection2ApprovalWorkflow(unittest.TestCase):
     def setUp(self):
         self._prev_allow_pub = os.environ.get("ALLOW_PUBLIC_REGISTER")
         os.environ["ALLOW_PUBLIC_REGISTER"] = "true"
+        # Licensing (seat limits) is out of scope for the approval workflow tests,
+        # and the local data DB may legitimately be at its seat limit.
+        seat_patcher = patch("services.license_manager.check_seat_available", return_value=(True, ""))
+        seat_patcher.start()
+        self.addCleanup(seat_patcher.stop)
         # Clean test users if left over
         execute("DELETE FROM users WHERE username IN ('test_applicant1', 'test_applicant2')")
         execute("DELETE FROM notifications WHERE content LIKE '%test_applicant%' OR content LIKE '%Applicant%'")
@@ -142,7 +148,8 @@ class TestDirection2ApprovalWorkflow(unittest.TestCase):
             "email": "applicant1@company.com"
         }).encode("utf-8")
 
-        handle_account_register(handler, reg_payload, "127.0.0.1")
+        with patch("services.license_manager.check_seat_available", return_value=(True, "")):
+            handle_account_register(handler, reg_payload, "127.0.0.1")
         self.assertEqual(handler.status_code, 200)
         self.assertTrue(handler.response_body.get("ok"))
         self.assertTrue(handler.response_body.get("pending"))
@@ -201,7 +208,8 @@ class TestDirection2ApprovalWorkflow(unittest.TestCase):
             "password": "Password1234!",
             "email": "applicant2@company.com"
         }).encode("utf-8")
-        handle_account_register(handler, reg_payload, "127.0.0.1")
+        with patch("services.license_manager.check_seat_available", return_value=(True, "")):
+            handle_account_register(handler, reg_payload, "127.0.0.1")
         user_row = get_one("SELECT * FROM users WHERE username = 'test_applicant2'")
         user_id = user_row["id"]
 

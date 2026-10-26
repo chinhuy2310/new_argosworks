@@ -18,6 +18,20 @@ _last_product_id = 0
 # ---------------------------------------------------------------------------
 # Departments
 # ---------------------------------------------------------------------------
+def _clean_custom_cats(val):
+    if not val:
+        return ""
+    s = str(val).strip()
+    if s.startswith("[") and s.endswith("]"):
+        try:
+            parsed = json.loads(s)
+            if isinstance(parsed, list):
+                return ", ".join(str(x).strip().strip('"\'') for x in parsed if str(x).strip())
+        except Exception:
+            pass
+    return s
+
+
 def read_departments():
     """부서 목록을 반환한다."""
     rows = query("SELECT id, name, color_index, local_prefix, jira_key, custom_categories FROM departments ORDER BY rowid")
@@ -35,7 +49,7 @@ def read_departments():
         "colorIndex": r["color_index"],
         "localPrefix": r.get("local_prefix") or "",
         "jiraKey": r.get("jira_key") or "",
-        "customCategories": r.get("custom_categories") or ""
+        "customCategories": _clean_custom_cats(r.get("custom_categories"))
     } for r in rows]
 
 
@@ -115,6 +129,7 @@ def read_records():
     for r in rows:
         rec = {
             "id": r["id"],
+            "dept_id": r["dept_id"],
             "org": r["dept_id"],
             "category": r["category"],
             "title": r["title"],
@@ -134,6 +149,7 @@ def read_records():
             "cardCode": r.get("card_code") or (r.get("jira_key") or f"#{r['id']}"),
             "participants": r.get("participants") or "",
             "parentKey": r.get("parent_key") or "",
+            "is_private": int(r.get("is_private") or 0),
             "is_scheduled": bool(r.get("is_scheduled", 1)),
             "version": int(r.get("version") or 1),
             "updatedAt": r.get("updated_at") or r.get("created_at") or "",
@@ -165,6 +181,7 @@ def get_record_by_id(record_id):
     r = rows[0]
     rec = {
         "id": r["id"],
+        "dept_id": r["dept_id"],
         "org": r["dept_id"],
         "category": r["category"],
         "title": r["title"],
@@ -184,6 +201,7 @@ def get_record_by_id(record_id):
         "cardCode": r.get("card_code") or (r.get("jira_key") or f"#{r['id']}"),
         "participants": r.get("participants") or "",
         "parentKey": r.get("parent_key") or "",
+        "is_private": int(r.get("is_private") or 0),
         "is_scheduled": bool(r.get("is_scheduled", 1)),
         "version": int(r.get("version") or 1),
         "updatedAt": r.get("updated_at") or r.get("created_at") or "",
@@ -409,18 +427,19 @@ def append_record(record):
     if priority not in ("낮음", "보통", "높음", "긴급"):
         priority = "보통"
 
+    is_private_val = 1 if record.get("is_private") else 0
     execute(
         """INSERT INTO records(id, dept_id, category, title, project,
-           assignee_name, assignee_email, start_date, due_date, work_date, summary, tags, memo, status, priority, card_code, participants, parent_key, is_scheduled)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           assignee_name, assignee_email, start_date, due_date, work_date, summary, tags, memo, status, priority, card_code, participants, parent_key, is_scheduled, is_private)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             rec_id,
-            record.get("org", ""),
+            record.get("org", record.get("dept_id", "")),
             record.get("category", ""),
             record.get("title", ""),
             record.get("project", "프로젝트 미지정"),
-            record.get("assignee", ""),
-            record.get("assigneeEmail", ""),
+            record.get("assignee", record.get("assignee_name", "")),
+            record.get("assigneeEmail", record.get("assignee_email", "")),
             start_date,
             due_date,
             work_date,
@@ -433,6 +452,7 @@ def append_record(record):
             participants,
             parent_key,
             is_sched,
+            is_private_val,
         )
     )
 
@@ -927,7 +947,7 @@ def set_record_schedule_visibility(record_id_or_code, is_scheduled=True):
 _UNSET = object()
 
 
-def update_record_details(record_id_or_code, title=None, memo=None, assignee_name=None, assignee_email=None, participants=None, due_date=None, start_date=None, expected_version=None, parent_key=_UNSET, priority=None):
+def update_record_details(record_id_or_code, title=None, memo=None, assignee_name=None, assignee_email=None, participants=None, due_date=None, start_date=None, expected_version=None, parent_key=_UNSET, priority=None, is_private=None):
     """업무 기록의 제목, 상세 내용(메모), 담당자, 참여자, 시작일/마감일을 포괄적으로 수정한다.
     Optimistic Locking (낙관적 락): expected_version이 지정된 경우 DB의 현재 버전과 일치하는지 검증한다."""
     if not record_id_or_code:
@@ -998,6 +1018,10 @@ def update_record_details(record_id_or_code, title=None, memo=None, assignee_nam
         if p_val in ("낮음", "보통", "높음", "긴급"):
             updates.append("priority = ?")
             params.append(p_val)
+
+    if is_private is not None:
+        updates.append("is_private = ?")
+        params.append(1 if is_private else 0)
 
     if parent_key is not _UNSET:
         p_val = str(parent_key or "").strip().upper()

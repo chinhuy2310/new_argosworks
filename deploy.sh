@@ -34,10 +34,8 @@ else
     if [ ! -f .env ]; then
         if command -v openssl &> /dev/null; then
             MASTER_KEY=$(openssl rand -hex 32)
-            LICENSE_SECRET=$(openssl rand -hex 16)
             PG_PASSWORD=$(openssl rand -hex 16)
             sed -e "s|^ARGOS_MASTER_KEY=.*|ARGOS_MASTER_KEY=${MASTER_KEY}|" \
-                -e "s|^ARGOS_LICENSE_SECRET=.*|ARGOS_LICENSE_SECRET=${LICENSE_SECRET}|" \
                 -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${PG_PASSWORD}|" \
                 -e "s|YOUR_STRONG_PASSWORD_HERE|${PG_PASSWORD}|g" \
                 .env.example > .env

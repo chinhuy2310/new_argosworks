@@ -13,7 +13,25 @@ from handlers.setup_handler import (
     handle_post_setup_verify_license, handle_post_setup_complete
 )
 from handlers.auth_handlers import handle_account_login
-from services.license_manager import generate_signed_license_key
+from services.license_manager import generate_signed_license_key, invalidate_license_cache
+
+
+def _make_test_keypair():
+    """Throw-away Ed25519 key pair: the product ships no private key."""
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    from cryptography.hazmat.primitives import serialization
+    private_key = ed25519.Ed25519PrivateKey.generate()
+    priv_hex = private_key.private_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PrivateFormat.Raw,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).hex()
+    pub_hex = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    ).hex()
+    return priv_hex, pub_hex
+
 
 
 class MockHTTPHandler:
@@ -53,6 +71,23 @@ class TestEnterpriseSetupWizard(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         init_db()
+        cls._priv_hex, cls._pub_hex = _make_test_keypair()
+        cls._prev_pub = os.environ.get("ARGOS_LICENSE_PUBLIC_KEY")
+        os.environ["ARGOS_LICENSE_PUBLIC_KEY"] = cls._pub_hex
+        invalidate_license_cache()
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._prev_pub is None:
+            os.environ.pop("ARGOS_LICENSE_PUBLIC_KEY", None)
+        else:
+            os.environ["ARGOS_LICENSE_PUBLIC_KEY"] = cls._prev_pub
+        invalidate_license_cache()
+
+    def _sign(self, customer, seats, expiry, modules):
+        return generate_signed_license_key(
+            customer, seats, expiry, modules, signing_key_hex=self._priv_hex
+        )
 
     def setUp(self):
         from handlers.setup_handler import reset_setup_cache
@@ -60,6 +95,7 @@ class TestEnterpriseSetupWizard(unittest.TestCase):
         # Backup and clear users table for setup test
         self.original_users = query("SELECT * FROM users")
         self.original_sessions = query("SELECT * FROM sessions")
+        self.original_license = get_one("SELECT * FROM license_info WHERE id = 1")
         execute("DELETE FROM sessions")
         execute("DELETE FROM users")
 
@@ -77,6 +113,24 @@ class TestEnterpriseSetupWizard(unittest.TestCase):
                   u["salt"], u["password_hash"], u["is_admin"], u.get("role", "member"),
                   u.get("disabled", 0), u.get("status", "active"), u.get("iterations", 100000),
                   u.get("hash_algo", "pbkdf2_sha256"), u.get("avatar_url", ""), u["created_at"]))
+        # The setup flow activates a license signed with the test key pair; put the
+        # original (real) license row back so later tests are not affected.
+        if self.original_license:
+            execute("""
+                INSERT OR REPLACE INTO license_info
+                    (id, customer_name, license_key, max_seats, expiry_date, modules_json, is_active, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                self.original_license.get("id", 1),
+                self.original_license.get("customer_name", ""),
+                self.original_license.get("license_key", ""),
+                self.original_license.get("max_seats", 0),
+                self.original_license.get("expiry_date", "1970-01-01"),
+                self.original_license.get("modules_json", "[]"),
+                self.original_license.get("is_active", 0),
+                self.original_license.get("updated_at", ""),
+            ))
+        invalidate_license_cache()
 
     def test_setup_status_when_no_users(self):
         self.assertTrue(check_needs_setup())
@@ -96,14 +150,14 @@ class TestEnterpriseSetupWizard(unittest.TestCase):
         self.assertFalse(handler.response_body.get("ok"))
 
         # 2. Trial key (Ed25519 signed)
-        trial_key = generate_signed_license_key("Enterprise Trial", 25, "2099-12-31", ["canvas", "rag"])
+        trial_key = self._sign("Enterprise Trial", 25, "2099-12-31", ["canvas", "rag"])
         handle_post_setup_verify_license(handler, json.dumps({"license_key": trial_key}).encode(), "127.0.0.1")
         self.assertEqual(handler.status_code, 200)
         self.assertTrue(handler.response_body.get("ok"))
         self.assertEqual(handler.response_body["license"]["seats"], 25)
 
         # 3. Valid Signed Ed25519 key
-        signed_key = generate_signed_license_key("Acme Enterprise", 100, "2030-12-31", ["canvas", "rag"])
+        signed_key = self._sign("Acme Enterprise", 100, "2030-12-31", ["canvas", "rag"])
         handle_post_setup_verify_license(handler, json.dumps({"license_key": signed_key}).encode(), "127.0.0.1")
         self.assertEqual(handler.status_code, 200)
         self.assertTrue(handler.response_body.get("ok"))
@@ -115,7 +169,7 @@ class TestEnterpriseSetupWizard(unittest.TestCase):
 
         # Complete setup
         handler = MockHTTPHandler()
-        trial_key = generate_signed_license_key("Enterprise Trial", 25, "2099-12-31", ["canvas", "rag"])
+        trial_key = self._sign("Enterprise Trial", 25, "2099-12-31", ["canvas", "rag"])
         setup_payload = {
             "license_key": trial_key,
             "company_name": "Test Acme Corp",

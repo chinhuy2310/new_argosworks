@@ -294,6 +294,10 @@ function loadSchedule(){
       }
     }
 
+    var isViewer = loggedInUser && loggedInUser.role === "viewer";
+    if (btnSchedOpenCreateModal) {
+      btnSchedOpenCreateModal.style.display = isViewer ? "none" : "";
+    }
     renderMembersList();
     refreshCurrentView();
     renderLocalTaskDrawer();
@@ -870,6 +874,10 @@ if(schedMemo){
 }
 
 function startNewEventForm(dateStr){
+  if(loggedInUser && loggedInUser.role === "viewer"){
+    if(typeof showToast === "function") showToast("조회 전용(Viewer) 권한의 사용자는 일정을 추가할 수 없습니다.", 3000, true);
+    return;
+  }
   schedEditingId = null;
   if(schedEventIdInput) schedEventIdInput.value = "";
   if(schedDateStart) schedDateStart.value = dateStr;
@@ -928,8 +936,15 @@ function startEditEventForm(ev){
 
   var isJira = ev.source === "jira";
   var isLocal = ev.source === "local" || !!ev.cardCode;
-  var isOtherUser = ev.ownerKey && ev.ownerKey !== myUserKey;
-  var isReadOnly = isJira || isOtherUser;
+  var isAdmin = loggedInUser && (loggedInUser.isAdmin || loggedInUser.role === "admin");
+  var isManager = loggedInUser && loggedInUser.role === "manager";
+  var isSameDept = loggedInUser && ev.ownerOrg && (String(loggedInUser.org).toLowerCase() === String(ev.ownerOrg).toLowerCase());
+  var isManagerInDept = isManager && isSameDept;
+  var isOwner = !ev.ownerKey || ev.ownerKey === myUserKey || (loggedInUser && ev.ownerName === loggedInUser.name);
+  var isViewer = loggedInUser && loggedInUser.role === "viewer";
+  var canEditOrDelete = !isViewer && !isJira && (isOwner || isAdmin || isManagerInDept);
+  var isReadOnly = !canEditOrDelete;
+  var isOtherUser = !isOwner;
 
   // Set participants from event
   if(ev.participants && Array.isArray(ev.participants) && ev.participants.length > 0){

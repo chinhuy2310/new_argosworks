@@ -162,7 +162,20 @@ if ENGINE == "sqlite":
                 conn.executescript(schema_script)
                 logger.info("Canonical schema applied successfully.")
 
-
+                # Customer install (ARGOS_FRESH_INSTALL=1) must not inherit the
+                # vendor's demo departments: the setup wizard creates the
+                # customer's own organization chart.
+                if (os.environ.get("ARGOS_FRESH_INSTALL", "").strip().lower() in ("1", "true", "yes", "on")):
+                    try:
+                        user_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+                        record_count = conn.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+                        if user_count == 0 and record_count == 0:
+                            conn.execute(
+                                "DELETE FROM departments WHERE id IN ('mgmt','dev','sales','hr','hq')"
+                            )
+                            logger.info("[db] Fresh-install mode: demo departments removed.")
+                    except Exception as e:
+                        logger.warning(f"[db] Fresh-install cleanup skipped: {e}")
 
                 conn.execute("""
                     INSERT OR IGNORE INTO schema_migrations (version, name)

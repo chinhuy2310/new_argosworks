@@ -177,8 +177,11 @@ due_date: YYYY-MM-DD
 """
 
 
-def _build_system_prompt(user_name, cfg):
-    """시스템 프롬프트를 조립한다."""
+def _build_system_prompt(user_name, cfg, current_user=None):
+    """시스템 프롬프트를 조립한다.
+
+    RBAC: 진행 중 업무 목록도 사용자 열람 권한(visible_records)으로 필터링한 뒤 주입한다.
+    """
     from services.chat_tools import _resolve_assignee_name
     from datetime import timedelta
     now_dt = datetime.now()
@@ -194,7 +197,10 @@ def _build_system_prompt(user_name, cfg):
     active_tasks_section = ""
     try:
         from services.search import merged_records
+        from services.auth import visible_records
         records, _ = merged_records(cfg)
+        if current_user:
+            records = visible_records(current_user, records)
         closed_statuses = {"완료", "done", "closed", "해결됨", "resolved", "종료"}
         r_name_lower = resolved_name.lower()
         ongoing = [
@@ -300,18 +306,28 @@ def _parse_metadata(answer_text):
     return result
 
 
-def _build_referenced_section(keys, cfg):
-    """참조된 업무 카드/이슈 키에 대한 상세 정보를 시스템 프롬프트에 추가한다."""
+def _build_referenced_section(keys, cfg, current_user=None):
+    """참조된 업무 카드/이슈 키에 대한 상세 정보를 시스템 프롬프트에 추가한다.
+
+    RBAC: 현재 사용자가 열람 권한을 가진 카드만 프롬프트에 포함한다 (권한 우회 방지).
+    """
     if not keys:
         return ""
     
     from services.data_store import find_record_by_key_or_code
     from services.search import merged_records
+    from services.auth import visible_records, can_view_record
+    
     records, _ = merged_records(cfg)
+    if current_user:
+        records = visible_records(current_user, records)
     lines = ["## 참조된 업무 카드/이슈 상세 (Referenced Tasks)"]
     for key in keys:
         key_upper = key.upper()
         matched = find_record_by_key_or_code(key_upper)
+        if matched and current_user and not can_view_record(current_user, matched):
+            # 직접 DB 조회 결과가 권한 밖이면 프롬프트에 넣지 않는다 (fail-closed)
+            matched = None
         if not matched:
             for r in records:
                 k = (r.get("cardCode") or (r.get("jira") or {}).get("key") or "").strip().upper()
@@ -421,8 +437,19 @@ def handle_chat_stream(handler, raw_body, ip):
     # 언어 결정: 사용자 질의 언어에 자연스럽게 동기화
     effective_lang = _resolve_conversation_lang(message, history, client_lang)
     
+    # 현재 로그인 사용자 컨텍스트 (프롬프트 구성과 도구 실행에 동일한 RBAC 기준 적용)
+    current_user_ctx = {
+        "id": session.get("id") or session.get("user_id"),
+        "name": user_name,
+        "org": user_org,
+        "dept_id": user_org,
+        "role": session.get("role", "member"),
+        "is_admin": session.get("role") == "admin",
+        "email": session.get("email", "")
+    }
+
     # Build messages for AI
-    system_prompt = _build_system_prompt(user_name, cfg)
+    system_prompt = _build_system_prompt(user_name, cfg, current_user_ctx)
     
     if effective_lang == "vi":
         system_prompt += (
@@ -457,10 +484,10 @@ def handle_chat_stream(handler, raw_body, ip):
             f"=======================================================\n"
         )
     
-    # Check for referenced issue keys
+    # Check for referenced issue keys (RBAC: 열람 권한이 있는 카드만 프롬프트에 주입)
     ref_keys = _extract_referenced_keys(message)
     if ref_keys:
-        ref_section = _build_referenced_section(ref_keys, cfg)
+        ref_section = _build_referenced_section(ref_keys, cfg, current_user_ctx)
         system_prompt = system_prompt.replace(
             'referenced_issues_section=""',
             f'referenced_issues_section="{ref_section}"'
@@ -496,17 +523,7 @@ def handle_chat_stream(handler, raw_body, ip):
         ping_thread = threading.Thread(target=_keep_alive, daemon=True)
         ping_thread.start()
 
-        # Pass full authenticated session (id, role, name, org, email) for proper RBAC enforcement
-        current_user_ctx = {
-            "id": session.get("id") or session.get("user_id"),
-            "name": user_name,
-            "org": user_org,
-            "dept_id": user_org,
-            "role": session.get("role", "member"),
-            "is_admin": session.get("role") == "admin",
-            "email": session.get("email", "")
-        }
-
+        # 인증 세션 기반 사용자 컨텍스트 (이미 위에서 구성됨 — RBAC 일관성 유지)
         answer = run_agent_conversation(
             messages=ai_messages,
             current_user=current_user_ctx,
@@ -749,7 +766,8 @@ def handle_execute_action(handler, raw_body, ip):
                 status="executed",
                 message_id=body.get("message_id") or body.get("messageId"),
                 summary=body.get("summary"),
-                action_type=action_type
+                action_type=action_type,
+                user_name=session["name"]
             )
         except Exception as e:
             log_line("executed 상태 저장 오류:", e)
@@ -783,6 +801,7 @@ def handle_cancel_action(handler, raw_body, ip):
             status="cancelled",
             message_id=message_id,
             summary=summary,
-            action_type=action_type
+            action_type=action_type,
+            user_name=session["name"]
         )
     handler._send_json(200, {"ok": True, "updated": ok})

@@ -375,6 +375,7 @@ class TestAuditRemediationSuite(unittest.TestCase):
         self.assertTrue(is_voyage_configured(cfg_offline_custom))
 
         # Cloud provider without key must NOT be configured
+        # (clear env fallbacks so a developer .env cannot leak a real key into this assertion)
         cfg_cloud_voyage = {
             "voyage": {
                 "enabled": True,
@@ -382,7 +383,10 @@ class TestAuditRemediationSuite(unittest.TestCase):
                 "api_key": ""
             }
         }
-        self.assertFalse(is_voyage_configured(cfg_cloud_voyage))
+        import os as _os
+        from unittest.mock import patch as _patch
+        with _patch.dict(_os.environ, {"VOYAGE_API_KEY": "", "VOYAGE_API_KEYS": ""}):
+            self.assertFalse(is_voyage_configured(cfg_cloud_voyage))
 
     def test_remediation_2_4_trusted_proxy_and_log_masking(self):
         """2.4: 신뢰할 수 없는 프록시의 X-Forwarded-For 위조 방어 및 로그 쿼리스트링 마스킹"""

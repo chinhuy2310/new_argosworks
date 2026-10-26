@@ -342,11 +342,9 @@ function handleChatSubmit(e) {
     if(e && e.preventDefault) e.preventDefault();
     if(typeof getCurrentUser === 'function' && !getCurrentUser()) {
         showToast("로그인 후 이용할 수 있는 기능입니다. 먼저 로그인해 주세요.");
-        if(typeof idForm !== 'undefined' && idForm && idForm.hidden){
-            idForm.hidden = false;
-            if(typeof resetIdForm === 'function') resetIdForm();
-            if(typeof idNameInput !== 'undefined' && idNameInput) idNameInput.focus();
-        }
+        setTimeout(function(){
+            window.location.href = "/login";
+        }, 800);
         return;
     }
 

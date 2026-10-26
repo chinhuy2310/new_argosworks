@@ -13,6 +13,26 @@ import time
 from db import query, get_one, execute, transaction
 
 PBKDF2_ROUNDS = 600000
+
+# 테스트/벤치마크 환경에서만 반복 횟수를 낮출 수 있도록 허용한다.
+# 운영 기본값은 항상 PBKDF2_ROUNDS(600,000)이며, 하한선(1,000) 미만은 무시한다.
+MIN_PBKDF2_ROUNDS = 1000
+MAX_PBKDF2_ROUNDS = 10000000
+
+
+def _effective_pbkdf2_rounds():
+    """ARGOS_PBKDF2_ROUNDS 환경변수가 유효하면 그 값을, 아니면 운영 기본값을 반환한다."""
+    raw = (os.environ.get("ARGOS_PBKDF2_ROUNDS") or "").strip()
+    if raw:
+        try:
+            value = int(raw)
+            if MIN_PBKDF2_ROUNDS <= value <= MAX_PBKDF2_ROUNDS:
+                return value
+        except Exception:
+            pass
+    return PBKDF2_ROUNDS
+
+
 SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE_DIR = os.path.dirname(SERVER_DIR)
 
@@ -104,7 +124,7 @@ def get_user_by_login(login_id, org=None):
     return None
 
 
-def create_user(name, username, org, email, salt, hash_pwd, role="member", is_admin=False, status="active", disabled=0, hash_algo="pbkdf2_sha256", iterations=PBKDF2_ROUNDS):
+def create_user(name, username, org, email, salt, hash_pwd, role="member", is_admin=False, status="active", disabled=0, hash_algo="pbkdf2_sha256", iterations=None):
     """
     단일 사용자를 원자적(Atomic)으로 생성한다.
     동시성 요청 시 Race Condition 및 중복 username/email을 DB 제약조건과 함께 안전하게 방어한다.
@@ -113,6 +133,9 @@ def create_user(name, username, org, email, salt, hash_pwd, role="member", is_ad
     username = (username or name).strip()
     org = (org or "").strip()
     email = (email or "").strip()
+
+    if iterations is None:
+        iterations = _effective_pbkdf2_rounds()
 
     if not username:
         raise ValueError("아이디(Username)를 입력해주세요.")
@@ -237,8 +260,10 @@ def write_accounts(accounts):
     transaction(_do)
 
 
-def hash_password(password, salt_hex=None, iterations=PBKDF2_ROUNDS):
+def hash_password(password, salt_hex=None, iterations=None):
     """PBKDF2 비밀번호 해싱 (기본 600,000회 반복)."""
+    if iterations is None:
+        iterations = _effective_pbkdf2_rounds()
     salt = os.urandom(16) if salt_hex is None else bytes.fromhex(salt_hex)
     digest = hashlib.pbkdf2_hmac("sha256", (password or "").encode("utf-8"), salt, iterations)
     return salt.hex(), digest.hex()
@@ -251,6 +276,8 @@ def verify_password(password, salt_hex, hash_hex, iterations=None, user_id=None)
     """
     if not salt_hex or not hash_hex:
         return False
+
+    effective_rounds = _effective_pbkdf2_rounds()
 
     target_iters = iterations
     if not target_iters and user_id:
@@ -265,6 +292,7 @@ def verify_password(password, salt_hex, hash_hex, iterations=None, user_id=None)
         try:
             _, digest_hex = hash_password(password, salt_hex, iterations=target_iters)
             if hmac.compare_digest(digest_hex, hash_hex):
+                # 업그레이드 목표는 항상 운영 기준(PBKDF2_ROUNDS)이다.
                 if target_iters < PBKDF2_ROUNDS and user_id:
                     try:
                         new_salt, new_hash = hash_password(password, iterations=PBKDF2_ROUNDS)
@@ -280,27 +308,28 @@ def verify_password(password, salt_hex, hash_hex, iterations=None, user_id=None)
         return False
 
     try:
-        _, digest_hex = hash_password(password, salt_hex, iterations=PBKDF2_ROUNDS)
+        _, digest_hex = hash_password(password, salt_hex, iterations=effective_rounds)
         if hmac.compare_digest(digest_hex, hash_hex):
             return True
     except Exception:
         pass
 
-    try:
-        _, digest_hex_100k = hash_password(password, salt_hex, iterations=100000)
-        if hmac.compare_digest(digest_hex_100k, hash_hex):
-            if user_id:
-                try:
-                    new_salt, new_hash = hash_password(password, iterations=PBKDF2_ROUNDS)
-                    execute(
-                        "UPDATE users SET salt = ?, password_hash = ?, iterations = ?, hash_algo = 'pbkdf2_sha256' WHERE id = ?",
-                        (new_salt, new_hash, PBKDF2_ROUNDS, user_id)
-                    )
-                except Exception:
-                    pass
-            return True
-    except Exception:
-        pass
+    if effective_rounds != 100000:
+        try:
+            _, digest_hex_100k = hash_password(password, salt_hex, iterations=100000)
+            if hmac.compare_digest(digest_hex_100k, hash_hex):
+                if user_id:
+                    try:
+                        new_salt, new_hash = hash_password(password, iterations=PBKDF2_ROUNDS)
+                        execute(
+                            "UPDATE users SET salt = ?, password_hash = ?, iterations = ?, hash_algo = 'pbkdf2_sha256' WHERE id = ?",
+                            (new_salt, new_hash, PBKDF2_ROUNDS, user_id)
+                        )
+                    except Exception:
+                        pass
+                return True
+        except Exception:
+            pass
 
     return False
 
@@ -598,6 +627,227 @@ def visible_records(session, records=None):
     sess_cached["role"] = role
     return [r for r in records if can_view_record(sess_cached, r)]
 
+
+# ---------------------------------------------------------------------------
+# 일정(schedule_events) 열람 권한 — REST API와 AI 챗봇 도구가 공유하는 단일 기준
+# ---------------------------------------------------------------------------
+def build_user_dept_map():
+    """사원-부서 맵(이름 정규화 기준)을 구성한다. 일정 RBAC 및 이름 정규화 공통 기준."""
+    from utils.text import assignee_base_name
+
+    mapping = {}
+    try:
+        for u in query(
+            "SELECT name, dept_id, email FROM users "
+            "WHERE disabled = 0 AND (status IS NULL OR status = 'active')"
+        ):
+            bn = assignee_base_name(u.get("name", "")).strip().lower()
+            if bn:
+                mapping[bn] = {
+                    "name": (u.get("name") or "").strip(),
+                    "org": (u.get("dept_id") or "lab").strip(),
+                    "email": (u.get("email") or "").strip(),
+                }
+    except Exception:
+        pass
+    return mapping
+
+
+def _schedule_event_matches(user_or_session, event, user_dept_map, user_name, user_dept):
+    """(비관리자 기준) 일정 1건의 열람 가능 여부 — 부서/본인/참여자 규칙."""
+    from utils.text import assignee_base_name
+
+    ev_owner = (event.get("ownerName") or event.get("assignee") or "").strip()
+    ev_org = (
+        event.get("ownerOrg") or event.get("org") or event.get("dept_id") or ""
+    ).strip().lower()
+    if not ev_org and ev_owner:
+        info = (user_dept_map or {}).get(assignee_base_name(ev_owner).lower()) or {}
+        ev_org = (info.get("org") or "").strip().lower()
+
+    if user_dept and ev_org and ev_org == user_dept:
+        return True
+    if ev_owner and user_name and ev_owner == user_name:
+        return True
+
+    for p in (event.get("participants") or []):
+        if isinstance(p, dict):
+            p_name = (p.get("name") or "").strip()
+            p_org = (p.get("org") or "").strip().lower()
+            if p_name and user_name and p_name == user_name:
+                return True
+            if user_dept and p_org and p_org == user_dept:
+                return True
+        elif p and user_name and str(p).strip() == user_name:
+            return True
+    return False
+
+
+def can_view_schedule_event(user_or_session, event, user_dept_map=None):
+    """일정 1건 열람 권한: admin 전체 / 같은 부서 / 본인 일정 / 본인이 참여자."""
+    if not user_or_session or not event:
+        return False
+    if is_admin_user(user_or_session) or get_user_role(user_or_session) == "admin":
+        return True
+    if user_dept_map is None:
+        user_dept_map = build_user_dept_map()
+    user_dept = (user_or_session.get("org") or user_or_session.get("dept_id") or "").strip().lower()
+    user_name = (user_or_session.get("name") or "").strip()
+    return _schedule_event_matches(user_or_session, event, user_dept_map, user_name, user_dept)
+
+
+def visible_schedule_events(session, events=None, user_dept_map=None):
+    """
+    일정 목록 열람 권한 필터 (단일 진실의 원천).
+    admin은 전체, 그 외에는 본인 부서 일정/본인 일정/본인 참여 일정만 반환한다.
+    """
+    if not session:
+        return []
+    if events is None:
+        from services.data_store import read_schedule
+        events = read_schedule()
+    if is_admin_user(session) or get_user_role(session) == "admin":
+        return list(events)
+    if user_dept_map is None:
+        user_dept_map = build_user_dept_map()
+    user_dept = (session.get("org") or session.get("dept_id") or "").strip().lower()
+    user_name = (session.get("name") or "").strip()
+    return [
+        e for e in events
+        if _schedule_event_matches(session, e, user_dept_map, user_name, user_dept)
+    ]
+
+
+# ---------------------------------------------------------------------------
+# 검색 결과 / 상세 화면 RBAC — "탐색(목록)"과 "상세(엔드포인트)"가 같은 기준을 쓰도록 통일
+# ---------------------------------------------------------------------------
+def resolve_record_by_key(key, cfg=None):
+    """업무 코드·이슈 키·레코드 ID로 레코드 1건을 조회한다 (로컬 → Jira 캐시 순)."""
+    if key is None:
+        return None
+    clean = str(key).strip().lstrip("#").upper()
+    if not clean:
+        return None
+
+    from services.data_store import find_record_by_key_or_code
+    try:
+        rec = find_record_by_key_or_code(clean)
+    except Exception:
+        rec = None
+    if rec:
+        return rec
+
+    try:
+        from services.data_store import read_records
+        for r in read_records():
+            jk = ((r.get("jira") or {}).get("key") or "").strip().upper()
+            cc = (r.get("cardCode") or "").strip().upper()
+            rid = str(r.get("id") or "").strip().upper()
+            if clean in (jk, cc, rid):
+                return r
+    except Exception:
+        pass
+
+    if cfg:
+        try:
+            from services.jira_client import get_cached_jira_records
+            for r in (get_cached_jira_records(cfg).get("records") or []):
+                jk = ((r.get("jira") or {}).get("key") or "").strip().upper()
+                cc = (r.get("cardCode") or "").strip().upper()
+                rid = str(r.get("id") or "").replace("jira-", "").strip().upper()
+                if clean in (jk, cc, rid):
+                    return r
+        except Exception:
+            pass
+    return None
+
+
+_NO_ASSIGNEE_VALUES = ("미배정", "unassigned", "none", "-", "")
+
+
+def _split_participants(raw):
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        out = []
+        for p in raw:
+            name = (p.get("name") or "").strip() if isinstance(p, dict) else str(p).strip()
+            if name:
+                out.append(name)
+        return out
+    return [p.strip() for p in re.split(r"[,;/\n]+", str(raw)) if p.strip()]
+
+
+def filter_issue_payload_by_permission(session, issue, cfg=None):
+    """
+    이슈 상세 payload에서 사용자가 열람할 수 없는 하위 작업/상위 작업/참여자 정보를 제거한다.
+
+    - admin: 원본 그대로 반환 (전체 열람 권한)
+    - 하위 작업(subtasks / subtasksDetail): 권한 없는 항목 제거 (식별 불가 시 fail-closed)
+    - 상위 작업(parentSummary): 권한이 없으면 제거
+    - 참여자(contributor*) : 남은 하위 작업 기준으로 재계산
+    """
+    if not session or not isinstance(issue, dict):
+        return issue
+    if is_admin_user(session) or get_user_role(session) == "admin":
+        return issue
+
+    def _can_view_key(k):
+        rec = resolve_record_by_key(k, cfg=cfg)
+        return bool(rec) and can_view_record(session, rec)
+
+    subtasks_detail = issue.get("subtasksDetail")
+    if isinstance(subtasks_detail, list):
+        issue["subtasksDetail"] = [
+            st for st in subtasks_detail
+            if (st or {}).get("key") and _can_view_key(st.get("key"))
+        ]
+
+    subtasks = issue.get("subtasks")
+    if isinstance(subtasks, list):
+        issue["subtasks"] = [k for k in subtasks if _can_view_key(k)]
+
+    parent_key = issue.get("parentKey") or (issue.get("jira") or {}).get("parentKey")
+    if parent_key and issue.get("parentSummary") and not _can_view_key(parent_key):
+        issue["parentSummary"] = ""
+
+    # 참여자(기여자) 재계산 — 제거된 하위 작업의 담당자가 남지 않도록 한다
+    contrib = {}
+    main_assignee = str(issue.get("assignee") or "").strip()
+    if main_assignee.lower() not in _NO_ASSIGNEE_VALUES:
+        contrib[main_assignee] = 0
+    for p in _split_participants(issue.get("participants")):
+        if p.lower() not in _NO_ASSIGNEE_VALUES:
+            contrib[p] = 0
+    for st in (issue.get("subtasksDetail") or []):
+        a = str(st.get("assignee") or "").strip()
+        if a and a.lower() not in _NO_ASSIGNEE_VALUES:
+            contrib[a] = contrib.get(a, 0) + 1
+    if main_assignee in contrib and contrib[main_assignee] == 0:
+        contrib[main_assignee] = 1
+    ordered = sorted(contrib.items(), key=lambda x: x[1], reverse=True)
+    issue["contributorMap"] = dict(ordered)
+    issue["contributorNames"] = [k for k, _ in ordered]
+    issue["allDescendantsCount"] = len(issue.get("subtasksDetail") or [])
+    issue["hasSubtasks"] = bool(issue.get("subtasksDetail") or issue.get("subtasks"))
+    return issue
+
+
+def can_view_search_item(session, item):
+    """검색 결과 1건(제품 / 일정 / 업무 카드)에 대한 열람 권한 판정."""
+    if not session or not isinstance(item, dict):
+        return False
+    rid = str(item.get("id") or "")
+    doc_id = str(item.get("doc_id") or "")
+    if item.get("productLink") or rid.startswith(("product-", "pim-", "product:", "pim:")):
+        return True
+    if (rid.startswith(("schedule-", "schedule:"))
+            or doc_id.startswith("schedule:")
+            or item.get("ownerName") or item.get("ownerOrg")):
+        return can_view_schedule_event(session, item)
+    return can_view_record(session, item)
+
+
 def can_view_pim_price(user_or_session):
     """PIM 제품 기준 가격 열람 권한: Admin 및 영업/경영 부서만 허용 (일반 엔지니어/타 부서에는 마스킹)"""
     if not user_or_session:
@@ -612,17 +862,10 @@ def can_view_pim_price(user_or_session):
 
 
 def can_modify_pim(user_or_session):
-    """PIM 제품 및 가격 수정 권한: Admin 및 영업/경영 책임자만 허용"""
+    """PIM 제품 및 가격 수정 권한: Admin 및 모든 부서장(Manager) 허용"""
     if not user_or_session:
         return False
-    role = get_user_role(user_or_session)
-    if role == "admin":
-        return True
-    if role == "manager":
-        dept = (user_or_session.get("org") or user_or_session.get("dept_id") or "").lower()
-        if dept in ("sales", "biz", "exec", "management", "경영", "영업"):
-            return True
-    return False
+    return is_manager_or_admin(user_or_session)
 
 
 # ---------------------------------------------------------------------------

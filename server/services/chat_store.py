@@ -183,8 +183,15 @@ def load_history(session_id, limit=20, before_id=None):
     return result
 
 
-def update_proposal_status(session_id, status, message_id=None, summary=None, action_type=None):
-    """세션 기록 내 action_proposal 상태('cancelled' | 'executed')를 영구 저장한다."""
+def update_proposal_status(session_id, status, message_id=None, summary=None, action_type=None, user_name=None):
+    """세션 기록 내 action_proposal 상태('cancelled' | 'executed')를 영구 저장한다.
+
+    user_name이 주어지면 세션 소유자를 먼저 검증한다 (타 사용자 제안 상태 변조 방지).
+    """
+    if user_name:
+        chat_sess = get_session(session_id)
+        if chat_sess and chat_sess.get("user_name") != user_name:
+            return False
     # 메시지를 찾아서 metadata 업데이트
     if message_id:
         rows = query(

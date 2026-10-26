@@ -610,9 +610,26 @@
   border: 1px solid var(--line);
   background: var(--surface);
   border-radius: 8px;
-  padding: 10px 14px;
+  padding: 0;
+  max-height: 350px;
+  overflow-y: auto;
+  overflow-x: auto;
   animation: fadeIn 0.15s ease-out;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+#assigneeTableWrap::-webkit-scrollbar{
+  width: 6px;
+  height: 6px;
+}
+#assigneeTableWrap::-webkit-scrollbar-track{
+  background: transparent;
+}
+#assigneeTableWrap::-webkit-scrollbar-thumb{
+  background: var(--line-strong);
+  border-radius: 4px;
+}
+#assigneeTableWrap::-webkit-scrollbar-thumb:hover{
+  background: var(--accent-2);
 }
 .table-scroll{ overflow-x: auto; }
 table.assignee-table{ width: 100%; border-collapse: collapse; font-size: 13px; min-width: 520px; table-layout: fixed; }
@@ -622,13 +639,28 @@ table.assignee-table{ width: 100%; border-collapse: collapse; font-size: 13px; m
 .assignee-table th:nth-child(4), .assignee-table td:nth-child(4){ width: 23%; }
 .assignee-table th:nth-child(5), .assignee-table td:nth-child(5){ width: 23%; }
 .assignee-table th{
-  text-align: left; font-family: "IBM Plex Mono", monospace; font-size: 11px; text-transform: uppercase;
-  letter-spacing: 0.05em; color: var(--ink-faint); padding: 6px 12px; border-bottom: 1px solid var(--line-strong); white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+  text-align: left;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-faint);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-strong);
+  box-shadow: 0 1px 0 var(--line-strong);
+  white-space: nowrap;
 }
+.assignee-table thead tr th:first-child{ border-top-left-radius: 8px; }
+.assignee-table thead tr th:last-child{ border-top-right-radius: 8px; }
 .assignee-table td{ padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-.assignee-table th:first-child, .assignee-table td:first-child{ padding-left: 20px; }
+.assignee-table th:first-child, .assignee-table td:first-child{ padding-left: 18px; }
 .assignee-table th:last-child, .assignee-table td:last-child{ padding-right: 18px; }
 .assignee-table tr:last-child td{ border-bottom: none; }
+.assignee-table tr.assignee-row:hover:not(.selected){ background: var(--code-bg); }
 .assignee-table td.num{ font-variant-numeric: tabular-nums; font-weight: 600; }
 .assignee-name{ font-weight: 600; }
 .assignee-cat-tags{ display: flex; flex-wrap: wrap; gap: 4px; max-width: 100%; }

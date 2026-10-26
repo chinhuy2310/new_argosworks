@@ -174,7 +174,7 @@
         <input type="text" id="idNameInput" placeholder="예: 홍길동 대리" required>
         <label for="idEmailInput">이메일 <span style="font-weight:400;color:var(--ink-faint);">(선택)</span></label>
         <input type="text" id="idEmailInput" placeholder="예: user@example.com">
-        <label for="idOrgSelect">업무 카테고리 (소속 / 프로젝트)</label>
+        <label for="idOrgSelect">소속 부서 (조직)</label>
         <select id="idOrgSelect" required></select>
 
         <div id="idPasswordStage" hidden>
@@ -391,7 +391,7 @@
       <button type="submit" class="home-search-btn" id="homeAskBtn">검색</button>
     </form>
 
-    <!-- Google-style 4 Quick Navigation Buttons -->
+    <!-- Google-style 4 Quick Navigation Buttons (Dynamically tuned by Role) -->
     <div class="home-quick-actions" id="homeQuickActions">
       <button type="button" class="home-quick-btn" data-target="dash" title="대시보드로 이동">
         <span class="quick-btn-icon">📊</span>
@@ -409,6 +409,32 @@
         <span class="quick-btn-icon">💬</span>
         <span class="quick-btn-text">챗봇</span>
       </button>
+    </div>
+
+    <!-- Role-based Executive Portal Widgets (Phương án 2: Role-based Smart Portal) -->
+    <div class="home-portal-section" id="homePortalSection">
+      <!-- Portal Header with Greeting and Refresh -->
+      <div class="home-portal-header">
+        <div class="home-portal-greeting">
+          <span class="home-portal-badge" id="homePortalRoleBadge">GUEST</span>
+          <h3 class="home-portal-title" id="homePortalGreeting">안녕하세요! 오늘 하루도 힘찬 하루 되세요.</h3>
+        </div>
+        <div class="home-portal-actions">
+          <button type="button" class="home-portal-refresh-btn" id="homePortalRefreshBtn" title="새로고침">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            <span class="portal-refresh-text">새로고침</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Portal Grid Widgets Area -->
+      <div class="home-portal-grid" id="homePortalGrid">
+        <!-- Rendered dynamically by home.js based on role: Guest, Member, Manager, Admin, Viewer -->
+      </div>
     </div>
 
     <div class="home-ask-result" id="homeAskResult" hidden>
@@ -612,11 +638,11 @@
             </div>
             <div class="field">
               <label for="prioritySelect">우선순위</label>
-              <select id="prioritySelect" class="priority-select" style="color: #eab308; font-weight: 600;" onchange="window.updatePrioritySelectColor && window.updatePrioritySelectColor(this)" oninput="window.updatePrioritySelectColor && window.updatePrioritySelectColor(this)">
-                <option value="낮음" style="color: #22c55e; font-weight: 600;">낮음</option>
-                <option value="보통" style="color: #eab308; font-weight: 600;" selected>보통</option>
-                <option value="높음" style="color: #f97316; font-weight: 600;">높음</option>
-                <option value="긴급" style="color: #ef4444; font-weight: 600;">긴급</option>
+              <select id="prioritySelect" class="priority-select" onchange="window.updatePrioritySelectColor && window.updatePrioritySelectColor(this)" oninput="window.updatePrioritySelectColor && window.updatePrioritySelectColor(this)">
+                <option value="낮음">낮음</option>
+                <option value="보통" selected>보통</option>
+                <option value="높음">높음</option>
+                <option value="긴급">긴급</option>
               </select>
             </div>
           </div>
@@ -1222,7 +1248,7 @@
           </button>
           <button type="button" class="settings-subtab-btn" data-settings-tab="categories" role="tab" aria-selected="false">
             <span class="subtab-icon">📁</span>
-            <span class="subtab-text" data-i18n="settings.tab_categories">업무 카테고리 / 프로젝트</span>
+            <span class="subtab-text" data-i18n="settings.tab_categories">부서 / 조직 관리</span>
           </button>
           <button type="button" class="settings-subtab-btn" data-settings-tab="product_categories" role="tab" aria-selected="false">
             <span class="subtab-icon">📦</span>
@@ -1247,6 +1273,10 @@
           <button type="button" class="settings-subtab-btn" data-settings-tab="audit" role="tab" aria-selected="false">
             <span class="subtab-icon">📋</span>
             <span class="subtab-text">감사 로그 (Audit)</span>
+          </button>
+          <button type="button" class="settings-subtab-btn" data-settings-tab="license" role="tab" aria-selected="false">
+            <span class="subtab-icon">🔑</span>
+            <span class="subtab-text">라이선스 (License)</span>
           </button>
         </nav>
 
@@ -1541,6 +1571,19 @@
                   <input type="text" id="setJiraProjectKey" class="settings-input" placeholder="예: PROJ">
                   <p class="settings-hint">※ 부서별 매핑에 등록되지 않은 부서나 미지정 사용자가 티켓을 등록할 때 자동 지정되는 대체 프로젝트 키입니다.</p>
                 </div>
+
+                <div class="settings-field">
+                  <label for="setJiraUserAliases" class="settings-label">사용자 별칭 — 양방향 (User Aliases, JSON)</label>
+                  <textarea id="setJiraUserAliases" class="settings-input" rows="3" spellcheck="false"
+                            placeholder='{"김철수": "chulsoo.kim@company.com", "Đồng Chí Huy": "Uy"}'
+                            style="font-family: monospace; font-size: 11.5px; resize: vertical;"></textarea>
+                  <p class="settings-hint">
+                    ※ <b>ARGOS 이름 → Jira 이름/username/email</b> 매핑(JSON). 같은 매핑을 <b>양방향</b>으로 사용합니다:
+                    로컬 카드를 Jira로 올릴 때 담당자/보고자 지정, 그리고 Jira에서 동기화된 카드를 <b>로컬 사용자로 인식</b>
+                    (“내 업무”/개인 캘린더/권한 판정)할 때 모두 적용됩니다.
+                  </p>
+                </div>
+
               </div>
 
               <!-- Jira Connector Wizard Box -->
@@ -1601,20 +1644,20 @@
           <div class="settings-card" id="cardSettingsCategories">
             <div class="settings-card-header">
               <h3 class="settings-card-title">
-                <span>📁</span> 업무 카테고리 / 프로젝트 관리 (Work Categories & Projects)
+                <span>🏢</span> 부서 / 조직 관리 (Departments & Organizations)
               </h3>
               <button type="button" class="btn-settings-test" id="btnSettingsAddCategory" style="padding: 5px 12px; font-size: 12px; margin: 0; background: var(--accent-2, #0284c7); color: #fff;">
-                <span>➕</span> 새 카테고리 / 프로젝트 추가
+                <span>➕</span> 새 부서 추가
               </button>
             </div>
-            <p class="settings-card-desc">시스템의 업무 카테고리(프로젝트)와 로컬 카드 코드 접두사(Prefix) 등을 한곳에서 등록, 수정, 삭제합니다.</p>
+            <p class="settings-card-desc">사내 부서(조직)와 각 부서별 고유 작업 코드 접두사(Prefix), Jira 연동 프로젝트 등을 한곳에서 등록, 수정, 삭제합니다.</p>
 
             <div style="overflow-x: auto; margin-top: 12px;">
               <table class="settings-category-table" style="width: 100%; border-collapse: collapse; font-size: 12.5px;">
                 <thead>
                   <tr style="background: var(--code-bg, rgba(0,0,0,0.03)); border-bottom: 2px solid var(--line, #e2e8f0); text-align: left;">
                     <th style="padding: 8px 10px;">ID</th>
-                    <th style="padding: 8px 10px;">카테고리명</th>
+                    <th style="padding: 8px 10px;">부서명</th>
                     <th style="padding: 8px 10px;">로컬 Prefix</th>
                     <th style="padding: 8px 10px;" id="thSettingsCategoryJiraKey">Jira Key</th>
                     <th style="padding: 8px 10px; text-align: center;">작업 건수</th>
@@ -1792,7 +1835,7 @@
               </div>
               <div style="display: flex; gap: 8px; align-items: center;">
                 <input type="file" id="inputImportBackupFile" accept=".db.gz,.db" style="display: none;" />
-                <button type="button" class="btn-settings-test" id="btnImportBackup" style="padding: 7px 14px; margin: 0; font-size: 12.5px; font-weight: 600;">
+                <button type="button" class="btn-settings-sync" id="btnImportBackup" style="padding: 7px 14px; margin: 0; font-size: 12.5px; font-weight: 600;">
                   <span>📥</span> 외부 백업 가져오기
                 </button>
                 <button type="button" class="btn-settings-sync" id="btnTriggerManualBackup" style="padding: 7px 16px; margin: 0; font-size: 12.5px;">
@@ -1814,10 +1857,10 @@
               </div>
               <div style="display: flex; gap: 8px; align-items: center;">
                 <input type="text" id="inputBackupDir" class="form-input" placeholder="기본 경로: ./data/backups" style="flex: 1; font-size: 12px; font-family: monospace; padding: 6px 10px;" />
-                <button type="button" class="btn-settings-test" id="btnSaveBackupDir" style="padding: 6px 14px; font-size: 12px; font-weight: 600; white-space: nowrap;">
+                <button type="button" class="btn-settings-save" id="btnSaveBackupDir" style="padding: 6px 14px; font-size: 12px; font-weight: 600; white-space: nowrap;">
                   경로 저장
                 </button>
-                <button type="button" class="btn-settings-test" id="btnResetBackupDir" style="padding: 6px 12px; font-size: 12px; color: var(--text-muted); white-space: nowrap;" title="기본 경로(./data/backups)로 초기화">
+                <button type="button" class="btn-settings-sync" id="btnResetBackupDir" style="padding: 6px 12px; font-size: 12px; color: var(--ink-faint); white-space: nowrap;" title="기본 경로(./data/backups)로 초기화">
                   기본값
                 </button>
               </div>
@@ -2082,6 +2125,12 @@
               <button type="button" class="btn-settings-test" id="btnFilterAudit" style="padding: 5px 12px; font-size: 12px; margin: 0;">
                 <span>🔍</span> 조회
               </button>
+              <button type="button" class="btn-settings-test" id="btnExportAuditCsv" style="padding: 5px 12px; font-size: 12px; margin: 0;">
+                <span>⬇️</span> CSV
+              </button>
+              <button type="button" class="btn-settings-test" id="btnExportAuditJson" style="padding: 5px 12px; font-size: 12px; margin: 0;">
+                <span>⬇️</span> JSON
+              </button>
             </div>
 
             <!-- Audit Logs Table -->
@@ -2105,6 +2154,70 @@
           </div>
         </div>
 
+        <!-- 9. License & Entitlements Tab Pane -->
+        <div class="settings-tab-pane" id="paneSettingsLicense" data-pane="license" hidden style="display: none;">
+          <div class="settings-card" id="cardSettingsLicense">
+            <div class="settings-card-header settings-responsive-header">
+              <div class="header-text-wrap">
+                <h3 class="settings-card-title">
+                  <span>🔑</span> 엔터프라이즈 라이선스 (License &amp; Entitlements)
+                </h3>
+                <p class="settings-card-desc" style="margin-top: 4px; margin-bottom: 0;">
+                  계약 고객사, 사용 좌석(Seats), 만료일 및 활성화된 모듈을 확인합니다. 라이선스 키는 발급처(공급사)의 Ed25519 전자서명으로 검증됩니다.
+                </p>
+              </div>
+              <span class="card-badge" id="badgeLicenseState">확인 중...</span>
+            </div>
+
+            <div id="licenseWarningBox" style="display:none; margin-top:14px; padding:10px 12px; border-radius:6px; border:1px solid #f59e0b; background:rgba(245,158,11,0.10); color:#92400e; font-size:12.5px; line-height:1.5;"></div>
+
+            <div class="settings-grid" style="margin-top:14px;">
+              <div class="settings-card" style="box-shadow:none;">
+                <div class="settings-card-header">
+                  <h4 class="settings-card-title" style="font-size:13px;">📋 계약 정보</h4>
+                </div>
+                <table style="width:100%; font-size:12.5px; border-collapse:collapse;">
+                  <tr><td style="padding:6px 0; color:var(--text-muted); width:46%;">고객사</td><td id="licCustomer">-</td></tr>
+                  <tr><td style="padding:6px 0; color:var(--text-muted);">만료일</td><td id="licExpiry">-</td></tr>
+                  <tr><td style="padding:6px 0; color:var(--text-muted);">잔여일</td><td id="licDaysLeft">-</td></tr>
+                  <tr><td style="padding:6px 0; color:var(--text-muted);">검증 상태</td><td id="licValid">-</td></tr>
+                  <tr><td style="padding:6px 0; color:var(--text-muted);">사용 좌석</td><td id="licSeats">-</td></tr>
+                </table>
+                <div style="margin-top:8px; height:8px; border-radius:4px; background:var(--code-bg); overflow:hidden;">
+                  <div id="licSeatsBar" style="height:100%; width:0%; background:linear-gradient(90deg,#0284c7,#38bdf8); transition:width .3s;"></div>
+                </div>
+              </div>
+
+              <div class="settings-card" style="box-shadow:none;">
+                <div class="settings-card-header">
+                  <h4 class="settings-card-title" style="font-size:13px;">🧩 활성화된 모듈</h4>
+                </div>
+                <div id="licModules" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;"></div>
+                <p style="font-size:11.5px; color:var(--text-muted); margin-top:10px; line-height:1.5;">
+                  라이선스에 포함되지 않은 모듈의 API는 서버에서 403으로 차단됩니다(UI 숨김만이 아님).
+                </p>
+              </div>
+            </div>
+
+            <div style="margin-top:18px; padding-top:14px; border-top:1px solid var(--line);">
+              <h4 class="settings-card-title" style="font-size:13px; margin-bottom:8px;">🔐 라이선스 키 활성화 / 갱신</h4>
+              <p style="font-size:11.5px; color:var(--text-muted); margin-bottom:8px;">
+                오프라인 환경에서도 동작합니다. 공급사가 발급한 <code>AGY-...</code> 키를 붙여넣으세요. 기존 카드/첨부/일정 데이터는 절대 삭제되지 않습니다.
+              </p>
+              <textarea id="inputLicenseKey" rows="3" placeholder="AGY-eyJjdXN0b21lciI6..." style="width:100%; font-family:monospace; font-size:11.5px; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); resize:vertical;"></textarea>
+              <div style="display:flex; gap:8px; margin-top:10px; align-items:center;">
+                <button type="button" class="btn-settings-save" id="btnActivateLicense" style="padding:7px 16px; font-size:12.5px;">
+                  <span>✅</span> 라이선스 활성화
+                </button>
+                <button type="button" class="btn-settings-test" id="btnRefreshLicense" style="padding:7px 14px; font-size:12.5px;">
+                  <span>🔄</span> 새로고침
+                </button>
+                <span id="licenseMsg" style="font-size:12px;"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         </div>
 
         <!-- Action Buttons -->
@@ -2118,6 +2231,11 @@
         </div>
 
         <div class="settings-msg" id="settingsMsg"></div>
+
+        <div style="margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); display:flex; justify-content:space-between; align-items:center; font-size: 11.5px; color: var(--text-muted);">
+          <span id="appVersionLabel">ARGOS WORKS</span>
+          <span>On-premise edition</span>
+        </div>
       </div>
     </div>
   </section>
@@ -2449,7 +2567,7 @@
     <div class="dept-modal-header">
       <div class="dept-modal-title-wrap">
         <span class="dept-modal-icon">📁</span>
-        <h3 class="dept-modal-title" id="deptModalTitle" data-i18n="dept.add_title">새 업무 카테고리 추가</h3>
+        <h3 class="dept-modal-title" id="deptModalTitle" data-i18n="dept.add_title">새 부서 추가</h3>
       </div>
       <button type="button" class="dept-modal-close" id="deptModalCloseBtn" data-i18n-title="common.close" aria-label="닫기">✕</button>
     </div>
@@ -2457,9 +2575,9 @@
       <input type="hidden" id="deptAddId" value="">
       <div class="dept-modal-body">
         <div class="dept-modal-field">
-          <label for="deptAddName"><span data-i18n="dept.name_label">업무 카테고리명</span> <span class="req">*</span></label>
-          <input type="text" id="deptAddName" data-i18n-ph="dept.name_ph" placeholder="예: 개발팀 또는 영상 분석 프로젝트" required maxlength="30" autocomplete="off">
-          <span class="dept-modal-hint" data-i18n="dept.name_hint">대시보드 카드 및 필터에 표시될 카테고리 명칭입니다.</span>
+          <label for="deptAddName"><span data-i18n="dept.name_label">부서명</span> <span class="req">*</span></label>
+          <input type="text" id="deptAddName" data-i18n-ph="dept.name_ph" placeholder="예: 연구개발팀, B2B사업팀, 인사총무팀" required maxlength="30" autocomplete="off">
+          <span class="dept-modal-hint" data-i18n="dept.name_hint">대시보드 카드 및 필터에 표시될 부서 명칭입니다.</span>
         </div>
         <div class="dept-modal-field">
           <label for="deptAddLocalPrefix" data-i18n="dept.local_label">로컬 카드 코드 (Local Prefix)</label>
@@ -2566,7 +2684,7 @@
       <span id="canvasTitleText" style="font-weight:700; color:var(--accent-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">📁 업무 상세 정보</span>
     </div>
     <div class="canvas-header-actions">
-      <button type="button" class="canvas-header-edit-btn" id="btnCanvasEditTask" title="업무 수정 (담당자, 참여자, 제목, 내용, 마감일)">✏️ 수정</button>
+      <button type="button" class="canvas-header-edit-btn" id="btnCanvasEditTask" title="업무 수정 (담당자, 참여자, 제목, 내용, 마감일)" style="display:none;">✏️ 수정</button>
       <button type="button" class="canvas-mode-btn" id="btnCanvasModeDocked" title="화면 분할 고정 (Docked)">📌</button>
       <button type="button" class="canvas-mode-btn active" id="btnCanvasModeOverlay" title="슬라이드 오버레이 (Overlay)">🗂️</button>
       <button type="button" class="canvas-mode-btn" id="btnCanvasModeModal" title="중앙 모달 (Center Modal)">⛶</button>
@@ -2637,7 +2755,7 @@
         <input type="email" id="editProfileEmailInput" class="settings-input" data-i18n-ph="profile.email_ph" placeholder="user@company.com">
       </div>
       <div class="field" style="margin-bottom: 14px;">
-        <label for="editProfileOrgSelect" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;" data-i18n="profile.org_label">업무 카테고리 (소속 / 프로젝트)</label>
+        <label for="editProfileOrgSelect" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;" data-i18n="profile.org_label">소속 부서 (조직)</label>
         <select id="editProfileOrgSelect" class="settings-select" style="width: 100%;"></select>
       </div>
       <div class="field" style="margin-bottom: 16px;">

@@ -36,13 +36,27 @@ def _urlopen(req, timeout=15, cfg=None):
                 log_line("[SECURITY WARNING] Jira SSL 인증서 검증 실패 (JIRA_INSECURE_SKIP_VERIFY=true 로 인해 우회 허용됨)")
                 ctx = ssl._create_unverified_context()
                 return urllib.request.urlopen(req, timeout=timeout, context=ctx)
-            else:
-                log_line(f"[SECURITY ALERT] Jira SSL 인증서 검증 실패: {e}. MITM 방어를 위해 연결을 차단했습니다.")
+            log_line(f"[SECURITY ALERT] Jira SSL 인증서 검증 실패: {e}. MITM 방어를 위해 연결을 차단했습니다.")
+
+        # Never return None here: callers use `with _urlopen(...) as resp`, and a
+        # swallowed error surfaces as the useless
+        # "'NoneType' object does not support the context manager protocol".
+        raise
 # Configurable ongoing exclude categories (overrideable via env or config)
 JIRA_ONGOING_EXCLUDE_CATEGORIES = [c.strip() for c in os.environ.get("JIRA_ONGOING_EXCLUDE_CATEGORIES", "메인,메인프로젝트").split(",") if c.strip()]
 
 _jira_cache_lock = threading.Lock()
 _jira_cache = {"records": None, "activities": [], "categories": {}, "synced_at": None, "error": None}
+
+
+def invalidate_jira_cache():
+    """Xoá cache Jira trong RAM (dùng khi admin đổi config/alias) để lần đọc sau nạp lại/đồng bộ lại."""
+    with _jira_cache_lock:
+        _jira_cache["records"] = None
+        _jira_cache["activities"] = []
+        _jira_cache["categories"] = {}
+        _jira_cache["synced_at"] = None
+        _jira_cache["error"] = None
 
 def _jira_auth_header(j):
     auth = base64.b64encode((j["email"] + ":" + j["api_token"]).encode("utf-8")).decode("ascii")
@@ -51,6 +65,85 @@ def _jira_auth_header(j):
         "Content-Type": "application/json",
         "Accept": "application/json"
     }
+
+
+# ---------------------------------------------------------------------------
+# User aliases (bidirectional)
+# ---------------------------------------------------------------------------
+# config.json:
+#   "jira": { "user_aliases": { "<tên trong ARGOS>": "<tên/username/email trong Jira>" } }
+# hoặc key cấp root "jira_user_aliases" (tương thích cũ).
+# Cùng một map được dùng cho CẢ HAI chiều:
+#   local -> Jira : khi tìm accountId để gán assignee/reporter
+#   Jira -> local : khi đồng bộ issue về (assignee hiển thị/nhận diện là tên local)
+
+
+def get_user_aliases(cfg):
+    """Trả về {tên local: tham chiếu Jira} (giữ nguyên chữ hoa/thường để hiển thị)."""
+    if not cfg:
+        return {}
+    j = cfg.get("jira") or {}
+    raw = cfg.get("jira_user_aliases") or j.get("user_aliases") or {}
+    aliases = {}
+    if isinstance(raw, dict):
+        for local_name, jira_ref in raw.items():
+            if local_name and jira_ref:
+                aliases[str(local_name).strip()] = str(jira_ref).strip()
+    return aliases
+
+
+def resolve_local_to_jira_query(cfg, name):
+    """Tên local -> giá trị dùng để search bên Jira (không phân biệt hoa/thường, bỏ chức danh)."""
+    clean = (name or "").strip()
+    if not clean:
+        return clean
+    aliases = get_user_aliases(cfg)
+    if not aliases:
+        return clean
+    lowered = clean.lower()
+    base = assignee_base_name(clean).lower()
+    for local_name, jira_ref in aliases.items():
+        if lowered == local_name.lower() or base == assignee_base_name(local_name).lower():
+            return jira_ref
+    return clean
+
+
+def resolve_jira_to_local_name(cfg, jira_name, jira_email=None):
+    """Tên (hoặc email) bên Jira -> tên local tương ứng nếu có alias. Không có thì giữ nguyên."""
+    original = (jira_name or "").strip()
+    aliases = get_user_aliases(cfg)
+    if not aliases:
+        return original
+
+    targets = set()
+    for value in (original, (jira_email or "").strip()):
+        if value:
+            targets.add(value.lower())
+            targets.add(assignee_base_name(value).lower())
+    if not targets:
+        return original
+
+    for local_name, jira_ref in aliases.items():
+        refs = {jira_ref.lower(), assignee_base_name(jira_ref).lower()}
+        if refs & targets:
+            return local_name
+    return original
+
+
+def _normalize_cached_assignee(cfg, record):
+    """Chuẩn hoá assignee của một record Jira (đã cache) sang tên local nếu có alias."""
+    if not isinstance(record, dict):
+        return record
+    raw_name = record.get("assignee") or ""
+    if not raw_name or raw_name == "미배정":
+        return record
+    jira_meta = record.get("jira") or {}
+    if "displayAssignee" not in jira_meta:
+        jira_meta["displayAssignee"] = raw_name
+        record["jira"] = jira_meta
+    record["assignee"] = resolve_jira_to_local_name(cfg, raw_name, record.get("assigneeEmail"))
+    return record
+
 
 def check_jira_connection_status(cfg):
     """
@@ -149,18 +242,46 @@ def jira_dept_for_project_key(cfg, project_key):
         pass
     return ""
 
-def my_jira_records(cfg, name, org):
+def my_jira_records(cfg, name, org, email=None):
     """로그인한 사람이 담당자로 찍혀 있는 Jira 캐시 레코드만 추려서 돌려준다.
-    담당자 이름은 직급 유무가 달라도 매칭되도록 assignee_base_name으로 정규화해서
-    비교하고, 부서(org)까지 같은 것만 매칭해 동명이인 오매칭을 줄인다.
-    jira_due_date_events_for()와 jira_ongoing_records_for() 둘 다 이걸 공유한다."""
+
+    매칭 우선순위:
+      1) email (Jira 공개 프로필에 email이 노출된 경우) — chính xác nhất
+      2) tên đã chuẩn hoá (bỏ chức danh) + alias 2 chiều (`jira.user_aliases`)
+    org: nếu record có phòng và khác phòng user thì bỏ; record chưa map phòng (org rỗng)
+    vẫn được xét để thẻ Jira không bị "mồ côi".
+    """
+    if not (cfg.get("jira", {}) if cfg else {}).get("enabled"):
+        return []
     cache = get_cached_jira_records(cfg)
     records = cache.get("records") or []
-    my_key = assignee_base_name(name)
-    return [r for r in records
-            if r.get("org") == org and assignee_base_name(r.get("assignee", "")) == my_key]
 
-def jira_due_date_events_for(cfg, name, org):
+    my_email = (email or "").strip().lower()
+    my_org = (org or "").strip().lower()
+
+    # Tên local hiện tại + giá trị alias (Jira) tương ứng, đều đã bỏ chức danh
+    candidate_names = set()
+    for candidate in (name, resolve_local_to_jira_query(cfg, name)):
+        if candidate:
+            candidate_names.add(assignee_base_name(candidate).strip().lower())
+    candidate_names.discard("")
+
+    matched = []
+    for r in records:
+        rec_org = (r.get("org") or "").strip().lower()
+        if rec_org and my_org and rec_org != my_org:
+            continue  # 명확히 다른 부서 → 동명이인 오매칭 방지
+        rec_email = (r.get("assigneeEmail") or "").strip().lower()
+        if rec_email and my_email and rec_email == my_email:
+            matched.append(r)
+            continue
+        rec_assignee = assignee_base_name(r.get("assignee") or "").strip().lower()
+        if rec_assignee and rec_assignee in candidate_names:
+            matched.append(r)
+    return matched
+
+
+def jira_due_date_events_for(cfg, name, org, email=None):
     """캘린더가 로그인한 사람 몫으로 자동 표시할 Jira 마감일(dueDate) 기반 일정을 만든다."""
     if not (cfg.get("jira", {}) if cfg else {}).get("enabled"):
         return []
@@ -169,7 +290,7 @@ def jira_due_date_events_for(cfg, name, org):
     def account_key(n, o):
         return (n or "").strip() + "|" + (o or "").strip()
     
-    for r in my_jira_records(cfg, name, org):
+    for r in my_jira_records(cfg, name, org, email):
         start_date = r.get("startDate")
         due_date = r.get("dueDate")
         if not start_date and not due_date:
@@ -194,7 +315,7 @@ def jira_due_date_events_for(cfg, name, org):
         })
     return out
 
-def all_jira_due_date_events(cfg):
+def all_jira_due_date_events(cfg, records=None):
     """모든 팀원의 일정(시작일 또는 마감일 기반) Jira 일정을 반환한다."""
     if not (cfg.get("jira", {}) if cfg else {}).get("enabled"):
         return []
@@ -202,8 +323,9 @@ def all_jira_due_date_events(cfg):
     def account_key(n, o):
         return (n or "").strip() + "|" + (o or "").strip()
 
-    cache = get_cached_jira_records(cfg)
-    records = cache.get("records") or []
+    if records is None:
+        cache = get_cached_jira_records(cfg)
+        records = cache.get("records") or []
     for r in records:
         start_date = r.get("startDate")
         due_date = r.get("dueDate")
@@ -236,12 +358,12 @@ def all_jira_due_date_events(cfg):
         })
     return out
 
-def jira_ongoing_records_for(cfg, name, org):
+def jira_ongoing_records_for(cfg, name, org, email=None):
     """마감일이 없어서 캘린더 날짜 칸에는 표시할 수 없는, 로그인한 사람 담당의 '진행 중' Jira 이슈 목록."""
     if not (cfg.get("jira", {}) if cfg else {}).get("enabled"):
         return []
     out = []
-    for r in my_jira_records(cfg, name, org):
+    for r in my_jira_records(cfg, name, org, email):
         if r.get("dueDate"):
             continue  # 마감일이 있으면 캘린더 쪽(jira_due_date_events_for)에서 이미 보여줌
         if r.get("category") in JIRA_ONGOING_EXCLUDE_CATEGORIES:
@@ -353,7 +475,13 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None)
         else:
             status_name = raw_status_name
         assignee_obj = f.get("assignee") or {}
-        assignee_name = assignee_obj.get("displayName") or "미배정"
+        raw_assignee_name = assignee_obj.get("displayName") or "미배정"
+        assignee_email = (assignee_obj.get("emailAddress") or "").strip()
+        # Jira -> local 방향 alias: nhận diện thẻ bằng tên local để "Việc của tôi",
+        # lịch cá nhân và phân quyền hoạt động đúng dù tên 2 bên khác nhau.
+        assignee_name = raw_assignee_name
+        if raw_assignee_name != "미배정":
+            assignee_name = resolve_jira_to_local_name(cfg, raw_assignee_name, assignee_email)
         raw_avatar = (assignee_obj.get("avatarUrls") or {}).get("48x48") or (assignee_obj.get("avatarUrls") or {}).get("32x32") or ""
         assignee_avatar = raw_avatar if ("default-avatar" not in raw_avatar and "default/" not in raw_avatar) else ""
         reporter_name = (f.get("reporter") or {}).get("displayName") or ""
@@ -439,7 +567,7 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None)
             "title": summary_text[:40] + ("…" if len(summary_text) > 40 else ""),
             "project": project.get("name", ""),
             "assignee": assignee_name,
-            "assigneeEmail": "",
+            "assigneeEmail": assignee_email,
             "assigneeAvatar": assignee_avatar,
             "avatarUrl": assignee_avatar,
             "date": created,
@@ -463,6 +591,7 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None)
                 "statusName": status_name,
                 "rawStatusName": raw_status_name,
                 "reporter": reporter_name,
+                "displayAssignee": raw_assignee_name,
                 "parentKey": parent_key,
                 "isSubtask": is_subtask,
                 "canCreateSubtask": can_create_subtask,
@@ -705,6 +834,8 @@ def get_cached_jira_records(cfg):
         from services.jira_db import load_all_jira_from_db, load_all_jira_activities_from_db
         db_recs = load_all_jira_from_db()
         if db_recs:
+            # Áp alias Jira -> local cho cache cũ (đã lưu từ phiên bản trước).
+            db_recs = [_normalize_cached_assignee(cfg, dict(r)) for r in db_recs]
             db_acts = load_all_jira_activities_from_db()
             with _jira_cache_lock:
                 _jira_cache["records"] = db_recs
@@ -714,6 +845,34 @@ def get_cached_jira_records(cfg):
         return sync_jira_cache(cfg)
     with _jira_cache_lock:
         return dict(_jira_cache)
+
+
+def find_issue_key_by_attachment_id(cfg, attachment_id):
+    """첨부파일 ID로 소속 Jira 이슈 키를 찾는다 (DB → 캐시 순). 찾지 못하면 빈 문자열."""
+    aid = str(attachment_id or "").strip()
+    if not aid:
+        return ""
+
+    try:
+        from db import get_one
+        row = get_one(
+            "SELECT jira_key FROM jira_attachments WHERE attachment_id = ? LIMIT 1",
+            (aid,)
+        )
+        if row and row.get("jira_key"):
+            return str(row["jira_key"]).strip().upper()
+    except Exception:
+        pass
+
+    try:
+        for r in (get_cached_jira_records(cfg).get("records") or []):
+            for a in (r.get("attachments") or []):
+                if str(a.get("id") or "").strip() == aid:
+                    return ((r.get("jira") or {}).get("key") or "").strip().upper()
+    except Exception:
+        pass
+    return ""
+
 
 def get_cached_jira_activities(cfg):
     """캐시된 Jira 변경 이력(Changelog) 활동 목록을 반환한다."""
@@ -755,8 +914,8 @@ def lookup_jira_account_id(cfg, query):
 
     # 사용자 별칭 및 직급 접미사 처리 (config.json 또는 환경 설정에서 동적으로 로드)
     clean_query = (query or "").strip()
-    user_aliases = cfg.get("jira_user_aliases") or j.get("user_aliases") or {}
-    search_query = user_aliases.get(clean_query, clean_query)
+    # local -> Jira 방향 alias (대소문자/직급 접미사 무시)
+    search_query = resolve_local_to_jira_query(cfg, clean_query)
 
     url = base_url + "/rest/api/3/user/search?query=" + urllib.parse.quote(search_query)
     req = urllib.request.Request(url, method="GET", headers=_jira_auth_header(j))
@@ -764,6 +923,26 @@ def lookup_jira_account_id(cfg, query):
         with _urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         if isinstance(data, list) and data:
+            # Jira's user/search is fuzzy: "김철수" can also return "김철수2" or a
+            # same-surname colleague. Prefer an exact match (email / username /
+            # display name / base name) before falling back to the first result,
+            # otherwise a card can be assigned to the wrong person.
+            query_norm = (search_query or "").strip().lower()
+            query_base = assignee_base_name(search_query).strip().lower()
+
+            def _is_exact(user):
+                if not isinstance(user, dict):
+                    return False
+                email = (user.get("emailAddress") or "").strip().lower()
+                name = (user.get("displayName") or "").strip().lower()
+                nick = (user.get("nickname") or user.get("name") or "").strip().lower()
+                if query_norm and query_norm in (email, name, nick):
+                    return True
+                return bool(query_base and assignee_base_name(user.get("displayName") or "").strip().lower() == query_base)
+
+            for user in data:
+                if _is_exact(user):
+                    return user.get("accountId")
             return data[0].get("accountId")
     except Exception as e:
         log_line("Jira 사용자 검색 실패(무시하고 담당자 미지정으로 진행):", query, e)

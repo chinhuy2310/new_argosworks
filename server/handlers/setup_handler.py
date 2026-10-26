@@ -146,8 +146,9 @@ def handle_post_setup_complete(handler, raw_body, ip):
         admin_dept_id = "mgmt" if "mgmt" in dept_ids else dept_ids[0]
 
     # 4. 원자적(Atomic) 검사 및 트랜잭션 일괄 저장 (Race condition 방지)
-    from services.auth import hash_password, create_session
+    from services.auth import hash_password, create_session, _effective_pbkdf2_rounds
     salt, pwd_hash = hash_password(password)
+    pwd_iterations = _effective_pbkdf2_rounds()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     def _do_setup(conn):
@@ -179,11 +180,11 @@ def handle_post_setup_complete(handler, raw_body, ip):
                 VALUES (?, 0)
             """, (d_id,))
 
-        # (2) Master Admin 계정 생성 (status='active', role='admin', is_admin=1, disabled=0, 600k PBKDF2)
+        # (2) Master Admin 계정 생성 (status='active', role='admin', is_admin=1, disabled=0)
         cur.execute("""
             INSERT INTO users (username, name, dept_id, email, salt, password_hash, is_admin, role, disabled, status, created_at, hash_algo, iterations)
-            VALUES (?, ?, ?, ?, ?, ?, 1, 'admin', 0, 'active', ?, 'pbkdf2_sha256', 600000)
-        """, (username, name, admin_dept_id, email, salt, pwd_hash, now_str))
+            VALUES (?, ?, ?, ?, ?, ?, 1, 'admin', 0, 'active', ?, 'pbkdf2_sha256', ?)
+        """, (username, name, admin_dept_id, email, salt, pwd_hash, now_str, pwd_iterations))
 
     try:
         transaction(_do_setup)

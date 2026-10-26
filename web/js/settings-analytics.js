@@ -61,6 +61,23 @@ async function loadAiUsageStats() {
   }
 }
 
+function exportAuditLogs(format) {
+  var actionSelect = document.getElementById("selectAuditAction");
+  var userSearchInput = document.getElementById("inputAuditUser");
+  var action = actionSelect ? actionSelect.value : "";
+  var user = userSearchInput ? userSearchInput.value.trim() : "";
+
+  var url = "/api/admin/audit-logs/export?format=" + encodeURIComponent(format || "csv");
+  if (action) url += "&action=" + encodeURIComponent(action);
+  if (user) url += "&user=" + encodeURIComponent(user);
+
+  // Session cookie travels with the navigation request; the endpoint enforces admin role.
+  window.location.href = url;
+  if (typeof showToast === "function") {
+    showToast((format === "json" ? "JSON" : "CSV") + " 감사 로그를 내려받습니다...", 2500);
+  }
+}
+
 async function loadAuditLogs() {
   var actionSelect = document.getElementById("selectAuditAction");
   var userSearchInput = document.getElementById("inputAuditUser");
@@ -133,6 +150,11 @@ async function loadAuditLogs() {
   if (selectAuditAction) selectAuditAction.addEventListener("change", loadAuditLogs);
   if (inputAuditUser) inputAuditUser.addEventListener("keydown", function(e){ if (e.key === "Enter") loadAuditLogs(); });
 
+  var btnExportCsv = document.getElementById("btnExportAuditCsv");
+  var btnExportJson = document.getElementById("btnExportAuditJson");
+  if (btnExportCsv) btnExportCsv.addEventListener("click", function(){ exportAuditLogs("csv"); });
+  if (btnExportJson) btnExportJson.addEventListener("click", function(){ exportAuditLogs("json"); });
+
   var nav = document.getElementById("settingsSubtabsNav");
   if (nav) {
     nav.addEventListener("click", function(e) {
@@ -157,3 +179,25 @@ async function loadAuditLogs() {
 
 window.loadAiUsageStats = loadAiUsageStats;
 window.loadAuditLogs = loadAuditLogs;
+window.exportAuditLogs = exportAuditLogs;
+
+// ---------------------------------------------------------------
+// Release version label (single source of truth: /api/version)
+// ---------------------------------------------------------------
+(function initVersionLabel() {
+  function render() {
+    var el = document.getElementById("appVersionLabel");
+    if (!el) return;
+    fetch("/api/version", { credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data && data.version) el.textContent = "ARGOS WORKS v" + data.version;
+      })
+      .catch(function () { /* version label is cosmetic */ });
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", render);
+  } else {
+    render();
+  }
+})();

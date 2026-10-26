@@ -513,16 +513,12 @@ def _collect_all_documents(cfg):
             desc_parts.append(f"상세 메모/내부 참고사항: {p.get('memo')}")
         desc = "\n".join(desc_parts) if desc_parts else ""
 
-        price_str = ""
-        if p.get("price"):
-            price_str = f"기준 가격: {p.get('price')} {p.get('currency', 'KRW')}"
-
+        # ⚠️ 가격 정보는 임베딩 콘텐츠에 절대 포함하지 않는다 (의미 검색을 통한 가격 유출 방지).
+        # 가격은 can_view_pim_price 권한을 검사하는 PIM API / 챗 도구에서만 마스킹 후 제공한다.
         proc = p.get("procurement") or {}
         proc_str = ""
         if proc.get("identificationNo"):
             proc_str = f"조달정보: 식별번호 {proc.get('identificationNo')} | 품명 {proc.get('registeredName', '')}"
-            if proc.get("price"):
-                proc_str += f" | 단가 {proc.get('price')}원"
 
         specs_dict = p.get("specs") or {}
         specs_lines = [f"- {k}: {v}" for k, v in specs_dict.items() if v]
@@ -532,8 +528,6 @@ def _collect_all_documents(cfg):
         attach_str = f"첨부자료: {', '.join(attach_names)}" if attach_names else ""
 
         meta_rows = [f"제품구분: {'공식 카탈로그' if is_live else '사내 관리 제품'}", f"모델명: {model}", f"제품명: {name}", f"카테고리: {cat} (패밀리: {family}) | 수명주기: {lifecycle}"]
-        if price_str:
-            meta_rows.append(price_str)
         if desc:
             meta_rows.append(f"설명 및 소개:\n{desc}")
         if proc_str:
@@ -592,6 +586,10 @@ def _collect_all_documents(cfg):
                 "id": sid,
                 "title": f"[{stype}] {title} ({owner})",
                 "org": org,
+                "dept_id": org,
+                "ownerName": owner,
+                "ownerOrg": org,
+                "participants": parts_names,
                 "category": stype,
                 "summary": memo,
                 "date": sdate
@@ -786,6 +784,99 @@ def trigger_async_vector_sync(cfg):
     threading.Thread(target=sync_all_vectors, args=(cfg,), daemon=True).start()
 
 
+# ---------------------------------------------------------------------------
+# 문서 단위 RBAC — 의미 검색 결과에도 레코드/일정과 동일한 권한 기준을 적용한다
+# ---------------------------------------------------------------------------
+_PRICE_TEXT_RE = re.compile(
+    r"(기준\s*가격|단가|판매가|공급가|원가|도매가|price|unit\s*price)\s*[:：]?\s*[\d,\.]+\s*(원|KRW|USD|VND|JPY|CNY|EUR)?",
+    re.IGNORECASE,
+)
+
+
+def _mask_price_text(text, max_len=None):
+    """권한 없는 사용자에게 반환되는 텍스트에서 가격 패턴을 마스킹한다."""
+    if not text:
+        return ""
+    masked = _PRICE_TEXT_RE.sub("[가격 비공개]", str(text))
+    if max_len:
+        masked = masked[:max_len]
+    return masked
+
+
+def build_doc_permission_context(session):
+    """문서 권한 판정에 필요한 컨텍스트(부서맵/일정 캐시/가격권한)를 1회만 구성한다."""
+    from services.auth import build_user_dept_map
+
+    return {
+        "session": session,
+        "dept_map": build_user_dept_map(),
+        "schedule_by_id": None,
+        "allow_price": None,
+    }
+
+
+def _legacy_schedule_event(meta, ctx):
+    """레거시 인덱스(ownerName 없음) 호환: 원본 일정에서 소유자/참석자 정보를 보완한다."""
+    event = dict(meta or {})
+    if event.get("ownerName") or ctx is None:
+        return event
+    if ctx.get("schedule_by_id") is None:
+        by_id = {}
+        try:
+            from services.data_store import read_schedule
+            for ev in read_schedule():
+                by_id[str(ev.get("id"))] = ev
+        except Exception:
+            by_id = {}
+        ctx["schedule_by_id"] = by_id
+    src = ctx["schedule_by_id"].get(str(meta.get("id"))) or {}
+    for k in ("ownerName", "ownerOrg", "participants"):
+        if src.get(k) and not event.get(k):
+            event[k] = src[k]
+    if not event.get("org") and src.get("ownerOrg"):
+        event["org"] = src["ownerOrg"]
+    return event
+
+
+def can_view_vector_doc(session, doc_type, meta, ctx=None):
+    """doc_type별 열람 권한 판정 (record / jira / schedule / product)."""
+    from services.auth import can_view_record, can_view_schedule_event
+
+    meta = meta or {}
+    if doc_type == "record":
+        return can_view_record(session, meta)
+
+    if doc_type == "jira":
+        # Jira 캐시 레코드도 일반 레코드와 동일한 부서/담당자/참여자 규칙을 적용한다.
+        rec = dict(meta)
+        rec["assignee_name"] = meta.get("assignee_name") or meta.get("assignee") or ""
+        rec["assignee"] = meta.get("assignee") or ""
+        rec["dept_id"] = meta.get("dept_id") or meta.get("org") or ""
+        rec["org"] = meta.get("org") or ""
+        rec["is_private"] = bool(meta.get("is_private"))
+        return can_view_record(session, rec)
+
+    if doc_type == "schedule":
+        event = _legacy_schedule_event(meta, ctx)
+        return can_view_schedule_event(session, event, user_dept_map=(ctx or {}).get("dept_map"))
+
+    # 제품(PIM) 문서는 전 사용자 공개 — 가격은 색인 콘텐츠에서 제거/마스킹된다.
+    return True
+
+
+def can_view_vector_price(session, ctx=None):
+    """PIM 가격 열람 권한 (검색 결과 텍스트 마스킹용, 1회 캐시)."""
+    if session is None:
+        return True
+    if ctx is not None and ctx.get("allow_price") is not None:
+        return ctx["allow_price"]
+    from services.auth import can_view_pim_price
+    allowed = can_view_pim_price(session)
+    if ctx is not None:
+        ctx["allow_price"] = allowed
+    return allowed
+
+
 def search_vector_store(cfg, query_text, limit=6, min_similarity=0.42, session=None):
     """
     자연어 질문(query_text)을 기반으로 가장 관련성 높은 문서를 코사인 유사도로 검색.
@@ -819,6 +910,7 @@ def search_vector_store(cfg, query_text, limit=6, min_similarity=0.42, session=N
             return []
 
         import heapq
+        perm_ctx = build_doc_permission_context(session) if session is not None else None
         top_heap = []
         counter = 0
 
@@ -833,13 +925,17 @@ def search_vector_store(cfg, query_text, limit=6, min_similarity=0.42, session=N
                 except Exception:
                     meta = {}
 
-                # Privacy isolation: filter out private records if user lacks permission
-                if session is not None and row["doc_type"] == "record":
-                    from services.auth import can_view_record
-                    if not can_view_record(session, meta):
-                        continue
+                # Privacy isolation: doc_type별 RBAC (record / jira / schedule)
+                if session is not None and not can_view_vector_doc(session, row["doc_type"], meta, perm_ctx):
+                    continue
 
                 counter += 1
+
+                summary_text = meta.get("summary") or ""
+                if not summary_text and row["doc_type"] != "product":
+                    summary_text = row["content"][:200]
+                if row["doc_type"] == "product" and not can_view_vector_price(session, perm_ctx):
+                    summary_text = _mask_price_text(summary_text, max_len=200)
 
                 item = {
                     "id": meta.get("id") or row["doc_id"],
@@ -847,7 +943,7 @@ def search_vector_store(cfg, query_text, limit=6, min_similarity=0.42, session=N
                     "doc_type": row["doc_type"],
                     "title": row["title"],
                     "similarity": round(sim, 4),
-                    "summary": meta.get("summary") or (row["content"][:200]),
+                    "summary": summary_text,
                     "org": meta.get("org") or "",
                     "category": meta.get("category") or "",
                     "date": meta.get("date") or "",

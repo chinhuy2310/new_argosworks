@@ -399,6 +399,9 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_ident ON login_attempts(ip, identifier, failed_at);
 
 -- Baseline Department & License Seeds for Clean Environments (Korean Native B2B)
+-- NOTE: The license below is a signed 50-seat EVALUATION license (expires 2027-12-31).
+-- Production deployments must activate a commercial key issued by the vendor
+-- (tools/vendor/license_tool.py). Unsigned/tampered keys are rejected at runtime.
 INSERT OR IGNORE INTO departments (id, name, color_index, local_prefix, jira_key, custom_categories) VALUES
 ('mgmt', '경영지원·기획실', 1, 'MGMT', 'MGMT', '["경영전략","예산승인","주간보고","대외협력"]'),
 ('dev', '소프트웨어·AI개발팀', 2, 'DEV', 'ARGOS', '["인프라","기능개발","보안강화","성능최적화","API연동"]'),
@@ -407,5 +410,5 @@ INSERT OR IGNORE INTO departments (id, name, color_index, local_prefix, jira_key
 ('hq', '품질관리·감사준법팀', 5, 'HQ', 'HQ', '["내부감사","보안점검","SLA검증","인증심사"]');
 
 INSERT OR IGNORE INTO license_info (id, customer_name, license_key, max_seats, expiry_date, modules_json, is_active)
-VALUES (1, '주식회사 아르고스 솔루션즈', 'ARGOS-KOREA-ENT-2026-LOCAL', 50, '2099-12-31', '["canvas","rag","jira","pim","schedule","audit"]', 1);
+VALUES (1, 'Argos Enterprise Trial', 'AGY-eyJjdXN0b21lciI6IkFyZ29zIEVudGVycHJpc2UgVHJpYWwiLCJleHBpcnkiOiIyMDI3LTEyLTMxIiwiaWF0IjoiMjAyNi0xMC0yMyIsIm1vZHVsZXMiOlsiY2FudmFzIiwicGltIiwiamlyYSIsInJhZyIsInNjaGVkdWxlIiwiYXVkaXQiXSwic2VhdHMiOjUwfQ.yEYIb5-mi0VGep5q-vMMi_EHjG8xb2Frsamytfw_sUKjQFFizBci55Q-0bh8sdoq9NOAorGqC_xbmtp5LlDMDw', 50, '2027-12-31', '["canvas","pim","jira","rag","schedule","audit"]', 1);
 

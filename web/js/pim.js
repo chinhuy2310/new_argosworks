@@ -219,6 +219,11 @@ function renderPimList(){
   }
   if(pimEmpty) pimEmpty.hidden = true;
   if(pimListLabel) pimListLabel.textContent = "사내 관리 제품 (" + items.length + "개)";
+  if(pimNewBtn) {
+    var canMod = (typeof canModifyPimUser === "function") && canModifyPimUser();
+    pimNewBtn.style.display = canMod ? "" : "none";
+    pimNewBtn.hidden = !canMod;
+  }
 
   var fallbackImg = "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22200%22%20height%3D%22150%22%20viewBox%3D%220%200%20200%20150%22%3E%3Crect%20fill%3D%22%23f3f4f6%22%20width%3D%22200%22%20height%3D%22150%22%2F%3E%3Ctext%20fill%3D%22%239ca3af%22%20font-family%3D%22sans-serif%22%20font-size%3D%2213%22%20x%3D%2250%25%22%20y%3D%2250%25%22%20text-anchor%3D%22middle%22%20dy%3D%22.3em%22%3ENo%20Image%3C%2Ftext%3E%3C%2Fsvg%3E";
 
@@ -263,7 +268,7 @@ function renderPimList(){
         '</div>' +
         '<div class="pim-card-actions" style="display:flex; gap:8px; align-items:center;">' +
           '<button type="button" class="pim-btn-spec" data-action="view" style="flex:1;">🔍 상세 보기</button>' +
-          '<button type="button" class="pim-btn-spec" data-action="edit" title="수정" style="flex:0 0 34px; width:34px; height:32px; padding:0; display:inline-flex; align-items:center; justify-content:center; background:var(--code-bg); color:var(--ink-soft); border-color:var(--line); font-size:13px;">✏️</button>' +
+          ((typeof canModifyPimUser === "function" && canModifyPimUser()) ? '<button type="button" class="pim-btn-spec" data-action="edit" title="수정" style="flex:0 0 34px; width:34px; height:32px; padding:0; display:inline-flex; align-items:center; justify-content:center; background:var(--code-bg); color:var(--ink-soft); border-color:var(--line); font-size:13px;">✏️</button>' : '') +
         '</div>' +
       '</div>' +
     '</div>';
@@ -358,6 +363,9 @@ if(pimList){
     if(!product) return;
     var editBtn = e.target.closest("[data-action='edit']");
     if(editBtn){
+      if(typeof canModifyPimUser === "function" && !canModifyPimUser()){
+        return;
+      }
       openPimEdit(product);
       return;
     }
@@ -468,6 +476,9 @@ function openPimEdit(product){
 
 if(pimNewBtn){
   pimNewBtn.addEventListener("click", function(){
+    if(typeof canModifyPimUser === "function" && !canModifyPimUser()){
+      return;
+    }
     resetPimForm();
     openPimFormModal();
   });

@@ -18,7 +18,7 @@ def handle_product_save(handler, raw_body, ip):
 
     from services.auth import can_modify_pim
     if not can_modify_pim(session):
-        handler._send_json(403, {"ok": False, "error": "PIM 제품 및 가격 정보 수정 권한이 없습니다. (영업/경영 부서 관리자 또는 시스템 관리자만 가능)"})
+        handler._send_json(403, {"ok": False, "error": "PIM 제품 및 가격 정보 수정 권한이 없습니다. (부서장(Manager) 또는 시스템 관리자만 가능)"})
         return
 
     try:
@@ -125,7 +125,7 @@ def handle_product_attachment_upload(handler, raw_body, ip):
 
     from services.auth import can_modify_pim
     if not can_modify_pim(session):
-        handler._send_json(403, {"ok": False, "error": "PIM 제품 및 첨부파일 관리 권한이 없습니다. (영업/경영 부서 관리자 또는 시스템 관리자만 가능)"})
+        handler._send_json(403, {"ok": False, "error": "PIM 제품 및 첨부파일 관리 권한이 없습니다. (부서장(Manager) 또는 시스템 관리자만 가능)"})
         return
 
     content_type = handler.headers.get("Content-Type", "")
@@ -178,7 +178,7 @@ def handle_product_attachment_delete(handler, raw_body, ip):
 
     from services.auth import can_modify_pim
     if not can_modify_pim(session):
-        handler._send_json(403, {"ok": False, "error": "PIM 제품 및 첨부파일 관리 권한이 없습니다. (영업/경영 부서 관리자 또는 시스템 관리자만 가능)"})
+        handler._send_json(403, {"ok": False, "error": "PIM 제품 및 첨부파일 관리 권한이 없습니다. (부서장(Manager) 또는 시스템 관리자만 가능)"})
         return
 
     try:

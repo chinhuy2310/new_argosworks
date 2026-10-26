@@ -38,6 +38,7 @@ logs/
 *.tmp.*
 scratch/
 filelist.txt
+dist/
 
 # Python Cache & Virtual Environments
 __pycache__/
@@ -47,13 +48,30 @@ venv/
 .venv/
 env/
 
+# Vendor-only license signing key & issuance log (NEVER commit)
+tools/vendor/license_signing_key.hex
+tools/vendor/issued_licenses.csv
+
+# Test & Coverage Artifacts
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+
 # OS-Specific Files
 Thumbs.db
 Desktop.ini
 .DS_Store
 
 # Local-only documents, specifications, checklists & presentations
-docs/
+# Delivery/legal markdown MUST be versioned (EULA, deployment, guides), so
+# docs/*.md is whitelisted; binaries/presentations stay local.
+docs/*
+!docs/*.md
+!docs/images/.gitkeep
+docs/images/
 .env.bak*
 temp_env.txt
 

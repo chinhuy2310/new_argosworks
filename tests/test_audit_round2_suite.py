@@ -269,21 +269,49 @@ class TestAuditRound2Suite(unittest.TestCase):
     # --------------------------------------------------------------------------
     def test_ed25519_asymmetric_license_engine(self):
         """비대칭 Ed25519 라이선스 전자서명 생성 및 공개키 기반 검증 기능 확인."""
-        exp = (date.today() + timedelta(days=730)).strftime("%Y-%m-%d")
-        key = generate_signed_license_key(
-            customer_name="Argos Round2 Enterprise",
-            max_seats=150,
-            expiry_date_str=exp,
-            modules=["canvas", "rag", "jira", "pim", "schedule", "audit"]
-        )
-        self.assertTrue(key.startswith("AGY-"))
+        import os
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+        from cryptography.hazmat.primitives import serialization
+        from services.license_manager import invalidate_license_cache
 
-        ok, msg, data = verify_license_key(key)
-        self.assertTrue(ok, msg)
-        self.assertEqual(data["customer"], "Argos Round2 Enterprise")
-        self.assertEqual(data["seats"], 150)
-        self.assertIn("canvas", data["modules"])
-        self.assertIn("jira", data["modules"])
+        # The product ships NO private key: the test generates a throwaway pair.
+        private_key = ed25519.Ed25519PrivateKey.generate()
+        priv_hex = private_key.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).hex()
+        pub_hex = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        ).hex()
+
+        prev_pub = os.environ.get("ARGOS_LICENSE_PUBLIC_KEY")
+        os.environ["ARGOS_LICENSE_PUBLIC_KEY"] = pub_hex
+        invalidate_license_cache()
+        try:
+            exp = (date.today() + timedelta(days=730)).strftime("%Y-%m-%d")
+            key = generate_signed_license_key(
+                customer_name="Argos Round2 Enterprise",
+                max_seats=150,
+                expiry_date_str=exp,
+                modules=["canvas", "rag", "jira", "pim", "schedule", "audit"],
+                signing_key_hex=priv_hex,
+            )
+            self.assertTrue(key.startswith("AGY-"))
+
+            ok, msg, data = verify_license_key(key)
+            self.assertTrue(ok, msg)
+            self.assertEqual(data["customer"], "Argos Round2 Enterprise")
+            self.assertEqual(data["seats"], 150)
+            self.assertIn("canvas", data["modules"])
+            self.assertIn("jira", data["modules"])
+        finally:
+            if prev_pub is None:
+                os.environ.pop("ARGOS_LICENSE_PUBLIC_KEY", None)
+            else:
+                os.environ["ARGOS_LICENSE_PUBLIC_KEY"] = prev_pub
+            invalidate_license_cache()
 
 
 if __name__ == "__main__":

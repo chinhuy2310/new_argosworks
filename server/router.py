@@ -132,7 +132,20 @@ def handle_get_categories(handler, parsed, ip):
     depts = read_departments()
     target_dept = next((d for d in depts if d["id"] == dept_id), None)
     custom_raw = (target_dept.get("customCategories") or "") if target_dept else ""
-    local_cats = [c.strip() for c in re.split(r'[,;\n]+', custom_raw) if c.strip()]
+    local_cats = []
+    if isinstance(custom_raw, list):
+        local_cats = [str(c).strip().strip('"\'[]') for c in custom_raw if str(c).strip().strip('"\'[]')]
+    elif isinstance(custom_raw, str):
+        c_str = custom_raw.strip()
+        if c_str.startswith("[") and c_str.endswith("]"):
+            try:
+                parsed = json.loads(c_str)
+                if isinstance(parsed, list):
+                    local_cats = [str(c).strip().strip('"\'[]') for c in parsed if str(c).strip().strip('"\'[]')]
+            except Exception:
+                pass
+        if not local_cats:
+            local_cats = [c.strip().strip('"\'[]') for c in re.split(r'[,;\n]+', c_str) if c.strip().strip('"\'[]')]
     
     # Merge and deduplicate while preserving origins
     # Items in jira_cats get origin="jira". Local-only items get origin="local".
@@ -278,10 +291,14 @@ def handle_get_ask(handler, parsed, ip):
     search_q = f"{question} {extra_terms}".strip() if extra_terms else question
 
     # 1. 키워드 기반 기본 검색 (고유명사, Jira 키, 이름 정확 매칭에 강함)
-    from services.auth import visible_records, can_view_record
+    from services.auth import visible_records, can_view_record, can_view_pim_price
     records, _cache = merged_records(handler.cfg)
     records = visible_records(session, records)
-    records = list(records) + [product_as_search_record(p) for p in read_products(include_external=True)]
+    allow_price = can_view_pim_price(session)
+    records = list(records) + [
+        product_as_search_record(p, allow_price=allow_price)
+        for p in read_products(include_external=True)
+    ]
     if session is not None:
         owner_key = account_key(session["name"], session["org"])
         my_events = [e for e in read_schedule() if e.get("ownerKey") == owner_key]
@@ -398,6 +415,11 @@ def handle_get_ask(handler, parsed, ip):
         
         candidates.sort(key=lambda r: (r.get("similarity") or 0, r.get("_search_score") or 0), reverse=True)
         search_method = "keyword"
+
+    # RBAC 최종 게이트: 융합/키워드/상·하위 자동 확장 등 모든 경로의 결과는
+    # 사용자 열람 권한을 통과한 항목만 AI 컨텍스트와 출처 목록에 포함한다.
+    from services.auth import can_view_search_item
+    candidates = [c for c in candidates if can_view_search_item(session, c)]
 
     # AI 질문 컨텍스트 (프롬프트에 임의의 안내문이나 특정 인명을 주입하지 않고 질문 원문 유지)
     ai_question = question
@@ -617,15 +639,35 @@ def handle_get_schedule(handler, parsed, ip):
         return
     owner_key = norm_member_key(session["name"], session["org"])
 
-    # 1. 로컬 수동 등록 일정
-    all_events = read_schedule()
+    role = session.get("role", "member")
+    is_admin = bool(role == "admin" or session.get("is_admin") == 1)
+    user_dept = (session.get("org") or session.get("dept_id") or "").strip().lower()
+    user_name = (session.get("name") or "").strip()
+
+    # 0. 사원-부서 맵 구성 (권한 필터링 및 이름 정규화 기준) — auth 헬퍼와 공유
+    from services.auth import build_user_dept_map, visible_schedule_events
+    user_dept_map = build_user_dept_map()
+
+    # 1. 로컬 수동 등록 일정 (RBAC: admin 전체, 그 외 본인 부서/본인/참여 일정만 — 챗봇 도구와 동일 기준)
+    all_events = visible_schedule_events(session, read_schedule(), user_dept_map=user_dept_map)
+
     seen_card_codes = set()
     for ev in all_events:
         if ev.get("cardCode"):
             seen_card_codes.add(str(ev["cardCode"]).upper())
 
     # 2. 로컬 업무 카드 (records)의 일정을 달력 이벤트로 자동 반영 & 미완료 목록 수집
+    # RBAC: user와 manager는 본인 소속 부서 카드(또는 본인 담당 카드)만 달력 및 우측 미배정 패널에 표시
     local_records = read_records()
+    if not is_admin:
+        filtered_records = []
+        for r in local_records:
+            r_assignee = (r.get("assignee") or r.get("assignee_name") or "").strip()
+            r_org = (r.get("org") or r.get("dept_id") or user_dept_map.get(assignee_base_name(r_assignee).lower(), {}).get("org", "")).strip().lower()
+            if (user_dept and r_org == user_dept) or (r_assignee and r_assignee == user_name):
+                filtered_records.append(r)
+        local_records = filtered_records
+
     local_tasks = []
     for r in local_records:
         raw_start = (r.get("startDate") or r.get("start_date") or r.get("work_date") or "").strip()
@@ -708,26 +750,20 @@ def handle_get_schedule(handler, parsed, ip):
     jira_active = bool(jira_cfg.get("enabled", False))
     if jira_active:
         try:
-            all_events += all_jira_due_date_events(handler.cfg)
+            jira_events = all_jira_due_date_events(handler.cfg)
+            if not is_admin:
+                jira_events = [
+                    ev for ev in jira_events
+                    if (bool(user_dept and (ev.get("ownerOrg") or user_dept_map.get(assignee_base_name(ev.get("ownerName", "")).lower(), {}).get("org", "")).strip().lower() == user_dept))
+                    or ev.get("ownerName") == user_name
+                ]
+            all_events += jira_events
         except Exception:
             pass
     all_events.sort(key=lambda e: (e.get("startDate", ""), str(e.get("id", 0))))
 
     # 4. 팀원(멤버) 목록 종합 (계정 + 등록일정 + 업무기록 + Jira 이슈 종합, 사원 기준 고유 정규화)
-    user_dept_map = {}
-    try:
-        from db import query
-        for u in query("SELECT name, dept_id, email FROM users WHERE disabled = 0 AND (status IS NULL OR status = 'active')"):
-            bn = assignee_base_name(u.get("name", "")).strip().lower()
-            if bn:
-                user_dept_map[bn] = {
-                    "name": u.get("name", "").strip(),
-                    "org": (u.get("dept_id") or "lab").strip(),
-                    "email": (u.get("email") or "").strip()
-                }
-    except Exception:
-        pass
-
+    # RBAC: user와 manager는 본인 부서 팀원만 표시, admin은 전체 표시
     members_map = {}
 
     def add_member(name, org="", email=""):
@@ -741,6 +777,11 @@ def handle_get_schedule(handler, parsed, ip):
         actual_name = (official["name"] if official else name).strip()
         actual_org = (official["org"] if official else (org or "lab")).strip()
         actual_email = ((official["email"] if official else email) or "").strip()
+
+        # RBAC: user와 manager는 본인 부서 소속 팀원만 추가 (본인은 항상 포함)
+        if not is_admin:
+            if user_dept and actual_org.lower() != user_dept and actual_name != user_name:
+                return
 
         nk = norm_member_key(actual_name, actual_org)
         if bn not in members_map:
@@ -757,9 +798,10 @@ def handle_get_schedule(handler, parsed, ip):
     # 현재 로그인 사용자 보장 추가
     add_member(session.get("name"), session.get("org") or "lab", session.get("email", ""))
 
-    # DB에 등록된 모든 사용자 우선 등록
+    # DB에 등록된 사용자 등록 (Admin: 전체 부서 사용자, User/Manager: 자기 부서 사용자만)
     for bn, uinfo in user_dept_map.items():
-        add_member(uinfo["name"], uinfo["org"], uinfo["email"])
+        if is_admin or not user_dept or (uinfo["org"] or "").strip().lower() == user_dept:
+            add_member(uinfo["name"], uinfo["org"], uinfo["email"])
 
     for ev in all_events:
         name = ev.get("ownerName")
@@ -794,7 +836,7 @@ def handle_get_schedule(handler, parsed, ip):
         else:
             ev["ownerKey"] = norm_member_key(ev.get("ownerName"), ev.get("ownerOrg", ""))
 
-    jira_ongoing = jira_ongoing_records_for(handler.cfg, session["name"], session["org"]) if jira_active else []
+    jira_ongoing = jira_ongoing_records_for(handler.cfg, session["name"], session["org"], session.get("email")) if jira_active else []
     handler._send_json(200, {
         "ok": True,
         "events": all_events,
@@ -1083,6 +1125,23 @@ def handle_get_issue_detail(handler, parsed, ip):
     if not issue:
         handler._send_json(404, {"ok": False, "error": f"{key} 이슈를 찾을 수 없습니다."})
         return
+
+    # RBAC: 목록/검색에서 숨겨진 카드라도 상세 URL로 직접 열람할 수 없도록 서버에서 강제 검증.
+    # (존재 여부 자체를 노출하지 않기 위해 403 대신 404 로 응답한다)
+    from services.auth import can_view_record, filter_issue_payload_by_permission
+    if not can_view_record(session, issue):
+        try:
+            from services.audit_logger import log_audit
+            log_audit(session=session, ip=ip, action="RBAC_DENIED_READ",
+                      target_type="issue", target_id=key,
+                      details={"endpoint": "/api/issues"})
+        except Exception:
+            pass
+        handler._send_json(404, {"ok": False, "error": f"{key} 이슈를 찾을 수 없습니다."})
+        return
+
+    # 하위 작업/상위 작업/참여자 중 권한 밖 항목 제거
+    issue = filter_issue_payload_by_permission(session, issue, cfg=handler.cfg)
     handler._send_json(200, issue)
 
 def handle_get_jira_attachment(handler, parsed, ip):
@@ -1097,6 +1156,24 @@ def handle_get_jira_attachment(handler, parsed, ip):
         handler._send_json(400, {"ok": False, "error": "첨부파일 ID가 필요합니다."})
         return
     attach_id = parts[3]
+
+    # RBAC: 첨부파일이 속한 이슈/카드의 열람 권한을 검증한다 (IDOR 차단).
+    # 매핑이 불가능한 첨부파일은 fail-closed 로 거부한다.
+    from services.auth import can_view_record, resolve_record_by_key
+    from services.jira_client import find_issue_key_by_attachment_id
+    attach_issue_key = find_issue_key_by_attachment_id(handler.cfg, attach_id)
+    attach_rec = resolve_record_by_key(attach_issue_key, cfg=handler.cfg) if attach_issue_key else None
+    if not attach_rec or not can_view_record(session, attach_rec):
+        try:
+            from services.audit_logger import log_audit
+            log_audit(session=session, ip=ip, action="RBAC_DENIED_READ",
+                      target_type="jira_attachment", target_id=attach_id,
+                      details={"endpoint": "/api/jira/attachments", "issueKey": attach_issue_key})
+        except Exception:
+            pass
+        handler._send_json(403, {"ok": False, "error": "해당 첨부파일에 접근할 권한이 없습니다."})
+        return
+
     j = handler.cfg.get("jira", {})
     if not j.get("enabled") or not j.get("api_token"):
         handler._send_json(500, {"ok": False, "error": "Jira 연동이 비활성화되어 있습니다."})
@@ -1208,6 +1285,10 @@ def handle_get_local_attachment(handler, parsed, ip):
 def handle_post_issue_comment(handler, raw_body, ip):
     session = handler._get_session_or_401()
     if not session:
+        return
+    from services.auth import can_write_data
+    if not can_write_data(session):
+        handler._send_json(403, {"ok": False, "error": "읽기 전용(Viewer) 권한 사용자는 댓글을 작성할 수 없습니다."})
         return
     try:
         body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
@@ -1952,8 +2033,33 @@ def handle_get_record_hierarchy(handler, parsed, ip):
         handler._send_json(404, {"ok": False, "error": f"레코드 '{record_id_raw}'를 찾을 수 없습니다."})
         return
 
+    # RBAC: 상세/계층 정보도 열람 권한이 있는 카드만 반환 (목록에서 숨긴 카드의 IDOR 차단)
+    from services.auth import can_view_record
+    if not can_view_record(session, rec):
+        try:
+            from services.audit_logger import log_audit
+            log_audit(session=session, ip=ip, action="RBAC_DENIED_READ",
+                      target_type="record", target_id=record_id_raw,
+                      details={"endpoint": "/api/records/hierarchy"})
+        except Exception:
+            pass
+        handler._send_json(404, {"ok": False, "error": f"레코드 '{record_id_raw}'를 찾을 수 없습니다."})
+        return
+
     jira_enabled = bool(handler.cfg.get("jira", {}).get("enabled", False))
     chain = get_record_hierarchy_chain(rec)
+
+    # 상위 경로(chain) 중 열람 권한이 없는 단계에서 잘라낸다 (타 부서 카드 제목 노출 방지).
+    # chain 은 [root, ..., current] 순서이므로 current 에서 위로 올라가며 권한을 확인한다.
+    visible_chain = [rec]
+    truncated = False
+    for node in reversed(chain[:-1]):
+        if not can_view_record(session, node):
+            truncated = True
+            break
+        visible_chain.insert(0, node)
+    chain = visible_chain
+
     unpushed_parents = []
     closest_jira_parent = None
     if jira_enabled:
@@ -1987,6 +2093,7 @@ def handle_get_record_hierarchy(handler, parsed, ip):
             } for n in chain
         ],
         "depth": len(chain),
+        "truncated": truncated,
         "hasUnpushedParents": (len(unpushed_parents) > 0) if jira_enabled else False,
         "unpushedParents": unpushed_parents if jira_enabled else [],
         "closestJiraParent": closest_jira_parent if jira_enabled else None
@@ -2288,6 +2395,64 @@ def handle_get_admin_audit_logs(handler, parsed, ip):
     handler._send_json(200, {"ok": True, "logs": logs, "total": len(logs)})
 
 
+def handle_get_admin_audit_logs_export(handler, parsed, ip):
+    """GET /api/admin/audit-logs/export — CSV/JSON download for ISO/audit reviews."""
+    session = handler._get_session_or_401()
+    if not session:
+        return
+    if not is_admin_user(session):
+        handler._send_json(403, {"ok": False, "error": "관리자(Admin) 권한이 필요합니다."})
+        return
+
+    qs = parse_qs(parsed.query)
+    action = (qs.get("action", [""])[0]).strip()
+    user_name = (qs.get("user", [""])[0]).strip()
+    target_type = (qs.get("target_type", [""])[0]).strip()
+    from_date = (qs.get("from", [""])[0]).strip()
+    to_date = (qs.get("to", [""])[0]).strip()
+    export_format = (qs.get("format", ["csv"])[0]).strip().lower()
+    try:
+        limit = max(1, min(10000, int(qs.get("limit", ["5000"])[0])))
+    except Exception:
+        limit = 5000
+
+    from services.audit_logger import get_audit_logs, build_audit_export, log_audit
+    logs = get_audit_logs(
+        action=action or None,
+        username=user_name or None,
+        target_type=target_type or None,
+        from_date=from_date or None,
+        to_date=to_date or None,
+        limit=limit
+    )
+
+    body, content_type, ext = build_audit_export(logs, export_format)
+    filename = f"argos_audit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
+
+    # Exporting the audit trail is itself an auditable action.
+    try:
+        log_audit(session, ip, "AUDIT_EXPORT", "audit", filename,
+                  details={"format": ext, "rows": len(logs), "from": from_date, "to": to_date})
+    except Exception:
+        pass
+
+    handler.send_response(200)
+    handler.send_header("Content-Type", content_type)
+    handler.send_header("Content-Length", str(len(body)))
+    handler.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{urllib.parse.quote(filename)}")
+    handler.send_header("Cache-Control", "no-store")
+    handler.send_header("X-Content-Type-Options", "nosniff")
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def handle_get_version(handler, parsed, ip):
+    """GET /api/version — minimal release identifier (no config/secrets)."""
+    from config import APP_VERSION
+    handler._send_json(200, {"ok": True, "product": "ARGOS WORKS", "version": APP_VERSION})
+
+
+
 def handle_get_admin_ai_usage(handler, parsed, ip):
     """GET /api/admin/ai-usage — AI Token & Cost analytics (Admin only)"""
     session = handler._get_session_or_401()
@@ -2330,14 +2495,17 @@ def handle_post_admin_license_activate(handler, raw_body, ip):
     except Exception:
         body = {}
     key = (body.get("license_key") or body.get("key") or "").strip()
-    from services.license_manager import activate_license
-    ok, msg, lic = activate_license(key)
+    from services.license_manager import activate_license, get_license_status
+    ok, msg = activate_license(key)
     if not ok:
         handler._send_json(400, {"ok": False, "error": msg})
         return
+    lic = get_license_status(use_cache=False)
     try:
         from services.audit_logger import log_audit
-        log_audit(session, ip, "LICENSE_ACTIVATE", "license", lic.get("customer"), details=lic)
+        log_audit(session, ip, "LICENSE_ACTIVATE", "license", lic.get("customer_name"),
+                  details={"seats": lic.get("max_seats"), "expiry": lic.get("expiry_date"),
+                           "modules": lic.get("modules")})
     except Exception:
         pass
     handler._send_json(200, {"ok": True, "message": msg, "license": lic})
@@ -2427,15 +2595,15 @@ def handle_post_admin_user_create(handler, raw_body, ip):
         handler._send_json(409, {"ok": False, "error": "해당 부서에 이미 동일한 이름의 사용자가 존재합니다."})
         return
 
-    from services.auth import hash_password
+    from services.auth import hash_password, _effective_pbkdf2_rounds
     salt, pwd_hash = hash_password(password)
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     is_adm = 1 if role == "admin" else 0
 
     execute("""
-        INSERT INTO users (username, name, dept_id, email, salt, password_hash, role, is_admin, disabled, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
-    """, (username, name, dept_id, email, salt, pwd_hash, role, is_adm, now_str))
+        INSERT INTO users (username, name, dept_id, email, salt, password_hash, iterations, role, is_admin, disabled, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+    """, (username, name, dept_id, email, salt, pwd_hash, _effective_pbkdf2_rounds(), role, is_adm, now_str))
 
     from services.audit_logger import log_audit
     log_audit(session, ip, "USER_ADMIN_CREATE", "user", username, details={"name": name, "dept": dept_id, "role": role})
@@ -2468,8 +2636,9 @@ def handle_post_admin_user_update(handler, raw_body, ip):
         handler._send_json(404, {"ok": False, "error": "사용자를 찾을 수 없습니다."})
         return
 
+    cur_user_id = session.get("id") or session.get("user_id")
     cur_user_name = session.get("name", "")
-    is_self = (target_user.get("username") == cur_user_name or target_user.get("name") == cur_user_name)
+    is_self = (cur_user_id is not None and cur_user_id == user_id) or (target_user.get("username") == cur_user_name or target_user.get("name") == cur_user_name)
 
     # Safeguard against locking oneself
     if is_self and disabled == 1:
@@ -2504,18 +2673,29 @@ def handle_post_admin_user_update(handler, raw_body, ip):
         if len(new_password) < 8:
             handler._send_json(400, {"ok": False, "error": "비밀번호는 최소 8자 이상이어야 합니다."})
             return
-        from services.auth import hash_password
+        from services.auth import hash_password, _effective_pbkdf2_rounds
         salt, pwd_hash = hash_password(new_password)
-        updates.append("salt = ?, password_hash = ?")
-        params.extend([salt, pwd_hash])
+        updates.append("salt = ?, password_hash = ?, iterations = ?")
+        params.extend([salt, pwd_hash, _effective_pbkdf2_rounds()])
 
     if updates:
         params.append(user_id)
         execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", tuple(params))
         from services.auth import delete_all_user_sessions
-        # Admin이 권한 변경, 계정 잠금(비활성화), 또는 비밀번호 변경 시 해당 사용자의 모든 활성 세션을 즉시 강제 만료
-        if role or disabled is not None or new_password:
-            delete_all_user_sessions(user_id)
+        role_changed = (role is not None and role != target_user.get("role"))
+        disabled_changed = (disabled is not None and int(disabled) != int(target_user.get("disabled") or 0))
+        pwd_changed = bool(new_password)
+        if role_changed or disabled_changed or pwd_changed:
+            if is_self:
+                cur_token = handler._extract_token()
+                if cur_token:
+                    from services.auth import hash_session_token
+                    token_hash = hash_session_token(cur_token)
+                    execute("DELETE FROM sessions WHERE (user_id = ? OR user_name = ?) AND token != ? AND token != ?", (user_id, target_user.get("username"), cur_token, token_hash))
+                else:
+                    delete_all_user_sessions(user_id)
+            else:
+                delete_all_user_sessions(user_id)
         from services.audit_logger import log_audit
         log_audit(session, ip, "USER_ROLE_UPDATE", "user", target_user.get("username"), details={"role": role, "disabled": disabled, "dept": dept_id})
     handler._send_json(200, {"ok": True, "message": "사용자 정보 및 권한이 변경되었습니다."})
@@ -2753,6 +2933,10 @@ def match_get(path):
         return ("handler", handle_get_admin_backup_download, None)
     elif path == "/api/admin/audit-logs":
         return ("handler", handle_get_admin_audit_logs, None)
+    elif path == "/api/admin/audit-logs/export":
+        return ("handler", handle_get_admin_audit_logs_export, None)
+    elif path == "/api/version":
+        return ("handler", handle_get_version, None)
     elif path == "/api/admin/ai-usage":
         return ("handler", handle_get_admin_ai_usage, None)
     elif path == "/api/records/export/excel":

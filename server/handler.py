@@ -10,13 +10,15 @@ from http.server import BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
 from services.auth import get_session
 from router import match_get, match_post
+from module_gate import check_module_access, denial_message
 from utils.logging import log_line, access_log
 from middleware_security import check_rate_limit, validate_csrf_token, get_allowed_cors_origin
 from db import close_connection
 
 PUBLIC_API_WHITELIST = {
-    # System health & Setup
+    # System health, release identifier & Setup
     "/api/health",
+    "/api/version",
     "/api/setup/status",
     "/api/setup/verify-license",
     "/api/setup/complete",
@@ -405,6 +407,17 @@ class ArgosHandler(BaseHTTPRequestHandler):
                     if not self._get_session_or_401():
                         return
 
+                    # License entitlement gate (paid modules only)
+                    allowed_module, module_code = check_module_access(path)
+                    if not allowed_module:
+                        self._send_json(403, {
+                            "ok": False,
+                            "code": "MODULE_NOT_LICENSED",
+                            "module": module_code,
+                            "error": denial_message(module_code)
+                        })
+                        return
+
             try:
                 route_type, handler_or_path, content_type = match_get(path)
                 
@@ -446,6 +459,17 @@ class ArgosHandler(BaseHTTPRequestHandler):
                 # Default Authentication Guard: all /api endpoints require login unless whitelisted
                 if path not in PUBLIC_API_WHITELIST:
                     if not self._get_session_or_401():
+                        return
+
+                    # License entitlement gate (paid modules only)
+                    allowed_module, module_code = check_module_access(path)
+                    if not allowed_module:
+                        self._send_json(403, {
+                            "ok": False,
+                            "code": "MODULE_NOT_LICENSED",
+                            "module": module_code,
+                            "error": denial_message(module_code)
+                        })
                         return
 
                 # CSRF Protection for state-changing endpoints (exempt whitelisted public endpoints)

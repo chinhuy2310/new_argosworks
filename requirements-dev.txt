@@ -1,0 +1,7 @@
+# ARGOS WORKS — Development & Test Dependencies
+# Install with: pip install -r requirements-dev.txt
+# Runtime dependencies are NOT duplicated here; install requirements.txt first.
+-r requirements.txt
+
+pytest==9.1.1
+pytest-cov==7.0.0

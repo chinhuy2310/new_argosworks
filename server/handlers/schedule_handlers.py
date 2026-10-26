@@ -162,8 +162,15 @@ def handle_schedule_update(handler, raw_body, ip):
         if not target:
             handler._send_json(404, {"ok": False, "error": "일정을 찾을 수 없습니다."})
             return
-        if target.get("ownerKey") != owner_key:
-            handler._send_json(403, {"ok": False, "error": "본인 일정만 수정할 수 있습니다."})
+        role = session.get("role", "member")
+        is_admin = bool(role == "admin" or session.get("is_admin") == 1)
+        u_dept = (session.get("org") or session.get("dept_id") or "").strip().lower()
+        t_dept = (target.get("ownerOrg") or "").strip().lower()
+        is_owner = (target.get("ownerKey") == owner_key or target.get("ownerName") == session.get("name"))
+        is_dept_manager = (role == "manager" and bool(u_dept and t_dept and u_dept == t_dept))
+
+        if not (is_owner or is_admin or is_dept_manager):
+            handler._send_json(403, {"ok": False, "error": "본인 또는 소속 부서의 일정만 수정할 수 있습니다."})
             return
         title = (payload.get("title") or "").strip()
         start_date = (payload.get("startDate") or "").strip()
@@ -237,8 +244,15 @@ def handle_schedule_delete(handler, raw_body, ip):
         if not target:
             handler._send_json(404, {"ok": False, "error": "일정을 찾을 수 없습니다."})
             return
-        if target.get("ownerKey") != owner_key:
-            handler._send_json(403, {"ok": False, "error": "본인 일정만 삭제할 수 있습니다."})
+        role = session.get("role", "member")
+        is_admin = bool(role == "admin" or session.get("is_admin") == 1)
+        u_dept = (session.get("org") or session.get("dept_id") or "").strip().lower()
+        t_dept = (target.get("ownerOrg") or "").strip().lower()
+        is_owner = (target.get("ownerKey") == owner_key or target.get("ownerName") == session.get("name"))
+        is_dept_manager = (role == "manager" and bool(u_dept and t_dept and u_dept == t_dept))
+
+        if not (is_owner or is_admin or is_dept_manager):
+            handler._send_json(403, {"ok": False, "error": "본인 또는 소속 부서의 일정만 삭제할 수 있습니다."})
             return
         events = [e for e in events if str(e.get("id")) != str(event_id)]
         write_schedule(events)

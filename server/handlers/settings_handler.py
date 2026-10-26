@@ -199,7 +199,9 @@ def handle_get_settings(handler, parsed, ip):
         "JIRA_EMAIL": env_data.get("JIRA_EMAIL", jira_cfg.get("email", "")),
         "JIRA_API_TOKEN": _mask_value("JIRA_API_TOKEN", env_data.get("JIRA_API_TOKEN") or jira_cfg.get("api_token", "")),
         "JIRA_PROJECT_KEY": env_data.get("JIRA_PROJECT_KEY", jira_cfg.get("default_project_key", "")),
-        "JIRA_PROJECT_MAP": jira_cfg.get("project_map", {}),
+        "JIRA_PROJECT_MAP": jira_cfg.get("project_map", {}),
+
+        "JIRA_USER_ALIASES": jira_cfg.get("user_aliases", {}),
 
         # Workspace Branding
         "WORKSPACE_NAME": env_data.get("WORKSPACE_NAME", cfg.get("workspace", {}).get("name", "JARVIS")),
@@ -380,6 +382,35 @@ def handle_post_settings(handler, raw_body, ip):
         if isinstance(raw_map, dict):
             cfg.setdefault("jira", {})["project_map"] = raw_map
 
+    # Bidirectional user aliases: {'<tên trong ARGOS>': '<tên/username/email trong Jira>'}
+
+    if "JIRA_USER_ALIASES" in updates:
+
+        raw_aliases = updates["JIRA_USER_ALIASES"]
+
+        if isinstance(raw_aliases, str):
+
+            try:
+
+                raw_aliases = json.loads(raw_aliases) if raw_aliases.strip() else {}
+
+            except Exception:
+
+                raw_aliases = {}
+
+        if isinstance(raw_aliases, dict):
+
+            cleaned_aliases = {}
+
+            for local_name, jira_ref in raw_aliases.items():
+
+                if local_name and jira_ref:
+
+                    cleaned_aliases[str(local_name).strip()] = str(jira_ref).strip()
+
+            cfg.setdefault("jira", {})["user_aliases"] = cleaned_aliases
+
+
     # Sync Workspace Branding
     ws_cfg = cfg.setdefault("workspace", {})
     if "WORKSPACE_NAME" in updates:
@@ -418,6 +449,18 @@ def handle_post_settings(handler, raw_body, ip):
             json.dump(safe_cfg, f, ensure_ascii=False, indent=2)
     except Exception as e:
         log_line(f"Failed to persist config.json: {e}")
+
+    # Config (Jira URL/token/aliases) just changed: drop the in-memory Jira cache.
+
+    try:
+
+        from services.jira_client import invalidate_jira_cache
+
+        invalidate_jira_cache()
+
+    except Exception:
+
+        pass
 
     # If Jira is enabled, trigger background sync & vectorization
     if cfg.get("jira", {}).get("enabled"):

@@ -3,6 +3,13 @@
 
 async function loadSettings() {
   var msgEl = document.getElementById("settingsMsg");
+  if (typeof isCurrentUserAdmin === "function" && !isCurrentUserAdmin()) {
+    if (msgEl) {
+      msgEl.className = "settings-msg";
+      msgEl.textContent = "";
+    }
+    return;
+  }
   try {
     var res = await apiGet("/api/settings");
     if (!res || !res.ok) {
@@ -1091,16 +1098,22 @@ function initSettingsSubtabs() {
   var isAdm = isCurrentUserAdmin();
 
   var btnIntegrations = document.querySelector('.settings-subtab-btn[data-settings-tab="integrations"]');
+  var btnCategories = document.querySelector('.settings-subtab-btn[data-settings-tab="categories"]');
   var btnSecurity = document.querySelector('.settings-subtab-btn[data-settings-tab="security"]');
   var btnUsers = document.querySelector('.settings-subtab-btn[data-settings-tab="users"]');
   var btnAiUsage = document.querySelector('.settings-subtab-btn[data-settings-tab="ai_usage"]');
   var btnAudit = document.querySelector('.settings-subtab-btn[data-settings-tab="audit"]');
+  var btnLicense = document.querySelector('.settings-subtab-btn[data-settings-tab="license"]');
 
   if (btnIntegrations) btnIntegrations.style.display = isAdm ? "" : "none";
+  if (btnCategories) btnCategories.style.display = isAdm ? "" : "none";
   if (btnSecurity) btnSecurity.style.display = isAdm ? "" : "none";
   if (btnUsers) btnUsers.style.display = isAdm ? "" : "none";
   if (btnAiUsage) btnAiUsage.style.display = isAdm ? "" : "none";
   if (btnAudit) btnAudit.style.display = isAdm ? "" : "none";
+  if (btnLicense) btnLicense.style.display = isAdm ? "" : "none";
+  var btnAddCat = document.getElementById("btnSettingsAddCategory");
+  if (btnAddCat) btnAddCat.style.display = isAdm ? "" : "none";
 
   tabBtns.forEach(function (btn) {
     if (btn.__subtabBound) return;
@@ -1108,19 +1121,19 @@ function initSettingsSubtabs() {
     btn.addEventListener("click", function () {
       var tabName = btn.getAttribute("data-settings-tab");
       var admNow = isCurrentUserAdmin();
-      if (!admNow && (tabName === "integrations" || tabName === "security" || tabName === "users" || tabName === "ai_usage" || tabName === "audit")) {
+      if (!admNow && (tabName === "integrations" || tabName === "categories" || tabName === "security" || tabName === "users" || tabName === "ai_usage" || tabName === "audit" || tabName === "license")) {
         return;
       }
       switchSettingsTab(tabName);
     });
   });
 
-  var savedTab = isAdm ? "integrations" : "categories";
+  var savedTab = isAdm ? "integrations" : "product_categories";
   try {
-    savedTab = sessionStorage.getItem("argos_settings_tab") || (isAdm ? "integrations" : "categories");
-    if (savedTab === "all") savedTab = isAdm ? "integrations" : "categories";
-    if (!isAdm && (savedTab === "integrations" || savedTab === "security" || savedTab === "users" || savedTab === "ai_usage" || savedTab === "audit")) {
-      savedTab = "categories";
+    savedTab = sessionStorage.getItem("argos_settings_tab") || (isAdm ? "integrations" : "product_categories");
+    if (savedTab === "all") savedTab = isAdm ? "integrations" : "product_categories";
+    if (!isAdm && (savedTab === "integrations" || savedTab === "categories" || savedTab === "security" || savedTab === "users" || savedTab === "ai_usage" || savedTab === "audit" || savedTab === "license")) {
+      savedTab = "product_categories";
     }
   } catch (e) {}
 
@@ -1211,13 +1224,18 @@ function initSettingsSubtabs() {
 
 function switchSettingsTab(tabName) {
   var isAdm = isCurrentUserAdmin();
+  var msgEl = document.getElementById("settingsMsg");
+  if (!isAdm && msgEl) {
+    msgEl.className = "settings-msg";
+    msgEl.textContent = "";
+  }
 
   var validTabs = isAdm
-    ? ["integrations", "categories", "product_categories", "template", "security", "users", "ai_usage", "audit"]
-    : ["categories", "product_categories", "template"];
+    ? ["integrations", "categories", "product_categories", "template", "security", "users", "ai_usage", "audit", "license"]
+    : ["product_categories", "template"];
 
   if (!tabName || validTabs.indexOf(tabName) === -1) {
-    tabName = isAdm ? "integrations" : "categories";
+    tabName = isAdm ? "integrations" : "product_categories";
   }
 
   var actionsBar = document.getElementById("settingsActionsBar");
@@ -1268,6 +1286,10 @@ function switchSettingsTab(tabName) {
     if (typeof window.loadAuditLogs === "function") {
       window.loadAuditLogs();
     }
+  } else if (tabName === "license") {
+    if (typeof loadLicenseStatus === "function") {
+      loadLicenseStatus();
+    }
   }
 
   try {
@@ -1298,6 +1320,12 @@ function renderSettingsCategoryTable() {
   var tbody = document.getElementById("settingsCategoryTableBody");
   if (!tbody) return;
 
+  var isAdm = (typeof isCurrentUserAdmin === "function") && isCurrentUserAdmin();
+  var btnAddCat = document.getElementById("btnSettingsAddCategory");
+  if (btnAddCat) {
+    btnAddCat.style.display = isAdm ? "" : "none";
+  }
+
   var depts = window.DEPARTMENTS || [];
   var recs = window.records || [];
 
@@ -1310,7 +1338,7 @@ function renderSettingsCategoryTable() {
 
   if (depts.length === 0) {
     var colSpan = isJiraActive ? 6 : 5;
-    tbody.innerHTML = '<tr><td colspan="' + colSpan + '" style="text-align:center; padding:18px; color:var(--ink-faint, #64748b);">등록된 업무 카테고리가 없습니다. [➕ 새 카테고리 추가] 버튼으로 추가하세요.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="' + colSpan + '" style="text-align:center; padding:18px; color:var(--ink-faint, #64748b);">등록된 부서가 없습니다.</td></tr>';
     return;
   }
 
@@ -1318,13 +1346,29 @@ function renderSettingsCategoryTable() {
     var cnt = recs.filter(function(r){ return r.org === d.id; }).length;
     var t = (window.i18n && window.i18n.t) ? window.i18n.t : function(k){ return k; };
 
-    var delBtnHtml = (cnt === 0)
-      ? '<button type="button" class="btn-table-action btn-table-del" data-settings-del-dept="' + escapeHtml(d.id) + '" style="background:none; border:1px solid #ef4444; color:#ef4444; border-radius:4px; padding:3px 8px; font-size:11px; cursor:pointer; font-weight:600;">' + escapeHtml(t("dept.del_btn")) + '</button>'
-      : '<span style="font-size:11px; color:var(--ink-faint, #94a3b8); margin-left:4px;" title="작업이 있어 삭제 불가">참조중</span>';
-
     var jiraTd = isJiraActive
       ? ('<td style="padding: 10px; font-family: monospace;">' + (d.jiraKey ? '<span style="background:rgba(2,132,199,0.1); color:var(--accent-2, #0284c7); padding:2px 6px; border-radius:4px; font-weight:600;">' + escapeHtml(d.jiraKey) + '</span>' : '-') + '</td>')
       : '';
+
+    var actionTdHtml = "";
+    if (isAdm) {
+      var delBtnHtml = (cnt === 0)
+        ? '<button type="button" class="btn-table-action btn-table-del" data-settings-del-dept="' + escapeHtml(d.id) + '" style="background:none; border:1px solid #ef4444; color:#ef4444; border-radius:4px; padding:3px 8px; font-size:11px; cursor:pointer; font-weight:600;">' + escapeHtml(t("dept.del_btn")) + '</button>'
+        : '<span style="font-size:11px; color:var(--ink-faint, #94a3b8); margin-left:4px;" title="작업이 있어 삭제 불가">참조중</span>';
+
+      actionTdHtml = (
+        '<td style="padding: 10px; text-align: right; white-space: nowrap;">' +
+          '<button type="button" class="btn-table-action btn-table-edit" data-settings-edit-dept="' + escapeHtml(d.id) + '" style="background:var(--code-bg, rgba(0,0,0,0.06)); border:1px solid var(--line, #cbd5e1); color:var(--ink); border-radius:4px; padding:3px 8px; font-size:11px; cursor:pointer; font-weight:600; margin-right:6px;">' + escapeHtml(t("dept.edit_btn")) + '</button>' +
+          delBtnHtml +
+        '</td>'
+      );
+    } else {
+      actionTdHtml = (
+        '<td style="padding: 10px; text-align: right; white-space: nowrap;">' +
+          '<span style="font-size:11px; color:var(--ink-faint, #94a3b8); background:var(--code-bg, rgba(0,0,0,0.04)); padding:3px 8px; border-radius:4px; border:1px solid var(--line, #e2e8f0); font-weight:500;">조회 전용</span>' +
+        '</td>'
+      );
+    }
 
     return (
       '<tr style="border-bottom: 1px solid var(--line, #e2e8f0);">' +
@@ -1336,10 +1380,7 @@ function renderSettingsCategoryTable() {
         '<td style="padding: 10px; font-family: monospace;">' + (d.localPrefix ? '<span style="background:var(--code-bg, rgba(0,0,0,0.05)); padding:2px 6px; border-radius:4px;">' + escapeHtml(d.localPrefix) + '</span>' : '-') + '</td>' +
         jiraTd +
         '<td style="padding: 10px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums;">' + cnt + '</td>' +
-        '<td style="padding: 10px; text-align: right; white-space: nowrap;">' +
-          '<button type="button" class="btn-table-action btn-table-edit" data-settings-edit-dept="' + escapeHtml(d.id) + '" style="background:var(--code-bg, rgba(0,0,0,0.06)); border:1px solid var(--line, #cbd5e1); color:var(--ink); border-radius:4px; padding:3px 8px; font-size:11px; cursor:pointer; font-weight:600; margin-right:6px;">' + escapeHtml(t("dept.edit_btn")) + '</button>' +
-          delBtnHtml +
-        '</td>' +
+        actionTdHtml +
       '</tr>'
     );
   }).join("");
@@ -1353,6 +1394,7 @@ window.renderSettingsCategoryTable = renderSettingsCategoryTable;
 document.addEventListener("click", function(e){
   var editBtn = e.target.closest("[data-settings-edit-dept]");
   if(editBtn){
+    if (typeof isCurrentUserAdmin === "function" && !isCurrentUserAdmin()) return;
     var id = editBtn.getAttribute("data-settings-edit-dept");
     var deptObj = deptById(id);
     if(deptObj && typeof openDeptModal === "function"){
@@ -1363,6 +1405,7 @@ document.addEventListener("click", function(e){
 
   var delBtn = e.target.closest("[data-settings-del-dept]");
   if(delBtn){
+    if (typeof isCurrentUserAdmin === "function" && !isCurrentUserAdmin()) return;
     var delId = delBtn.getAttribute("data-settings-del-dept");
     var deptObj = deptById(delId);
     var dName = deptObj ? deptObj.name : delId;
@@ -1721,11 +1764,11 @@ async function loadAdminBackups() {
       var sizeText = sizeKb >= 1024 ? (sizeKb / 1024).toFixed(2) + " MB" : sizeKb + " KB";
       var typeBadge = "";
       if (b.type === "auto") {
-        typeBadge = '<span style="background:#e0f2fe; color:#0369a1; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700;">자동</span>';
+        typeBadge = '<span style="background:rgba(56,189,248,0.12); color:var(--stat-info, #38bdf8); border:1px solid rgba(56,189,248,0.25); padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700;">자동</span>';
       } else if (b.type === "safety") {
-        typeBadge = '<span style="background:#f3e8ff; color:#7e22ce; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700;">안전본</span>';
+        typeBadge = '<span style="background:rgba(168,85,247,0.12); color:#c084fc; border:1px solid rgba(168,85,247,0.25); padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700;">안전본</span>';
       } else {
-        typeBadge = '<span style="background:#dcfce7; color:#15803d; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700;">수동</span>';
+        typeBadge = '<span style="background:rgba(34,197,94,0.12); color:#4ade80; border:1px solid rgba(34,197,94,0.25); padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700;">수동</span>';
       }
 
       var dt = (b.created_at || "").slice(0, 19).replace("T", " ");
@@ -1737,8 +1780,8 @@ async function loadAdminBackups() {
       html += '<td style="text-align:right; font-weight:600; font-size:12px;">' + sizeText + '</td>';
       html += '<td style="font-size:12px; color:var(--text-muted);">' + escapeHtml(b.note || "-") + '</td>';
       html += '<td style="text-align:right; white-space:nowrap;">';
-      html += '<button type="button" class="btn-settings-test" onclick="triggerRestoreBackup(\'' + escapeHtml(b.filename) + '\')" style="padding:3px 8px; font-size:11px; margin-right:4px; font-weight:600; color:#dc2626; border-color:#fca5a5; cursor:pointer;">복구</button>';
-      html += '<button type="button" class="btn-settings-test" onclick="downloadBackupFile(\'' + escapeHtml(b.filename) + '\')" style="padding:3px 8px; font-size:11px; font-weight:600; cursor:pointer;">다운로드</button>';
+      html += '<button type="button" onclick="triggerRestoreBackup(\'' + escapeHtml(b.filename) + '\')" style="padding:4px 9px; font-size:11.5px; margin-right:6px; font-weight:600; color:#ef4444; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.28); border-radius:6px; cursor:pointer;">복구</button>';
+      html += '<button type="button" onclick="downloadBackupFile(\'' + escapeHtml(b.filename) + '\')" style="padding:4px 9px; font-size:11.5px; font-weight:600; color:var(--ink-soft); background:var(--code-bg); border:1px solid var(--line); border-radius:6px; cursor:pointer;">다운로드</button>';
       html += '</td>';
       html += '</tr>';
     });
@@ -2198,6 +2241,11 @@ async function submitAdminEditUser(e) {
 
   var newPwd = (document.getElementById("adminEditNewPassword").value || "").trim();
   if (newPwd) {
+    if (newPwd.length < 8) {
+      alert("비밀번호는 최소 8자 이상이어야 합니다.");
+      if (btn) btn.disabled = false;
+      return;
+    }
     payload.new_password = newPwd;
   }
 
@@ -2329,6 +2377,13 @@ function initAdminUserUI() {
   if (addClose) addClose.addEventListener("click", closeAdminAddUserModal);
   if (addCancel) addCancel.addEventListener("click", closeAdminAddUserModal);
   if (addForm) addForm.addEventListener("submit", submitAdminAddUser);
+
+  var editClose = document.getElementById("adminEditUserModalCloseBtn");
+  var editCancel = document.getElementById("adminEditUserModalCancelBtn");
+  var editForm = document.getElementById("adminEditUserForm");
+  if (editClose) editClose.addEventListener("click", closeAdminEditUserModal);
+  if (editCancel) editCancel.addEventListener("click", closeAdminEditUserModal);
+  if (editForm) editForm.addEventListener("submit", submitAdminEditUser);
 
   var addModal = document.getElementById("adminAddUserModalBackdrop");
   var editModal = document.getElementById("adminEditUserModalBackdrop");

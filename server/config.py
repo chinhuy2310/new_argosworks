@@ -27,6 +27,21 @@ PRODUCTS_PATH = os.path.join(DATA_DIR, "products.json")
 VECTOR_DB_PATH = os.path.join(DATA_DIR, "vector_store.sqlite")
 TEMPLATES_DIR = os.path.join(DATA_DIR, "templates")
 
+
+def _load_app_version():
+    """Read the release version from the VERSION file (single source of truth)."""
+    try:
+        with open(os.path.join(BASE_DIR, "VERSION"), "r", encoding="utf-8") as fh:
+            value = fh.read().strip()
+        if value:
+            return value
+    except Exception:
+        pass
+    return "0.0.0-dev"
+
+
+APP_VERSION = _load_app_version()
+
 DEFAULT_CONFIG = {
     "server": {"host": "0.0.0.0", "port": 8080},
     "jira": {

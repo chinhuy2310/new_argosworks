@@ -3,8 +3,8 @@
 #
 # Native fallback for machines without Python. Behaves like
 # scripts/init_deploy.py:
-#   1. Creates .env with generated ARGOS_MASTER_KEY / POSTGRES_PASSWORD /
-#      ARGOS_LICENSE_SECRET, replacing template placeholders.
+#   1. Creates .env with generated ARGOS_MASTER_KEY / POSTGRES_PASSWORD,
+#      replacing template placeholders.
 #   2. Ensures server\config.json exists as a file (never a directory).
 #   3. Creates the persistent data directories.
 #
@@ -23,7 +23,6 @@ $ConfigSample = Join-Path $Root 'server\config.example.json'
 
 $Placeholders = @(
     'YOUR_STRONG_PASSWORD_HERE',
-    'ENTERPRISE_LICENSE_SIGNING_SECRET_HERE',
     '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 )
 
@@ -117,10 +116,6 @@ if (Test-ShouldGenerate ([string]$map['ARGOS_MASTER_KEY'])) {
     Set-EnvLine $lines 'ARGOS_MASTER_KEY' (New-RandomHex 32)
     $changes += 'ARGOS_MASTER_KEY'
 }
-if (Test-ShouldGenerate ([string]$map['ARGOS_LICENSE_SECRET'])) {
-    Set-EnvLine $lines 'ARGOS_LICENSE_SECRET' (New-RandomPassword 32)
-    $changes += 'ARGOS_LICENSE_SECRET'
-}
 if (Test-ShouldGenerate ([string]$map['POSTGRES_PASSWORD'])) {
     Set-EnvLine $lines 'POSTGRES_PASSWORD' (New-RandomPassword 32)
     $changes += 'POSTGRES_PASSWORD'
@@ -152,7 +147,7 @@ foreach ($key in $defaults.Keys) {
 
 $map = Get-EnvMap $lines
 $stale = @()
-foreach ($key in @('ARGOS_MASTER_KEY', 'POSTGRES_PASSWORD', 'ARGOS_LICENSE_SECRET')) {
+foreach ($key in @('ARGOS_MASTER_KEY', 'POSTGRES_PASSWORD')) {
     if ((Test-Weak ([string]$map[$key])) -and ($changes -notcontains $key)) { $stale += $key }
 }
 if ($stale.Count -gt 0) {

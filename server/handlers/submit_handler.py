@@ -46,6 +46,13 @@ def handle_submit(handler, raw_body, ip):
         handler._send_json(400, {"ok": False, "error": "유효하지 않은 소속입니다."})
         return
 
+    # RBAC: 일반 사용자(member)는 본인 소속 부서의 업무만 등록 가능
+    user_role = get_user_role(session)
+    user_dept = (session.get("org") or session.get("dept_id") or "").strip().lower()
+    if user_role == "member" and user_dept and user_dept != org.lower():
+        handler._send_json(403, {"ok": False, "error": "일반 사용자는 본인 소속 부서의 업무만 등록할 수 있습니다."})
+        return
+
     memo = (fields.get("memo") or "").strip()
     user_title = (fields.get("title") or "").strip()
     if not user_title and not memo and not files:
@@ -58,6 +65,13 @@ def handle_submit(handler, raw_body, ip):
     category = (fields.get("category") or "").strip()
     submitted_category = category  # 자동 분류로 덮어쓰기 전, 사용자가 실제로 고른 값
     parent_key = (fields.get("parentKey") or "").strip().upper() or None
+    if parent_key:
+        from services.data_store import find_record_by_key_or_code
+        from services.auth import can_view_record
+        parent_rec = find_record_by_key_or_code(parent_key)
+        if parent_rec and not can_view_record(session, parent_rec):
+            handler._send_json(403, {"ok": False, "error": "상위 작업에 대한 열람 권한이 없어 하위 작업을 생성할 수 없습니다."})
+            return
     participants = (fields.get("participants") or "").strip()
     if participants and assignee_name:
         parts_list = [p.strip() for p in participants.replace(";", ",").split(",") if p.strip()]

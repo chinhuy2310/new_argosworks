@@ -1743,7 +1743,7 @@ el.deptCards.addEventListener("click", function(e){
 
 function openDeptModal(deptObj){
   if(typeof isCurrentUserAdmin === "function" && !isCurrentUserAdmin()){
-    if(typeof showToast === "function") showToast("관리자(Admin) 권한이 있는 사용자만 카테고리를 관리할 수 있습니다.");
+    if(typeof showToast === "function") showToast("관리자(Admin) 권한이 있는 사용자만 부서를 관리할 수 있습니다.");
     return;
   }
   var backdrop = document.getElementById("deptModalBackdrop");
