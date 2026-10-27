@@ -1040,6 +1040,7 @@ document.addEventListener("DOMContentLoaded", function () {
   initSettingsSubtabs();
   renderSettingsCategoryTable();
   initBackupUI();
+  initLicenseUI();
 });
 
 // ── Settings Sub-Tabs System ───────────────────────────────────
@@ -2504,5 +2505,277 @@ window.isCurrentUserAdmin = isCurrentUserAdmin;
 window.isCurrentUserManagerOrAdmin = isCurrentUserManagerOrAdmin;
 
 
+// ── Enterprise License & Entitlements Management ────────────────
+var LICENSE_MODULE_MAP = {
+  "canvas": "🎨 캔버스 (Canvas)",
+  "pim": "📦 PIM (품목 관리)",
+  "jira": "🎫 Jira 연동 (Jira Integration)",
+  "rag": "🤖 AI 지식베이스 (RAG / AI Chat)",
+  "schedule": "📅 일정 관리 (Schedule)",
+  "audit": "🛡️ 보안 감사 (Audit Logs)",
+  "*": "⭐ 전체 모듈 (All Modules)",
+  "all": "⭐ 전체 모듈 (All Modules)"
+};
 
+async function loadLicenseStatus() {
+  var badge = document.getElementById("badgeLicenseState");
+  var warnBox = document.getElementById("licenseWarningBox");
+  var licCustomer = document.getElementById("licCustomer");
+  var licExpiry = document.getElementById("licExpiry");
+  var licDaysLeft = document.getElementById("licDaysLeft");
+  var licValid = document.getElementById("licValid");
+  var licSeats = document.getElementById("licSeats");
+  var licSeatsBar = document.getElementById("licSeatsBar");
+  var licModules = document.getElementById("licModules");
 
+  if (!badge && !licCustomer) return;
+
+  if (badge) {
+    badge.textContent = "확인 중...";
+    badge.className = "card-badge";
+    badge.style.background = "";
+    badge.style.color = "";
+    badge.style.border = "";
+  }
+
+  try {
+    var res = await apiGet("/api/admin/license");
+    if (!res || !res.ok || !res.license) {
+      if (badge) {
+        badge.textContent = "조회 실패";
+        badge.style.background = "rgba(239,68,68,0.12)";
+        badge.style.color = "#ef4444";
+        badge.style.border = "1px solid rgba(239,68,68,0.3)";
+      }
+      if (warnBox) {
+        warnBox.style.display = "block";
+        warnBox.style.borderColor = "#ef4444";
+        warnBox.style.background = "rgba(239,68,68,0.10)";
+        warnBox.style.color = "#b91c1c";
+        warnBox.textContent = "⚠️ 라이선스 정보를 불러오지 못했습니다: " + ((res && res.error) || "서버 통신 오류");
+      }
+      return;
+    }
+
+    var lic = res.license;
+
+    // 1. Badge & Warning box
+    if (!lic.license_valid) {
+      if (badge) {
+        badge.textContent = "미인증 / 오류";
+        badge.style.background = "rgba(239,68,68,0.12)";
+        badge.style.color = "#ef4444";
+        badge.style.border = "1px solid rgba(239,68,68,0.3)";
+      }
+      if (warnBox) {
+        warnBox.style.display = "block";
+        warnBox.style.borderColor = "#ef4444";
+        warnBox.style.background = "rgba(239,68,68,0.10)";
+        warnBox.style.color = "#b91c1c";
+        warnBox.textContent = "⚠️ 유효하지 않은 라이선스입니다 (" + (lic.license_reason || "서명 검증 실패") + "). 정품 라이선스 키를 활성화하세요.";
+      }
+    } else if (lic.is_expired) {
+      if (badge) {
+        badge.textContent = "만료됨 (읽기 전용)";
+        badge.style.background = "rgba(239,68,68,0.12)";
+        badge.style.color = "#ef4444";
+        badge.style.border = "1px solid rgba(239,68,68,0.3)";
+      }
+      if (warnBox) {
+        warnBox.style.display = "block";
+        warnBox.style.borderColor = "#ef4444";
+        warnBox.style.background = "rgba(239,68,68,0.10)";
+        warnBox.style.color = "#b91c1c";
+        warnBox.textContent = "⚠️ 라이선스가 만료되어 시스템이 읽기 전용으로 전환되었습니다 (만료일: " + lic.expiry_date + "). 새로운 라이선스 키를 활성화해주세요.";
+      }
+    } else if (lic.expiry_warning) {
+      if (badge) {
+        badge.textContent = "만료 임박 (D-" + lic.days_left + ")";
+        badge.style.background = "rgba(245,158,11,0.14)";
+        badge.style.color = "#f59e0b";
+        badge.style.border = "1px solid rgba(245,158,11,0.35)";
+      }
+      if (warnBox) {
+        warnBox.style.display = "block";
+        warnBox.style.borderColor = "#f59e0b";
+        warnBox.style.background = "rgba(245,158,11,0.10)";
+        warnBox.style.color = "#92400e";
+        warnBox.textContent = "⚠️ 라이선스 만료가 " + lic.days_left + "일 남았습니다. 계약 갱신 키를 준비해주세요.";
+      }
+    } else {
+      if (badge) {
+        badge.textContent = "정상 활성";
+        badge.style.background = "rgba(16,185,129,0.14)";
+        badge.style.color = "#10b981";
+        badge.style.border = "1px solid rgba(16,185,129,0.35)";
+      }
+      if (warnBox) {
+        warnBox.style.display = "none";
+      }
+    }
+
+    // 2. Info Table
+    if (licCustomer) licCustomer.textContent = lic.customer_name || "-";
+    if (licExpiry) licExpiry.textContent = lic.expiry_date || "-";
+    if (licDaysLeft) {
+      if (!lic.license_valid) {
+        licDaysLeft.textContent = "-";
+      } else if (lic.is_expired) {
+        licDaysLeft.innerHTML = '<span style="color:#ef4444; font-weight:600;">만료됨 (0일)</span>';
+      } else {
+        var daysText = lic.days_left + "일";
+        if (lic.days_left <= 30) {
+          licDaysLeft.innerHTML = '<span style="color:#f59e0b; font-weight:600;">' + daysText + ' (만료 임박)</span>';
+        } else {
+          licDaysLeft.innerHTML = '<span style="color:#10b981; font-weight:600;">' + daysText + ' 남음</span>';
+        }
+      }
+    }
+    if (licValid) {
+      if (lic.license_valid) {
+        licValid.innerHTML = '<span style="color:#10b981; font-weight:600;">✅ 정상 검증</span> <span style="font-size:11.5px; color:var(--text-muted);">(' + escapeHtml(lic.license_reason || "Ed25519 서명 확인") + ')</span>';
+      } else {
+        licValid.innerHTML = '<span style="color:#ef4444; font-weight:600;">❌ 검증 실패</span> <span style="font-size:11.5px; color:var(--text-muted);">(' + escapeHtml(lic.license_reason || "키 확인 불가") + ')</span>';
+      }
+    }
+
+    // 3. Seats Bar
+    var activeSeats = Number(lic.active_seats) || 0;
+    var maxSeats = Number(lic.max_seats) || 0;
+    var pct = maxSeats > 0 ? Math.min(100, Math.round((activeSeats / maxSeats) * 100)) : 0;
+    if (licSeats) {
+      if (maxSeats > 0) {
+        licSeats.textContent = activeSeats + " / " + maxSeats + "석 (" + pct + "%)";
+      } else {
+        licSeats.textContent = activeSeats + "석 사용 중 (한도 미설정)";
+      }
+    }
+    if (licSeatsBar) {
+      licSeatsBar.style.width = pct + "%";
+      if (pct >= 100) {
+        licSeatsBar.style.background = "linear-gradient(90deg, #ef4444, #f87171)";
+      } else if (pct >= 85) {
+        licSeatsBar.style.background = "linear-gradient(90deg, #f59e0b, #fbbf24)";
+      } else {
+        licSeatsBar.style.background = "linear-gradient(90deg, #0284c7, #38bdf8)";
+      }
+    }
+
+    // 4. Modules
+    if (licModules) {
+      licModules.innerHTML = "";
+      var mods = Array.isArray(lic.modules) ? lic.modules : [];
+      if (mods.length === 0) {
+        licModules.innerHTML = '<span style="font-size:12px; color:var(--text-muted);">활성화된 모듈이 없습니다.</span>';
+      } else {
+        mods.forEach(function (m) {
+          var label = LICENSE_MODULE_MAP[m] || ("🧩 " + String(m).toUpperCase());
+          var span = document.createElement("span");
+          span.style.cssText = "background:rgba(56,189,248,0.12); color:var(--stat-info, #38bdf8); border:1px solid rgba(56,189,248,0.28); padding:3px 9px; border-radius:12px; font-size:11.5px; font-weight:600;";
+          span.textContent = label;
+          licModules.appendChild(span);
+        });
+      }
+    }
+
+  } catch (err) {
+    console.error("[loadLicenseStatus] Error:", err);
+    if (badge) {
+      badge.textContent = "오류";
+      badge.style.color = "#ef4444";
+    }
+  }
+}
+
+async function activateLicense() {
+  var input = document.getElementById("inputLicenseKey");
+  var btn = document.getElementById("btnActivateLicense");
+  var msg = document.getElementById("licenseMsg");
+  if (!input) return;
+
+  var key = (input.value || "").trim();
+  if (!key) {
+    if (msg) {
+      msg.style.color = "#ef4444";
+      msg.textContent = "⚠️ 라이선스 키를 입력하세요.";
+    }
+    input.focus();
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  if (msg) {
+    msg.style.color = "var(--text-muted)";
+    msg.textContent = "검증 및 활성화 중...";
+  }
+
+  try {
+    var res = await apiPostJson("/api/admin/license/activate", { license_key: key });
+    if (res && res.ok) {
+      if (msg) {
+        msg.style.color = "#10b981";
+        msg.textContent = "✅ " + (res.message || "라이선스가 성공적으로 활성화되었습니다.");
+      }
+      input.value = "";
+      await loadLicenseStatus();
+      if (typeof showToast === "function") {
+        showToast("라이선스가 성공적으로 활성화되었습니다.", 3000);
+      }
+    } else {
+      var errMsg = (res && res.error) || "라이선스 활성화에 실패했습니다.";
+      if (msg) {
+        msg.style.color = "#ef4444";
+        msg.textContent = "❌ " + errMsg;
+      }
+      if (typeof showToast === "function") {
+        showToast(errMsg, 4000, true);
+      }
+    }
+  } catch (err) {
+    if (msg) {
+      msg.style.color = "#ef4444";
+      msg.textContent = "❌ 오류: " + err.message;
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function initLicenseUI() {
+  var btnActivate = document.getElementById("btnActivateLicense");
+  if (btnActivate && !btnActivate.__bound) {
+    btnActivate.__bound = true;
+    btnActivate.addEventListener("click", activateLicense);
+  }
+
+  var btnRefresh = document.getElementById("btnRefreshLicense");
+  if (btnRefresh && !btnRefresh.__bound) {
+    btnRefresh.__bound = true;
+    btnRefresh.addEventListener("click", function () {
+      var msg = document.getElementById("licenseMsg");
+      if (msg) {
+        msg.style.color = "var(--text-muted)";
+        msg.textContent = "새로고침 중...";
+      }
+      loadLicenseStatus().then(function () {
+        if (msg) {
+          msg.style.color = "#10b981";
+          msg.textContent = "최신 상태로 갱신되었습니다.";
+          setTimeout(function () {
+            if (msg.textContent === "최신 상태로 갱신되었습니다.") msg.textContent = "";
+          }, 2500);
+        }
+      });
+    });
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initLicenseUI);
+} else {
+  initLicenseUI();
+}
+
+window.loadLicenseStatus = loadLicenseStatus;
+window.activateLicense = activateLicense;
+window.initLicenseUI = initLicenseUI;

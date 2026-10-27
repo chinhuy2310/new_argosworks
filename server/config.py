@@ -211,18 +211,48 @@ def load_config():
     _load_env()
     from utils.crypto import decrypt_secret
 
+    # --- Jira -----------------------------------------------------------------
+    jira_cfg = cfg.setdefault('jira', {
+        'enabled': False,
+        'base_url': '',
+        'email': '',
+        'api_token': '',
+        'default_project_key': '',
+        'default_issue_type': '',
+        'default_subtask_type': 'Subtask',
+        'project_map': {}
+    })
+
+    # JIRA_ENABLED: .env에 URL/이메일/토큰만 넣고 이 값을 처리하지 않으면
+    # jira.enabled가 계속 False로 남아 모든 Jira 호출이 조용히 no-op 되었다.
+    if os.environ.get('JIRA_ENABLED'):
+        jira_cfg['enabled'] = os.environ['JIRA_ENABLED'].strip().lower() in ('1', 'true', 'yes', 'on')
+
     # Override sensitive config from environment (with transparent AES-256 decryption)
     if os.environ.get('JIRA_API_TOKEN'):
-        cfg['jira']['api_token'] = decrypt_secret(os.environ['JIRA_API_TOKEN'])
-    elif cfg.get('jira', {}).get('api_token'):
-        cfg['jira']['api_token'] = decrypt_secret(cfg['jira']['api_token'])
+        jira_cfg['api_token'] = decrypt_secret(os.environ['JIRA_API_TOKEN'])
+    elif jira_cfg.get('api_token'):
+        jira_cfg['api_token'] = decrypt_secret(jira_cfg['api_token'])
 
     if os.environ.get('JIRA_EMAIL'):
-        cfg['jira']['email'] = os.environ['JIRA_EMAIL']
+        jira_cfg['email'] = os.environ['JIRA_EMAIL'].strip()
     if os.environ.get('JIRA_BASE_URL'):
-        cfg['jira']['base_url'] = os.environ['JIRA_BASE_URL']
+        jira_cfg['base_url'] = os.environ['JIRA_BASE_URL'].strip()
     if os.environ.get('JIRA_PROJECT_KEY'):
-        cfg['jira']['default_project_key'] = os.environ['JIRA_PROJECT_KEY']
+        jira_cfg['default_project_key'] = os.environ['JIRA_PROJECT_KEY'].strip()
+
+    # JIRA_PROJECT_MAP: JSON object, e.g. {"dev": {"project_key": "SCRUM", "issue_type": "Task"}}
+    raw_project_map = (os.environ.get('JIRA_PROJECT_MAP') or '').strip()
+    if raw_project_map:
+        parsed_map = None
+        try:
+            parsed_map = json.loads(raw_project_map)
+        except Exception as e:
+            log_line("JIRA_PROJECT_MAP 값이 올바른 JSON이 아니어서 무시했습니다:", e)
+        if isinstance(parsed_map, dict):
+            jira_cfg['project_map'] = parsed_map
+        elif parsed_map is not None:
+            log_line("JIRA_PROJECT_MAP 값이 JSON 객체가 아니어서 무시했습니다.")
 
     # AI Configuration (Universal AI)
     ai_cfg = cfg.setdefault('ai', {

@@ -26,6 +26,26 @@ from services.jira_client import sync_jira_cache, jira_auto_sync_loop
 from services.auth import cleanup_expired_sessions
 from wsgi import init_app, application
 
+def _db_engine_status():
+    """시작 배너용 (엔진 이름, 경고문).
+
+    server/db.py는 **import 시점**에 DATABASE_URL을 읽어 엔진을 고정하는데,
+    이 파일은 db를 load_config()보다 먼저 import한다. 그래서 .env에만
+    DATABASE_URL이 있으면 조용히 SQLite로 동작한다(운영에서 의도와 다른 DB 사용).
+    동작을 바꾸지 않고 눈에 보이게만 만든다.
+    """
+    import os as _os
+    import db as db_module
+    label = "PostgreSQL" if db_module.ENGINE == "postgres" else "SQLite"
+    warning = ""
+    if db_module.ENGINE != "postgres" and (_os.environ.get("DATABASE_URL", "") or "").startswith("postgresql"):
+        warning = (
+            ".env의 DATABASE_URL이 무시되어 SQLite로 동작 중입니다. "
+            "db.py가 load_config()보다 먼저 import되어 엔진이 이미 고정되었습니다. "
+            "PostgreSQL을 쓰려면 DATABASE_URL을 프로세스 환경변수로 전달하세요."
+        )
+    return label, warning
+
 def _session_cleanup_loop():
     import time
     while True:
@@ -81,10 +101,14 @@ def main():
             use_waitress = False
 
     server_engine_info = "Waitress Enterprise WSGI (64 Concurrency Workers)" if use_waitress else "Standalone Multi-Threaded Engine (Native/Direct TLS)"
+    db_label, db_warning = _db_engine_status()
 
     print("=" * 60)
     print(" ARGOS WORKS 백엔드 서버")
     print(" 데이터 폴더 :", DATA_DIR)
+    print(" DB 엔진     :", db_label)
+    if db_warning:
+        print(" 경고        :", db_warning)
     print(f" 주소        : {proto}://{host}:{port}  (사내망: {proto}://<이 PC의 IP>:{port})")
     print(" 서버 엔진   :", server_engine_info)
     print(" SSL/TLS     :", ssl_state)

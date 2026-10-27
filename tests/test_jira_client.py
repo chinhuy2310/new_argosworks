@@ -5,6 +5,7 @@ Regression: `_urlopen()` used to swallow urllib.URLError and return None, so
 every `with _urlopen(...) as resp:` blew up with the meaningless
 "'NoneType' object does not support the context manager protocol".
 """
+import io
 import os
 import sys
 import urllib.error
@@ -228,5 +229,68 @@ class TestBidirectionalAliases:
         )
         mine = jira_client.my_jira_records(cfg, "John Doe", "dev", "johnd@company.com")
         assert [r["jira"]["key"] for r in mine] == ["SCRUM-9"]
+
+
+# ---------------------------------------------------------------------------
+# Jira Cloud quirk: /rest/api/3/search/jql answers HTTP 200 + {"issues": []}
+# even when the token is expired/revoked (only /myself returns 401). Trusting
+# that empty page made a dead token look like "connected, 0 issues".
+# ---------------------------------------------------------------------------
+class _StatusResponse(_FakeResponse):
+    def __init__(self, payload, status=200):
+        super().__init__(payload)
+        self.status = status
+
+
+def _route(search_payload, myself_status):
+    """urlopen stub: /myself behaves per myself_status, /search/jql returns search_payload."""
+
+    def fake(req, *args, **kwargs):
+        url = getattr(req, "full_url", str(req))
+        if "/rest/api/3/myself" in url:
+            if myself_status != 200:
+                body = io.BytesIO(b'{"errorMessages": ["Client must be authenticated."]}')
+                raise urllib.error.HTTPError(url, myself_status, "Unauthorized", {}, body)
+            return _StatusResponse({"accountId": "acc-me", "active": True})
+        return _StatusResponse(search_payload)
+
+    return fake
+
+
+class TestEmptySearchIsCrossCheckedWithAuth:
+    def test_expired_token_returns_none_not_empty_list(self, monkeypatch):
+        monkeypatch.setattr(
+            jira_client.urllib.request, "urlopen",
+            _route({"issues": [], "isLast": True}, myself_status=401),
+        )
+
+        issues, activities = jira_client.jira_search_issues(_cfg(), max_results=10, page_size=10)
+
+        assert issues is None  # "lookup failed" → caller keeps the previous cache
+        assert activities is None
+
+    def test_valid_token_with_no_issues_returns_empty_list(self, monkeypatch):
+        monkeypatch.setattr(
+            jira_client.urllib.request, "urlopen",
+            _route({"issues": [], "isLast": True}, myself_status=200),
+        )
+
+        issues, activities = jira_client.jira_search_issues(_cfg(), max_results=10, page_size=10)
+
+        assert issues == []
+        assert activities == []
+
+    def test_verify_auth_reports_http_error_text(self, monkeypatch):
+        def boom(req, *a, **kw):
+            body = io.BytesIO(b"Client must be authenticated to access this resource.")
+            raise urllib.error.HTTPError(getattr(req, "full_url", ""), 401, "Unauthorized", {}, body)
+
+        monkeypatch.setattr(jira_client.urllib.request, "urlopen", boom)
+
+        ok, error = jira_client._verify_jira_auth(_cfg()["jira"])
+
+        assert ok is False
+        assert "401" in error
+        assert "authenticated" in error
 
 

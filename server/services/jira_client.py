@@ -67,6 +67,32 @@ def _jira_auth_header(j):
     }
 
 
+def _verify_jira_auth(j, timeout=10):
+    """자격 증명이 실제로 유효한지 /myself 로 확인한다.
+
+    Jira Cloud의 /rest/api/3/search/jql 은 인증 실패(만료/폐기된 토큰, 권한 없음)
+    에도 HTTP 200 + {"issues": []} 를 돌려준다. 반면 /rest/api/3/myself 는 401 을
+    돌려주므로, 빈 검색 결과를 '정말 0건'으로 믿기 전에 이 엔드포인트로 확인해야
+    '만료된 토큰인데 화면에는 연결 정상/0건'으로 보이는 상황을 막을 수 있다.
+
+    반환: (ok: bool, error: str|None)
+    """
+    base_url = (j.get("base_url") or "").rstrip("/")
+    if not base_url:
+        return False, "base_url is not configured"
+    req = urllib.request.Request(base_url + "/rest/api/3/myself", method="GET", headers=_jira_auth_header(j))
+    try:
+        with _urlopen(req, timeout=timeout) as resp:
+            if resp.status == 200:
+                return True, None
+            return False, "HTTP %s" % resp.status
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", "replace")
+        return False, "HTTP %s: %s" % (e.code, body[:300])
+    except Exception as e:
+        return False, str(e)
+
+
 # ---------------------------------------------------------------------------
 # User aliases (bidirectional)
 # ---------------------------------------------------------------------------
@@ -445,6 +471,14 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None)
         next_token = data.get("nextPageToken")
         if not next_token or not issues:
             break
+
+    if not all_issues:
+        # Jira Cloud는 미인증/권한없음 검색에도 200 + 빈 결과를 주기 때문에,
+        # 빈 결과를 그대로 '0건'으로 처리하면 만료된 토큰이 '연결 정상·0건'으로 보인다.
+        auth_ok, auth_err = _verify_jira_auth(j)
+        if not auth_ok:
+            log_line("Jira 인증 확인 실패 — 이전 캐시를 유지합니다:", auth_err)
+            return None, None
 
     out = []
     activities = []
