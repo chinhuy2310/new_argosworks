@@ -26,6 +26,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.lock
+          pip install pytest pytest-cov
 
       - name: Python Syntax Gate (compileall)
         run: python -m compileall -q server scripts tests
@@ -37,7 +38,7 @@ jobs:
         env:
           ARGOS_MASTER_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
           DATABASE_URL: ""
-        run: pytest -v
+        run: python -m pytest -v
 
   # ---------------------------------------------------------------------------
   # Engine 2: PostgreSQL — the default for docker-compose / enterprise deploys.
@@ -76,6 +77,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.lock
+          pip install pytest pytest-cov
 
       - name: Wait for PostgreSQL and assert the engine
         env:
@@ -108,7 +110,7 @@ jobs:
       - name: Run Full Test Suite (PostgreSQL)
         env:
           ARGOS_MASTER_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-        run: pytest -v
+        run: python -m pytest -v
 
   # ---------------------------------------------------------------------------
   # Supply chain / static analysis
