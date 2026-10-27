@@ -50,7 +50,11 @@ def sanitize_filename(name):
     """Sanitize filename to prevent directory traversal and stored XSS/code execution.
     Dangerous extensions (.html, .svg, .js, etc.) are converted to .bin.
     """
-    name = os.path.basename(name or "file")
+    if not name:
+        name = "file"
+    # Normalize Windows backslashes on POSIX systems before os.path.basename
+    normalized = str(name).replace("\\", "/")
+    name = os.path.basename(normalized)
     name = re.sub(r"[\\/:*?\"<>|\x00-\x1f]", "_", name).strip()
     if not name:
         name = "file.bin"
