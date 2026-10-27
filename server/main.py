@@ -36,6 +36,12 @@ def _session_cleanup_loop():
         time.sleep(3600)  # Clean up expired sessions once every hour
 
 def main():
+    # Packaged build: create .env with a fresh ARGOS_MASTER_KEY on the very first start
+    # (before anything is encrypted), so the customer has the file to back up from day one.
+    from app_paths import IS_FROZEN as _FROZEN
+    if _FROZEN:
+        from utils.crypto import get_master_key
+        get_master_key()
     init_app()
     cfg = load_config()
     ArgosHandler.cfg = cfg
@@ -94,6 +100,13 @@ def main():
     print(" CSDL 백업   : 자동 스케줄러 가동 (24시간 주기, 14일 보관)")
     print(" 종료하려면 이 창에서 Ctrl+C 를 누르세요.")
     print("=" * 60)
+
+    # Packaged build: open the browser automatically so a double-click is enough.
+    from app_paths import IS_FROZEN
+    if IS_FROZEN and os.environ.get("ARGOS_NO_BROWSER", "0").strip().lower() not in ("1", "true", "yes"):
+        import webbrowser
+        open_host = "localhost" if host in ("0.0.0.0", "::", "") else host
+        threading.Timer(2.0, lambda: webbrowser.open(f"{proto}://{open_host}:{port}/")).start()
 
     if use_waitress:
         try:
