@@ -1,6 +1,7 @@
 ; ==============================================================================
 ; ARGOS WORKS Enterprise - Inno Setup Script
-; Đóng gói bộ cài đặt Setup.exe chuyên nghiệp cho Windows
+; Đóng gói bộ cài đặt Setup.exe chuyên nghiệp cho Windows x64
+; Tích hợp sẵn PostgreSQL 16 Portable + Caddy HTTPS Reverse Proxy
 ; ==============================================================================
 
 #define MyAppName "ARGOS WORKS Enterprise"
@@ -23,10 +24,17 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 LicenseFile=..\LICENSE
 
+; Biểu tượng ứng dụng chính thức
+SetupIconFile=app.ico
+UninstallDisplayIcon={app}\app.ico
+
+; Native x64 Architecture
+ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed=x64compatible
+
 ; Đầu ra bộ cài đặt
 OutputDir=..\dist
 OutputBaseFilename=ArgosWorks-Setup-{#MyAppVersion}
-UninstallDisplayIcon={app}\{#MyAppExeName}
 
 ; Nén tối ưu hóa LZMA2 siêu nhỏ gọn
 Compression=lzma2/ultra64
@@ -44,21 +52,25 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 Name: "startupicon"; Description: "Start ARGOS WORKS automatically on Windows startup"; GroupDescription: "Startup options:"; Flags: unchecked
 
-[Files]
-; Sao chép toàn bộ tệp từ bản dựng đã giấu code Nuitka
-Source: "..\dist\ArgosWorks-1.0.0-win64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Khởi tạo .env nếu chưa có và không ghi đè khi nâng cấp
-Source: "..\dist\ArgosWorks-1.0.0-win64\.env.example"; DestName: ".env"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall
-
 [Dirs]
+Name: "{app}"; Permissions: users-full
 Name: "{app}\data"; Permissions: users-full
+Name: "{app}\data\postgres"; Permissions: users-full
 Name: "{app}\logs"; Permissions: users-full
 
+[Files]
+; Biểu tượng ứng dụng
+Source: "app.ico"; DestDir: "{app}"; Flags: ignoreversion; Permissions: users-full
+; Sao chép toàn bộ tệp từ bản dựng đã giấu code Nuitka (bao gồm pgsql và caddy)
+Source: "..\dist\ArgosWorks-1.0.0-win64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Permissions: users-full
+; Khởi tạo .env nếu chưa có và không ghi đè khi nâng cấp
+Source: "..\dist\ArgosWorks-1.0.0-win64\.env.example"; DestName: ".env"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Permissions: users-full
+
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app.ico"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
-Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startupicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app.ico"; Tasks: desktopicon
+Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app.ico"; Tasks: startupicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
