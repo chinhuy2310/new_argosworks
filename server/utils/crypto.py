@@ -16,11 +16,45 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding as crypto_padding
 from cryptography.hazmat.backends import default_backend
 
+from app_paths import APP_HOME, IS_FROZEN
+
 SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BASE_DIR = os.path.dirname(SERVER_DIR)
+BASE_DIR = APP_HOME
 ENV_PATH = os.path.join(BASE_DIR, ".env")
 
 _CACHED_MASTER_KEY = None
+
+
+def _bootstrap_packaged_master_key() -> str:
+    """Packaged (.exe) builds only: create a random master key on first run.
+
+    Source/Docker deployments keep the strict behaviour (the key must be supplied
+    by the operator). A packaged build has no installer step, so the key is
+    generated once and stored in ``.env`` next to the executable. That file MUST
+    be backed up: without it, secrets already encrypted in config.json / the
+    database can no longer be decrypted.
+    """
+    key = secrets.token_hex(32)
+    try:
+        existing = ""
+        if os.path.isfile(ENV_PATH):
+            with open(ENV_PATH, "r", encoding="utf-8") as f:
+                existing = f.read()
+        prefix = "" if (not existing or existing.endswith("\n")) else "\n"
+        with open(ENV_PATH, "a", encoding="utf-8") as f:
+            f.write(prefix + "ARGOS_MASTER_KEY=" + key + "\n")
+        try:
+            os.chmod(ENV_PATH, 0o600)
+        except OSError:
+            pass
+    except OSError as exc:
+        raise RuntimeError(
+            "Cannot create %s to store the generated master key (%s). "
+            "Make sure the program folder is writable." % (ENV_PATH, exc)
+        )
+    print("[Security] First run: generated a new ARGOS_MASTER_KEY in %s - back up this file." % ENV_PATH,
+          file=sys.stderr, flush=True)
+    return key
 
 
 def get_master_key() -> bytes:
@@ -53,6 +87,9 @@ def get_master_key() -> bytes:
                             break
         except Exception:
             pass
+
+    if not raw_key and IS_FROZEN:
+        raw_key = _bootstrap_packaged_master_key()
 
     # Strictly reject missing master key: Never silently auto-generate to .env container ephemeral storage
     if not raw_key:

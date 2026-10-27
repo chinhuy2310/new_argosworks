@@ -4,8 +4,10 @@ import csv
 import re
 from datetime import datetime, date
 
+from app_paths import APP_HOME
+
 SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BASE_DIR = os.path.dirname(SERVER_DIR)
+BASE_DIR = APP_HOME
 LOG_DIR = os.path.join(BASE_DIR, "logs")
 
 SENSITIVE_PARAM_PATTERN = re.compile(

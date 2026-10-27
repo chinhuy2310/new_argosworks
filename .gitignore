@@ -95,3 +95,6 @@ $RECYCLE.BIN/
 .idea/
 *.swp
 *.swo
+
+# Nuitka build output
+build/
