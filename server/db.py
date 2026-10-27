@@ -61,6 +61,10 @@ _RE_STRFTIME_NOW = re.compile(
     r"strftime\s*\(\s*'[^']*'\s*,\s*'now'\s*\)",
     re.IGNORECASE,
 )
+_RE_DATETIME_NOW = re.compile(
+    r"datetime\s*\(\s*'now'\s*\)",
+    re.IGNORECASE,
+)
 _RE_PRAGMA = re.compile(r"^\s*PRAGMA\s+", re.IGNORECASE)
 # SQLite exposes an implicit "rowid" pseudo-column that PostgreSQL does not have.
 # All ARGOS tables use an explicit "id" primary key, so ordering by rowid (insert
@@ -78,8 +82,9 @@ def _translate_sql(sql):
     if _RE_PRAGMA.match(sql):
         return None  # Signal to skip
 
-    # 2. strftime('%Y-...','now') → CURRENT_TIMESTAMP
+    # 2. strftime('%Y-...','now') or datetime('now') → CURRENT_TIMESTAMP
     sql = _RE_STRFTIME_NOW.sub("CURRENT_TIMESTAMP", sql)
+    sql = _RE_DATETIME_NOW.sub("CURRENT_TIMESTAMP", sql)
 
     # 2b. ORDER BY rowid → ORDER BY id (SQLite implicit rowid is unavailable in PostgreSQL)
     sql = _RE_ORDER_BY_ROWID.sub("ORDER BY id", sql)

@@ -67,6 +67,13 @@ class TestSqlTranslation(unittest.TestCase):
         self.assertIn("CURRENT_TIMESTAMP", translated)
         self.assertNotIn("strftime", translated)
 
+    def test_sqlite_datetime_now_becomes_current_timestamp(self):
+        translated = db._translate_sql(
+            "INSERT INTO products (created_at) VALUES (datetime('now'))"
+        )
+        self.assertIn("CURRENT_TIMESTAMP", translated)
+        self.assertNotIn("datetime", translated)
+
     def test_server_code_avoids_sqlite_only_collations(self):
         """COLLATE NOCASE is a SQLite-only clause; PostgreSQL rejects it outright."""
         offenders = []
