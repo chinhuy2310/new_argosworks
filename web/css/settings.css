@@ -814,6 +814,7 @@ select.ts-hidden-accessible {
   margin-top: 14px;
   border: 1px solid var(--border-color, #e0e0e0);
   border-radius: 8px;
+  background: var(--surface, #ffffff);
 }
 
 .settings-prod-cat-table {
@@ -829,61 +830,167 @@ select.ts-hidden-accessible {
 }
 
 .settings-prod-cat-table th {
-  padding: 10px 14px;
+  padding: 11px 16px;
   font-weight: 600;
   color: var(--ink-soft);
+  font-size: 12px;
+  letter-spacing: 0.01em;
 }
 
 .settings-prod-cat-row {
   border-bottom: 1px solid var(--border-color, #e2e8f0);
+  transition: background 0.15s ease;
+}
+
+.settings-prod-cat-row:hover {
+  background: var(--bg-hover, rgba(0, 0, 0, 0.015));
+}
+
+.settings-prod-cat-row:last-child {
+  border-bottom: none;
 }
 
 .settings-prod-cat-row .prod-cat-cell-name {
-  padding: 12px 14px;
+  padding: 14px 16px;
+  vertical-align: middle;
+}
+
+.prod-cat-name-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.prod-cat-badge-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.prod-cat-name-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.prod-cat-title {
+  font-size: 13.5px;
   font-weight: 700;
-  color: var(--ink);
-  vertical-align: top;
+  color: var(--ink, #0f172a);
+  line-height: 1.4;
+  word-break: keep-all;
+}
+
+.prod-cat-id-code {
+  font-size: 10.5px;
+  font-family: var(--font-mono, monospace);
+  color: var(--ink-faint, #64748b);
+  opacity: 0.85;
 }
 
 .settings-prod-cat-row .prod-cat-cell-fields {
-  padding: 12px 14px;
-  line-height: 1.6;
-  vertical-align: top;
+  padding: 14px 16px;
+  vertical-align: middle;
+}
+
+.prod-spec-badges-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.prod-spec-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  background: var(--code-bg, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.09));
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: border-color 0.15s;
+}
+
+.prod-spec-badge:hover {
+  border-color: var(--accent-2, #38bdf8);
+}
+
+.spec-pill-group {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--accent-2, #0284c7);
+  letter-spacing: -0.02em;
+}
+
+.spec-pill-label {
+  font-weight: 600;
+  color: var(--ink, #0f172a);
+  font-size: 12px;
+}
+
+.spec-pill-key {
+  color: var(--ink-soft, #64748b);
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+}
+
+.prod-spec-empty-hint {
+  color: var(--ink-faint, #94a3b8);
+  font-style: italic;
+  font-size: 12px;
 }
 
 .settings-prod-cat-row .prod-cat-cell-actions {
-  padding: 12px 14px;
+  padding: 14px 16px;
   text-align: right;
   white-space: nowrap;
-  vertical-align: top;
+  vertical-align: middle;
 }
 
-/* 2. Spec Field Pill Styles */
-.prod-spec-field-pill {
-  display: inline-flex;
+.prod-cat-actions-box {
+  display: flex;
+  justify-content: flex-end;
   align-items: center;
-  margin: 3px 5px 3px 0;
-  padding: 3px 8px;
-  background: var(--code-bg, rgba(0, 0, 0, 0.05));
-  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
-  border-radius: 5px;
-  font-size: 11.5px;
-  line-height: 1.4;
-  word-break: keep-all;
-  white-space: nowrap;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  gap: 6px;
 }
 
-.prod-spec-field-pill strong {
+.btn-cat-edit {
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border-color, #cbd5e1);
   color: var(--ink, #0f172a);
-  margin-left: 1px;
+  border-radius: 5px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.15s ease;
 }
 
-.prod-spec-field-pill .spec-field-key {
-  color: var(--ink-soft, #64748b);
-  margin-left: 3px;
-  font-size: 11px;
-  font-family: var(--font-mono, monospace);
+.btn-cat-edit:hover {
+  background: var(--bg-hover, rgba(0, 0, 0, 0.05));
+  border-color: var(--line-strong, #94a3b8);
+}
+
+.btn-cat-del {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #ef4444;
+  border-radius: 5px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.btn-cat-del:hover {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: #ef4444;
 }
 
 /* 3. Media Queries for Tablet & Mobile */
@@ -1041,7 +1148,8 @@ select.ts-hidden-accessible {
     gap: 6px;
   }
 
-  .prod-spec-field-pill {
+  .prod-spec-field-pill,
+  .prod-spec-badge {
     margin: 0;
     max-width: 100%;
     white-space: normal;
