@@ -247,8 +247,10 @@ def handle_get_product_categories_admin(handler, parsed, ip):
     session = _require_admin(handler, ip, "get_product_categories_admin")
     if session is None:
         return
-    from services.data_store import read_product_categories
+    from services.data_store import read_product_categories, get_used_spec_keys
     cats = read_product_categories()
+    for c in cats:
+        c["used_keys"] = get_used_spec_keys(c["name"])
     handler._send_json(200, {"ok": True, "categories": cats})
 
 def handle_product_category_save(handler, raw_body, ip):
@@ -269,7 +271,20 @@ def handle_product_category_save(handler, raw_body, ip):
         handler._send_json(400, {"ok": False, "error": "규격 템플릿 목록 형식이 올바르지 않습니다."})
         return
 
-    from services.data_store import save_product_category, read_product_categories
+    from services.data_store import save_product_category, read_product_categories, get_used_spec_keys
+
+    # Validate: do not allow removal of spec keys that have product data
+    if cat_id:
+        existing_cats = read_product_categories()
+        existing = next((c for c in existing_cats if c["id"] == cat_id), None)
+        if existing:
+            used = set(get_used_spec_keys(existing["name"]))
+            new_keys = {item.get("key", "") for item in spec_template if isinstance(item, dict)}
+            removed_used = used - new_keys
+            if removed_used:
+                handler._send_json(400, {"ok": False, "error": "다음 규격 항목은 제품 데이터에 사용 중이므로 삭제할 수 없습니다: " + ", ".join(sorted(removed_used))})
+                return
+
     ok, res = save_product_category(cat_id, name, spec_template)
     if not ok:
         handler._send_json(400, {"ok": False, "error": res})
