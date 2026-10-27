@@ -1,10 +1,10 @@
 ; ==============================================================================
-; ARGOS WORKS Enterprise - Inno Setup Script
+; ARGOS WORKS Server - Inno Setup Script
 ; Đóng gói bộ cài đặt Setup.exe chuyên nghiệp cho Windows x64
 ; Tích hợp sẵn PostgreSQL 16 Portable + Caddy HTTPS Reverse Proxy
 ; ==============================================================================
 
-#define MyAppName "ARGOS WORKS Enterprise"
+#define MyAppName "ARGOS WORKS Server"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "ARGOS WORKS"
 #define MyAppURL "https://github.com/chinhuy2310/new_argosworks"
@@ -44,6 +44,18 @@ WizardStyle=modern
 ; Quyền hạn: Cho phép cài đặt cấp User hoặc Admin
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
+CloseApplications=no
+RestartApplications=no
+
+[Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  Exec('taskkill.exe', '/F /IM ArgosWorks.exe /IM postgres.exe /IM caddy.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(500);
+  Result := '';
+end;
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ARGOS WORKS | Enterprise Setup Wizard</title>
+  <title>ARGOS WORKS | Server Setup Wizard</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -453,7 +453,7 @@
           </div>
           <div>
             <div class="brand-title">ARGOS <span>WORKS</span></div>
-            <div class="brand-sub" id="txt-brand-sub">Enterprise B2B 초기 온보딩 마법사</div>
+            <div class="brand-sub" id="txt-brand-sub">Server B2B 초기 온보딩 마법사</div>
           </div>
         </a>
 
@@ -660,7 +660,7 @@
     const dict = {
       ko: {
         langBtn: "KO",
-        brandSub: "Enterprise B2B 초기 온보딩 마법사",
+        brandSub: "Server B2B 초기 온보딩 마법사",
         step1: "라이선스 인증",
         step2: "마스터 관리자",
         step3: "조직 및 부서",
@@ -675,7 +675,7 @@
       },
       en: {
         langBtn: "EN",
-        brandSub: "Enterprise B2B Initial Onboarding Wizard",
+        brandSub: "Server B2B Initial Onboarding Wizard",
         step1: "License Auth",
         step2: "Master Admin",
         step3: "Workspace & Depts",
@@ -820,8 +820,9 @@
     }
 
     // Auto-fill Trial Key
+    const DEFAULT_TRIAL_KEY = 'AGY-eyJjdXN0b21lciI6IkFyZ29zIEVudGVycHJpc2UgVHJpYWwiLCJleHBpcnkiOiIyMDI3LTEyLTMxIiwiaWF0IjoiMjAyNi0xMC0yMyIsIm1vZHVsZXMiOlsiY2FudmFzIiwicGltIiwiamlyYSIsInJhZyIsInNjaGVkdWxlIiwiYXVkaXQiXSwic2VhdHMiOjUwfQ.yEYIb5-mi0VGep5q-vMMi_EHjG8xb2Frsamytfw_sUKjQFFizBci55Q-0bh8sdoq9NOAorGqC_xbmtp5LlDMDw';
     document.getElementById('btnAutoTrial')?.addEventListener('click', () => {
-      document.getElementById('inputLicenseKey').value = 'TRIAL';
+      document.getElementById('inputLicenseKey').value = DEFAULT_TRIAL_KEY;
       verifyLicense();
     });
 
