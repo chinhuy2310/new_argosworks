@@ -1481,11 +1481,9 @@ function renderSettingsProductCategoryTable() {
     } else {
       fieldsBadges = '<div class="prod-spec-badges-wrap">' + tpl.map(function(f) {
         var groupPrefix = f.group ? ('<span class="spec-pill-group">' + escapeHtml(f.group) + '</span>') : '';
-        var keySuffix = (f.key && f.key !== f.label) ? ('<span class="spec-pill-key">(' + escapeHtml(f.key) + ')</span>') : '';
         return '<span class="prod-spec-badge">' +
           groupPrefix +
           '<strong class="spec-pill-label">' + escapeHtml(f.label) + '</strong>' +
-          keySuffix +
         '</span>';
       }).join("") + '</div>';
     }
@@ -1542,11 +1540,13 @@ window.renderSettingsProductCategoryTable = renderSettingsProductCategoryTable;
       if (idInput) idInput.value = catObj.id || "";
       if (nameInput) nameInput.value = catObj.name || "";
       var rawTpl = catObj.spec_template || [];
+      var usedKeys = catObj.used_keys || [];
       rawTpl.forEach(function(f) {
         var grp = (typeof f === "object" && f.group) ? f.group : "사양";
         var lbl = typeof f === "string" ? f : (f.label || f.name || f.key || "");
         var ky = typeof f === "string" ? f : (f.key || (lbl ? lbl.toLowerCase().replace(/[^a-zA-Z0-9]/g, "_").replace(/^_+|_+$/g, "") : ""));
-        addSpecRow(grp, lbl, ky);
+        var locked = usedKeys.indexOf(ky) !== -1;
+        addSpecRow(grp, lbl, ky, locked);
       });
     } else {
       if (titleEl) titleEl.textContent = "새 제품 카테고리 추가";
@@ -1561,10 +1561,16 @@ window.renderSettingsProductCategoryTable = renderSettingsProductCategoryTable;
     if (modal) modal.hidden = true;
   }
 
-  function addSpecRow(group, label, key) {
+  function addSpecRow(group, label, key, isLocked) {
     if (!rowsBody) return;
     var tr = document.createElement("tr");
     tr.style.borderBottom = "1px solid var(--border-color, #e2e8f0)";
+    var delBtnHtml;
+    if (isLocked) {
+      delBtnHtml = '<span title="이 항목은 제품 데이터에 사용 중이므로 삭제할 수 없습니다" style="color:var(--ink-faint, #94a3b8); font-size:13px; cursor:not-allowed;">🔒</span>';
+    } else {
+      delBtnHtml = '<button type="button" class="btn-del-spec-row" style="background:none; border:none; color:#ef4444; font-size:14px; cursor:pointer;">✕</button>';
+    }
     tr.innerHTML = (
       '<td style="padding: 6px 8px;">' +
         '<input type="text" class="spec-row-group" style="width:100%; padding:4px 6px; font-size:12px; border:1px solid var(--border-color, #cbd5e1); border-radius:4px;" placeholder="예: 사양" value="' + escapeHtml(group || "사양") + '">' +
@@ -1572,25 +1578,14 @@ window.renderSettingsProductCategoryTable = renderSettingsProductCategoryTable;
       '<td style="padding: 6px 8px;">' +
         '<input type="text" class="spec-row-label" style="width:100%; padding:4px 6px; font-size:12px; border:1px solid var(--border-color, #cbd5e1); border-radius:4px;" placeholder="예: 정격 전원, 배터리" value="' + escapeHtml(label || "") + '">' +
       '</td>' +
-      '<td style="padding: 6px 8px;">' +
-        '<input type="text" class="spec-row-key" style="width:100%; padding:4px 6px; font-size:12px; font-family:monospace; border:1px solid var(--border-color, #cbd5e1); border-radius:4px;" placeholder="예: power, battery" value="' + escapeHtml(key || "") + '">' +
+      '<td style="padding: 6px 8px; display:none;">' +
+        '<input type="text" class="spec-row-key" style="width:100%; padding:4px 6px; font-size:12px; font-family:monospace; border:1px solid var(--border-color, #cbd5e1); border-radius:4px;" value="' + escapeHtml(key || "") + '">' +
       '</td>' +
       '<td style="padding: 6px 8px; text-align: center;">' +
-        '<button type="button" class="btn-del-spec-row" style="background:none; border:none; color:#ef4444; font-size:14px; cursor:pointer;">✕</button>' +
+        delBtnHtml +
       '</td>'
     );
     rowsBody.appendChild(tr);
-
-    // Auto-generate key when label typed if key is empty
-    var lInput = tr.querySelector(".spec-row-label");
-    var kInput = tr.querySelector(".spec-row-key");
-    if (lInput && kInput) {
-      lInput.addEventListener("blur", function() {
-        if (!kInput.value.trim() && lInput.value.trim()) {
-          kInput.value = lInput.value.trim().toLowerCase().replace(/[^a-zA-Z0-9]/g, "_").replace(/^_+|_+$/g, "") || ("f_" + Math.floor(Math.random()*1000));
-        }
-      });
-    }
   }
 
   if (btnOpen) btnOpen.addEventListener("click", function() { openModal(null); });
@@ -1657,6 +1652,7 @@ window.renderSettingsProductCategoryTable = renderSettingsProductCategoryTable;
       var specTemplate = [];
       var rows = rowsBody ? rowsBody.querySelectorAll("tr") : [];
       var keysSet = new Set();
+      var autoIdx = 1;
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
         var group = (r.querySelector(".spec-row-group") ? r.querySelector(".spec-row-group").value.trim() : "") || "사양";
@@ -1665,11 +1661,19 @@ window.renderSettingsProductCategoryTable = renderSettingsProductCategoryTable;
 
         if (!label) continue;
         if (!key) {
-          key = "field_" + (i + 1);
+          var slug = label.toLowerCase().replace(/[^a-zA-Z0-9]/g, "_").replace(/^_+|_+$/g, "");
+          if (slug && !keysSet.has(slug)) {
+            key = slug;
+          } else {
+            while (keysSet.has("spec_" + autoIdx)) { autoIdx++; }
+            key = "spec_" + autoIdx;
+            autoIdx++;
+          }
         }
         if (keysSet.has(key)) {
-          if (errBox) { errBox.style.display = "block"; errBox.textContent = "변수키(Key) '" + key + "'가 중복됩니다. 서로 다른 키를 사용해주세요."; }
-          return;
+          while (keysSet.has("spec_" + autoIdx)) { autoIdx++; }
+          key = "spec_" + autoIdx;
+          autoIdx++;
         }
         keysSet.add(key);
 

@@ -960,6 +960,21 @@ def delete_product_category(cat_id):
     return True, ""
 
 
+def get_used_spec_keys(category_name):
+    """해당 카테고리의 제품에서 실제 값이 입력된 spec key 목록을 반환한다."""
+    rows = query("SELECT specs FROM products WHERE category = ?", (category_name,))
+    used = set()
+    for r in rows:
+        try:
+            specs = json.loads(r["specs"]) if r.get("specs") else {}
+            for k, v in specs.items():
+                if v and str(v).strip():
+                    used.add(k)
+        except Exception:
+            pass
+    return sorted(used)
+
+
 def update_record_work_date(record_id_or_code, new_date, end_date=None):
     """특정 레코드의 start_date, due_date 및 work_date를 업데이트하고 달력 표시(is_scheduled = 1)를 활성화한다."""
     if not record_id_or_code or not new_date:
