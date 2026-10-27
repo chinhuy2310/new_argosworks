@@ -107,11 +107,28 @@ async function loadAuditLogs() {
     var html = "";
     logs.forEach(function(log) {
       var act = log.action || "";
-      var badgeColor = "#64748b";
-      if (act.includes("CREATE")) badgeColor = "#16a34a";
-      else if (act.includes("UPDATE") || act.includes("APPROVE")) badgeColor = "#2563eb";
-      else if (act.includes("DELETE") || act.includes("REJECT")) badgeColor = "#dc2626";
-      else if (act.includes("LOGIN")) badgeColor = "#7c3aed";
+      // Subtle, enterprise-grade muted badge styling (tinted background, soft colored text)
+      var bg = "rgba(100, 116, 139, 0.12)";
+      var color = "#94a3b8";
+      var border = "rgba(100, 116, 139, 0.3)";
+
+      if (act.includes("CREATE")) {
+        bg = "rgba(16, 185, 129, 0.12)";
+        color = "#10b981";
+        border = "rgba(16, 185, 129, 0.3)";
+      } else if (act.includes("UPDATE") || act.includes("APPROVE")) {
+        bg = "rgba(2, 132, 199, 0.12)";
+        color = "#38bdf8";
+        border = "rgba(2, 132, 199, 0.3)";
+      } else if (act.includes("DELETE") || act.includes("REJECT") || act.includes("FAILED")) {
+        bg = "rgba(239, 68, 68, 0.12)";
+        color = "#f87171";
+        border = "rgba(239, 68, 68, 0.3)";
+      } else if (act.includes("LOGIN")) {
+        bg = "rgba(124, 58, 237, 0.12)";
+        color = "#a78bfa";
+        border = "rgba(124, 58, 237, 0.3)";
+      }
 
       var detailsStr = "";
       if (log.details && typeof log.details === "object") {
@@ -126,7 +143,7 @@ async function loadAuditLogs() {
       html += '<td style="padding:7px 10px;font-family:monospace;font-size:11px;color:var(--text-muted);">' + escapeHtml((log.timestamp || "").replace("T", " ")) + '</td>';
       html += '<td style="padding:7px 10px;font-weight:600;">' + escapeHtml(log.username || "anonymous") + '</td>';
       html += '<td style="padding:7px 10px;font-family:monospace;font-size:11px;color:var(--text-muted);">' + escapeHtml(log.ip || "") + '</td>';
-      html += '<td style="padding:7px 10px;text-align:center;"><span style="display:inline-block;padding:2px 7px;font-size:10.5px;font-weight:700;color:#fff;background:' + badgeColor + ';border-radius:4px;">' + escapeHtml(act) + '</span></td>';
+      html += '<td style="padding:7px 10px;text-align:center;"><span style="display:inline-block;padding:2px 8px;font-size:10.5px;font-weight:600;font-family:monospace;color:' + color + ';background:' + bg + ';border:1px solid ' + border + ';border-radius:4px;letter-spacing:0.3px;">' + escapeHtml(act) + '</span></td>';
       html += '<td style="padding:7px 10px;font-weight:500;">' + escapeHtml((log.target_type || "") + (log.target_id ? " (" + log.target_id + ")" : "")) + '</td>';
       html += '<td style="padding:7px 10px;font-family:monospace;font-size:11px;color:var(--ink-soft);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(detailsStr) + '">' + escapeHtml(detailsStr) + '</td>';
       html += '</tr>';
