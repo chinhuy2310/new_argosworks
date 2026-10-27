@@ -236,6 +236,8 @@ class TestAuditRound2Suite(unittest.TestCase):
             self.assertEqual(u["role"], "member")
             self.assertEqual(u["is_admin"], 0)
         finally:
+            execute("DELETE FROM users WHERE username = 'test_round2_pub'")
+            execute("DELETE FROM notifications WHERE content LIKE '%test_round2_pub%' OR title = '🔔 신규 계정 가입 승인 요청'")
             if prev is not None:
                 os.environ["ALLOW_PUBLIC_REGISTER"] = prev
             else:
