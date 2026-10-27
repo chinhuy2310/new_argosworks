@@ -42,7 +42,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
-Name: "startupicon"; Description: "Tự động khởi động cùng Windows"; GroupDescription: "Tự động hóa:"; Flags: unchecked
+Name: "startupicon"; Description: "Start ARGOS WORKS automatically on Windows startup"; GroupDescription: "Startup options:"; Flags: unchecked
 
 [Files]
 ; Sao chép toàn bộ tệp từ bản dựng đã giấu code Nuitka
