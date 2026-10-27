@@ -7,7 +7,7 @@ PostgreSQL and Caddy binaries, this module automatically boots and stops them:
   1. Boots PostgreSQL 16 Portable on localhost:5432 (auto-runs initdb on first launch).
   2. Creates the 'argos_works' database if not present.
   3. Sets DATABASE_URL="postgresql://argos_admin@127.0.0.1:5432/argos_works".
-  4. Starts Caddy to serve HTTPS on https://localhost:8443 (or :443).
+  4. Starts Caddy to serve HTTPS on https://localhost:8443.
   5. Cleanly stops both services on application exit via atexit.
 """
 
@@ -52,7 +52,8 @@ def _stop_embedded_services():
             try:
                 subprocess.run(
                     [pg_ctl, "-D", _PG_DATA_DIR, "stop", "-m", "fast"],
-                    capture_output=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                     creationflags=CREATE_NO_WINDOW,
                     timeout=10,
                 )
@@ -68,7 +69,6 @@ def start_embedded_services(app_home: str):
     # -------------------------------------------------------------------------
     # 1. Embedded PostgreSQL 16
     # -------------------------------------------------------------------------
-    # Check both packaged layout (app_home/pgsql) and dev/vendor layout
     candidate_pg_bins = [
         os.path.join(app_home, "pgsql", "bin"),
         os.path.join(app_home, "vendor", "pgsql", "bin"),
@@ -92,23 +92,31 @@ def start_embedded_services(app_home: str):
         pg_version_file = os.path.join(data_dir, "PG_VERSION")
         if not os.path.isfile(pg_version_file):
             print("[Embedded DB] First run: initializing PostgreSQL cluster in %s..." % data_dir, flush=True)
-            res = subprocess.run(
-                [initdb_exe, "-D", data_dir, "-U", "argos_admin", "-A", "trust", "-E", "UTF8", "--locale=C"],
-                capture_output=True,
-                text=True,
-                creationflags=CREATE_NO_WINDOW,
-            )
-            if res.returncode != 0:
-                print("[Embedded DB] initdb error: %s" % res.stderr, file=sys.stderr, flush=True)
+            try:
+                subprocess.run(
+                    [initdb_exe, "-D", data_dir, "-U", "argos_admin", "-A", "trust", "-E", "UTF8", "--locale=C"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=CREATE_NO_WINDOW,
+                    timeout=30,
+                )
+            except Exception as exc:
+                print("[Embedded DB] initdb error: %s" % exc, file=sys.stderr, flush=True)
 
         # Start PostgreSQL if not already running on 5432
         if not _is_port_open("127.0.0.1", 5432):
             print("[Embedded DB] Starting embedded PostgreSQL 16 on 127.0.0.1:5432...", flush=True)
-            subprocess.run(
-                [pg_ctl_exe, "-D", data_dir, "-l", log_file, "-o", "-p 5432 -h 127.0.0.1", "start"],
-                capture_output=True,
-                creationflags=CREATE_NO_WINDOW,
-            )
+            try:
+                subprocess.run(
+                    [pg_ctl_exe, "-D", data_dir, "-l", log_file, "-o", "-p 5432 -h 127.0.0.1", "start"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=CREATE_NO_WINDOW,
+                    timeout=15,
+                )
+            except Exception as exc:
+                print("[Embedded DB] pg_ctl start error: %s" % exc, file=sys.stderr, flush=True)
+
             # Wait for PostgreSQL to be ready
             for _ in range(40):
                 if _is_port_open("127.0.0.1", 5432):
@@ -121,11 +129,16 @@ def start_embedded_services(app_home: str):
 
             # Ensure default database 'argos_works' exists
             if os.path.isfile(createdb_exe):
-                subprocess.run(
-                    [createdb_exe, "-h", "127.0.0.1", "-p", "5432", "-U", "argos_admin", "argos_works"],
-                    capture_output=True,
-                    creationflags=CREATE_NO_WINDOW,
-                )
+                try:
+                    subprocess.run(
+                        [createdb_exe, "-h", "127.0.0.1", "-p", "5432", "-U", "argos_admin", "argos_works"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        creationflags=CREATE_NO_WINDOW,
+                        timeout=10,
+                    )
+                except Exception:
+                    pass
 
             os.environ["DATABASE_URL"] = "postgresql://argos_admin@127.0.0.1:5432/argos_works"
             print("[Embedded DB] Connected: PostgreSQL is ready at %s" % os.environ["DATABASE_URL"], flush=True)
@@ -163,6 +176,8 @@ def start_embedded_services(app_home: str):
                 _CADDY_PROC = subprocess.Popen(
                     [caddy_exe, "run", "--config", caddyfile],
                     cwd=app_home,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                     creationflags=CREATE_NO_WINDOW,
                 )
                 if not _POSTGRES_STARTED:
