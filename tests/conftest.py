@@ -29,10 +29,10 @@ os.environ.setdefault("ARGOS_MASTER_KEY", "test-master-key-for-unit-tests-2026")
 # password hash/verify take ~0.3s. Production default is untouched.
 os.environ.setdefault("ARGOS_PBKDF2_ROUNDS", "2000")
 
-# The suite creates a fresh pool for every isolated PostgreSQL schema; a 10-connection
-# minimum per test would exhaust a 100-connection server. Must be set before db import.
-os.environ.setdefault("ARGOS_PG_POOL_MIN", "1")
-os.environ.setdefault("ARGOS_PG_POOL_MAX", "8")
+# Sized to tolerate concurrent tests (e.g. 20 concurrent threads in test_auth_concurrency)
+# while staying well within PostgreSQL's default max_connections (100).
+os.environ.setdefault("ARGOS_PG_POOL_MIN", "2")
+os.environ.setdefault("ARGOS_PG_POOL_MAX", "25")
 
 
 # PostgreSQL: run the whole session inside a throw-away schema.
