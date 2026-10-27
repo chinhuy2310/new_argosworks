@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "a0271a07-7d33-40b1-9a84-cf156b9c770e",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\candidate.json",
+  "output": "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\argoswork.html",
+  "specification": {
+    "sha256": "9a62a731eb5a1c1f8f4258bb9740010d2dda560c61af66fb13791ee3e5b869cc",
+    "bytes": 7526
+  },
+  "artifact": {
+    "sha256": "66c113fc0aa260480b9761212a89c0499e93573bddb16469051f32f3df58b6ed",
+    "bytes": 855106
+  }
+}

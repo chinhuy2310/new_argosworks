@@ -465,7 +465,9 @@ updateTopbarUserUI(null);
   var nameInput = document.getElementById("editProfileNameInput");
   var emailInput = document.getElementById("editProfileEmailInput");
   var orgSelect = document.getElementById("editProfileOrgSelect");
+  var curPwdInput = document.getElementById("editProfileCurrentPasswordInput");
   var pwdInput = document.getElementById("editProfilePasswordInput");
+  var confirmPwdInput = document.getElementById("editProfilePasswordConfirmInput");
   var errBox = document.getElementById("editProfileError");
   var btnSubmit = document.getElementById("btnEditProfileSubmit");
   var avatarPreview = document.getElementById("editProfileAvatarPreview");
@@ -474,6 +476,16 @@ updateTopbarUserUI(null);
 
   var currentAvatarData = null; // base64 if newly selected
   var currentAvatarUrl = null;  // existing url or ""
+
+  function tr(key, fallback){
+    try {
+      if(window.i18n && typeof window.i18n.t === "function"){
+        var v = window.i18n.t(key);
+        if(v && v !== key) return v;
+      }
+    } catch(e){}
+    return fallback;
+  }
 
   function renderAvatarPreview(url, name, org){
     if(!avatarPreview) return;
@@ -546,7 +558,9 @@ updateTopbarUserUI(null);
     if(nameInput) nameInput.value = u.name || "";
     if(emailInput) emailInput.value = u.email || "";
     if(orgSelect && u.org) orgSelect.value = u.org;
+    if(curPwdInput) curPwdInput.value = "";
     if(pwdInput) pwdInput.value = "";
+    if(confirmPwdInput) confirmPwdInput.value = "";
     currentAvatarData = null;
     currentAvatarUrl = u.avatarUrl || "";
     if(avatarFileInput) avatarFileInput.value = "";
@@ -561,6 +575,9 @@ updateTopbarUserUI(null);
 
   function closeEditModal(){
     if(modal) modal.hidden = true;
+    if(curPwdInput) curPwdInput.value = "";
+    if(pwdInput) pwdInput.value = "";
+    if(confirmPwdInput) confirmPwdInput.value = "";
     if(errBox) { errBox.style.display = "none"; errBox.textContent = ""; }
   }
 
@@ -584,11 +601,41 @@ updateTopbarUserUI(null);
       var newName = (nameInput ? nameInput.value.trim() : "");
       var newEmail = (emailInput ? emailInput.value.trim() : "");
       var newOrg = (orgSelect ? orgSelect.value : "");
-      var newPwd = (pwdInput ? pwdInput.value.trim() : "");
+      var curPwd = (curPwdInput ? curPwdInput.value : "").trim();
+      var newPwd = (pwdInput ? pwdInput.value : "").trim();
+      var confirmPwd = (confirmPwdInput ? confirmPwdInput.value : "").trim();
 
       if(!newName){
         if(errBox){ errBox.style.display = "block"; errBox.textContent = "이름을 입력해주세요."; }
         return;
+      }
+
+      if(curPwd || newPwd || confirmPwd){
+        if(!curPwd){
+          if(errBox){ errBox.style.display = "block"; errBox.textContent = tr("profile.err_current_required", "현재 비밀번호를 입력해주세요."); }
+          if(curPwdInput) curPwdInput.focus();
+          return;
+        }
+        if(!newPwd){
+          if(errBox){ errBox.style.display = "block"; errBox.textContent = tr("profile.err_new_required", "새 비밀번호를 입력해주세요."); }
+          if(pwdInput) pwdInput.focus();
+          return;
+        }
+        if(newPwd.length < 8){
+          if(errBox){ errBox.style.display = "block"; errBox.textContent = tr("profile.err_too_short", "보안 강화를 위해 비밀번호는 최소 8자 이상이어야 합니다."); }
+          if(pwdInput) pwdInput.focus();
+          return;
+        }
+        if(!confirmPwd){
+          if(errBox){ errBox.style.display = "block"; errBox.textContent = tr("profile.err_confirm_required", "새 비밀번호 확인을 입력해주세요."); }
+          if(confirmPwdInput) confirmPwdInput.focus();
+          return;
+        }
+        if(newPwd !== confirmPwd){
+          if(errBox){ errBox.style.display = "block"; errBox.textContent = tr("profile.err_mismatch", "새 비밀번호가 일치하지 않습니다. 다시 확인해주세요."); }
+          if(confirmPwdInput) confirmPwdInput.focus();
+          return;
+        }
       }
 
       if(btnSubmit) btnSubmit.disabled = true;
@@ -596,7 +643,11 @@ updateTopbarUserUI(null);
 
       try {
         var payload = { name: newName, email: newEmail, org: newOrg };
-        if(newPwd) payload.password = newPwd;
+        if(newPwd){
+          payload.password = newPwd;
+          payload.current_password = curPwd;
+          payload.confirm_password = confirmPwd;
+        }
         if(currentAvatarData !== null) {
           if(currentAvatarData === "") {
             payload.avatar_url = "";

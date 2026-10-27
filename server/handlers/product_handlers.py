@@ -135,7 +135,7 @@ def handle_product_attachment_upload(handler, raw_body, ip):
         return
     
     from utils.multipart import parse_multipart
-    from utils.file_ops import unique_attachment_name
+    from utils.file_ops import unique_attachment_name, safe_join
     fields, files = parse_multipart(raw_body, m.group(1))
     pid = (fields.get("id") or "").strip()
     if not pid:
@@ -150,14 +150,20 @@ def handle_product_attachment_upload(handler, raw_body, ip):
         if not product:
             handler._send_json(404, {"ok": False, "error": "제품을 찾을 수 없습니다."})
             return
-        product_dir = os.path.join(PRODUCT_ATTACH_DIR, pid)
+        product_dir = safe_join(PRODUCT_ATTACH_DIR, pid)
+        if not product_dir:
+            handler._send_json(400, {"ok": False, "error": "잘못된 제품 경로입니다."})
+            return
         os.makedirs(product_dir, exist_ok=True)
         attachments = product.setdefault("attachments", [])
         added = []
         from utils.image_optimizer import optimize_and_save_file
         for f in files:
             fname = unique_attachment_name(product_dir, f["filename"])
-            dest = os.path.join(product_dir, fname)
+            dest = safe_join(product_dir, fname)
+            if not dest:
+                handler._send_json(400, {"ok": False, "error": "잘못된 파일 이름입니다."})
+                return
             fsize = optimize_and_save_file(f["data"], dest)
             entry = {"name": fname, "size": fsize, "uploadedAt": datetime.now().isoformat()}
             attachments.append(entry)
@@ -199,9 +205,15 @@ def handle_product_attachment_delete(handler, raw_body, ip):
         if not match:
             handler._send_json(404, {"ok": False, "error": "첨부파일을 찾을 수 없습니다."})
             return
+        from utils.file_ops import safe_join
+        # Two-step containment (see router.handle_get_products_attachment).
+        product_dir = safe_join(PRODUCT_ATTACH_DIR, pid)
+        file_path = safe_join(product_dir, fname) if product_dir else None
+        if not file_path:
+            handler._send_json(404, {"ok": False, "error": "첨부파일을 찾을 수 없습니다."})
+            return
         product["attachments"] = [a for a in attachments if a.get("name") != fname]
         write_products(products)
-        file_path = os.path.join(PRODUCT_ATTACH_DIR, pid, fname)
         try:
             if os.path.exists(file_path):
                 os.remove(file_path)

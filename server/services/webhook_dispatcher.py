@@ -10,7 +10,61 @@ import urllib.request
 import urllib.parse
 from typing import Dict, Any, Optional
 
+from utils.ssrf import validate_external_url
+
+_ALLOWED_SCHEMES = ("http", "https")
+
+
+def validate_webhook_target(url: str):
+    """
+    Validates an outgoing webhook target BEFORE any request is made.
+
+    Returns (ok, reason):
+      * "invalid_url"    — empty / not a string
+      * "invalid_scheme" — file://, ftp://, javascript: ... (urllib would accept file://)
+      * "blocked_host"   — loopback / private / link-local (169.254.169.254) / multicast
+      * ""               — allowed
+
+    SSRF note: ``urllib.request`` supports ``file://`` and silently follows redirects.
+    The check therefore runs here and again on every redirect target
+    (``_ValidatedRedirectHandler``). The webhook URL is admin-configurable at runtime
+    through /api/settings (which validates it too), so this is the last line of
+    defense for values injected straight into .env / the process environment.
+    """
+    if not url or not isinstance(url, str) or not url.strip():
+        return False, "invalid_url"
+
+    candidate = url.strip()
+    scheme = (urllib.parse.urlsplit(candidate).scheme or "").lower()
+    if scheme not in _ALLOWED_SCHEMES:
+        return False, "invalid_scheme"
+
+    try:
+        validate_external_url(candidate, allow_private=False, require_https=False)
+    except ValueError:
+        return False, "blocked_host"
+    return True, ""
+
+
+class _ValidatedRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Re-validates every redirect target so an allowed host cannot 302 to an internal IP."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        ok, _reason = validate_webhook_target(newurl)
+        if not ok:
+            return None  # -> urllib raises HTTPError; the new target is never contacted
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_OPENER = urllib.request.build_opener(_ValidatedRedirectHandler())
+
+
 def _send_http_post(url: str, payload: Dict[str, Any], timeout: int = 5) -> Optional[str]:
+    # SSRF / scheme gate: never fall through to urlopen for a rejected target.
+    ok, reason = validate_webhook_target(url)
+    if not ok:
+        print(f"[Webhook] Skipped webhook target ({reason})")
+        return reason
     try:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(
@@ -22,7 +76,7 @@ def _send_http_post(url: str, payload: Dict[str, Any], timeout: int = 5) -> Opti
             },
             method="POST"
         )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _OPENER.open(req, timeout=timeout) as resp:
             pass
         return None
     except Exception as e:

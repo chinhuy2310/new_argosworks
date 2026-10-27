@@ -1048,7 +1048,16 @@ def handle_get_products_attachment(handler, parsed, ip):
     if not product or not match:
         handler._send_json(404, {"ok": False, "error": "첨부파일을 찾을 수 없습니다."})
         return
-    file_path = os.path.join(PRODUCT_ATTACH_DIR, pid, match["name"])
+    # Strict Directory Traversal Defense (same rule as record attachments):
+    # two-step containment — the product folder must stay inside the products root AND
+    # the attachment must stay inside that product folder. A single commonpath check
+    # against PRODUCT_ATTACH_DIR would still allow "…/P-1/../P-2/secret".
+    from utils.file_ops import safe_join
+    product_dir = safe_join(PRODUCT_ATTACH_DIR, pid)
+    file_path = safe_join(product_dir, match["name"]) if product_dir else None
+    if not file_path or not os.path.isfile(file_path):
+        handler._send_json(404, {"ok": False, "error": "첨부파일을 찾을 수 없습니다."})
+        return
     handler._send_attachment(file_path, match["name"])
     access_log(ip, "product_attachment_download", 200, "%s %s" % (pid, fname))
 
@@ -1235,14 +1244,11 @@ def _serve_avatar_file(handler, filename):
     """
     fname = os.path.basename(filename or "")
     ext = os.path.splitext(fname)[1].lower()
-    avatars_dir = os.path.realpath(os.path.join(ATTACH_DIR, "avatars"))
-    file_path = os.path.realpath(os.path.join(avatars_dir, fname))
-    try:
-        is_safe = (os.path.commonpath([file_path, avatars_dir]) == avatars_dir)
-    except Exception:
-        is_safe = False
+    avatars_dir = os.path.join(ATTACH_DIR, "avatars")
+    from utils.file_ops import safe_join
+    file_path = safe_join(avatars_dir, fname)
 
-    if not fname or ext not in _AVATAR_EXTENSIONS or not is_safe or not os.path.isfile(file_path):
+    if not file_path or not fname or ext not in _AVATAR_EXTENSIONS or not os.path.isfile(file_path):
         handler._send_json(404, {"ok": False, "error": "프로필 이미지를 찾을 수 없습니다."})
         return
 
@@ -1305,16 +1311,14 @@ def handle_get_local_attachment(handler, parsed, ip):
     
     # 파일이 저장된 디렉터리는 항상 레코드의 실제 ID 기준이다.
     # (URL 세그먼트가 카드 코드일 수 있으므로 record_id 문자열을 그대로 쓰면 404/혼동 발생)
-    rec_attach_dir = os.path.realpath(os.path.join(ATTACH_DIR, str(rec["id"])))
-    file_path = os.path.realpath(os.path.join(rec_attach_dir, filename))
+    rec_attach_dir = os.path.join(ATTACH_DIR, str(rec["id"]))
 
-    # Strict Directory Traversal Defense: Ensure file resides strictly inside record's attachment directory
-    try:
-        is_safe = (os.path.commonpath([file_path, rec_attach_dir]) == rec_attach_dir)
-    except Exception:
-        is_safe = False
+    # Strict Directory Traversal Defense: the resolved path must stay inside the
+    # record's attachment directory (safe_join applies realpath + commonpath).
+    from utils.file_ops import safe_join
+    file_path = safe_join(rec_attach_dir, filename)
 
-    if not is_safe or not os.path.isfile(file_path):
+    if not file_path or not os.path.isfile(file_path):
         handler._send_json(404, {"ok": False, "error": "첨부파일을 찾을 수 없습니다."})
         return
 
@@ -1577,7 +1581,7 @@ def handle_post_issue_attachment(handler, raw_body, ip):
             handler._send_json(403, {"ok": False, "error": deny_err})
             return
 
-        from utils.file_ops import sanitize_filename
+        from utils.file_ops import sanitize_filename, safe_join
         from utils.image_optimizer import optimize_and_save_file
         record_attach_dir = os.path.join(ATTACH_DIR, str(local_rec["id"]))
         os.makedirs(record_attach_dir, exist_ok=True)
@@ -1585,7 +1589,10 @@ def handle_post_issue_attachment(handler, raw_body, ip):
         for f in files:
             fname = sanitize_filename(f.get("filename") or "file")
             fdata = f.get("data") or b""
-            fpath = os.path.join(record_attach_dir, fname)
+            fpath = safe_join(record_attach_dir, fname)
+            if not fpath:
+                # Defense in depth: sanitize_filename already strips separators.
+                continue
             fsize = optimize_and_save_file(fdata, fpath)
             add_record_attachment(local_rec["id"], fname, fsize)
             uploaded_files.append(fname)
@@ -2692,6 +2699,7 @@ def handle_post_admin_user_update(handler, raw_body, ip):
     role = body.get("role")
     disabled = body.get("disabled")
     new_password = body.get("new_password") or ""
+    new_password_confirm = body.get("new_password_confirm") or ""
 
     from db import execute, get_one, query
     target_user = get_one("SELECT * FROM users WHERE id = ? LIMIT 1", (user_id,))
@@ -2745,13 +2753,24 @@ def handle_post_admin_user_update(handler, raw_body, ip):
     if disabled_flag is not None:
         updates.append("disabled = ?")
         params.append(disabled_flag)
-    if new_password:
+    if new_password or new_password_confirm:
+        if not new_password:
+            handler._send_json(400, {"ok": False, "error": "새 비밀번호를 입력해주세요."})
+            return
+        # Admin resets do not need the old password, but the double entry is mandatory
+        # so a typo cannot lock the user out of their account.
+        if not new_password_confirm:
+            handler._send_json(400, {"ok": False, "error": "새 비밀번호 확인을 입력해주세요."})
+            return
+        if new_password != new_password_confirm:
+            handler._send_json(400, {"ok": False, "error": "새 비밀번호가 일치하지 않습니다."})
+            return
         if len(new_password) < 8:
             handler._send_json(400, {"ok": False, "error": "비밀번호는 최소 8자 이상이어야 합니다."})
             return
         from services.auth import hash_password, _effective_pbkdf2_rounds
         salt, pwd_hash = hash_password(new_password)
-        updates.append("salt = ?, password_hash = ?, iterations = ?")
+        updates.append("salt = ?, password_hash = ?, iterations = ?, hash_algo = 'pbkdf2_sha256'")
         params.extend([salt, pwd_hash, _effective_pbkdf2_rounds()])
 
     if updates:
@@ -2763,7 +2782,7 @@ def handle_post_admin_user_update(handler, raw_body, ip):
         pwd_changed = bool(new_password)
         if role_changed or disabled_changed or pwd_changed:
             if is_self:
-                cur_token = handler._extract_token()
+                cur_token = handler._extract_token() if hasattr(handler, "_extract_token") else None
                 if cur_token:
                     from services.auth import hash_session_token
                     token_hash = hash_session_token(cur_token)

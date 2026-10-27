@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Password change (self-service & admin reset)
+
+- **`/api/account/update-profile` now verifies the current password** before storing a
+  new one (`verify_password` with the stored salt/iterations, so legacy PBKDF2 hashes
+  are still auto-upgraded). A wrong password answers
+  `400 현재 비밀번호가 일치하지 않습니다.` and is counted by the login lockout
+  (`login_attempts`), so the form cannot be used to brute-force the account from a
+  stolen session.
+- **Changing the password invalidates every other device.** The other rows in
+  `sessions` are deleted inside the same transaction (the current token is kept so the
+  user is not thrown out of the tab they are using); the response returns
+  `passwordChanged` + `sessionsRevoked` and the success message mentions the count.
+  Previously a hijacked session survived the password change.
+- **The confirmation field is mandatory on the API**, not only in the browser form
+  (`confirm_password` for self-service, `new_password_confirm` for admin reset);
+  missing confirmation answers `400 … 확인을 입력해주세요.` instead of silently
+  accepting a single, unchecked password.
+- **The profile update resolves the user by session id first** and only falls back to
+  name/email. After an admin renamed a user, the old lookup returned 404 and the user
+  could not change their own password until they logged in again.
+- `hash_algo` is refreshed to `pbkdf2_sha256` when a password is written (both flows).
+- UI: `현재 비밀번호` / `새 비밀번호` / `새 비밀번호 확인` in the profile modal and
+  `새 비밀번호` / `새 비밀번호 확인` in the admin user modal; browser-side checks
+  (required, ≥ 8, both entries equal, focus on the offending field); all labels,
+  placeholders and the `(변경 시에만 입력)` hint are translated (KO/EN); the admin modal
+  shows validation/API errors inline instead of blocking `alert()` dialogs.
+- Tests: `tests/test_password_change_workflows.py` (11 cases) covers both flows,
+  including "other sessions revoked, current session kept" and "confirmation is
+  required"; the suite is green on SQLite and PostgreSQL.
+
+### Fixed — Security / Path traversal (audit round 5)
+
+- **PIM attachment routes could escape their folder.** `handle_get_products_attachment`
+  built the path with `os.path.join(PRODUCT_ATTACH_DIR, pid, name)` and only the
+  record-attachment route had a containment check. Every attachment path now goes
+  through the new `utils.file_ops.safe_join()` (realpath + `commonpath`), applied as
+  **two steps** — the product folder must stay inside the products root *and* the
+  attachment inside that product folder — so `…/P-1/../P-2/secret` is rejected.
+  Applied to: product download, product upload folder, product delete, record
+  download, record attachment upload, submit upload, avatar serving.
+  `safe_join()` returns `None` on traversal and the handler answers 404 instead of
+  touching the disk (`commonpath`, not `startswith`, so `…/attach_evil` cannot pass
+  as `…/attach`).
+- **`DANGEROUS_EXTENSIONS` missed script / Java / .NET payloads.** Uploads named
+  `.py`, `.pyw`, `.pyc`, `.jar`, `.class`, `.jsp`, `.jspx`, `.war`, `.asp`, `.aspx`,
+  `.ascx`, `.ashx`, `.asmx`, `.shtml`, `.htaccess`, `.msi`, `.lnk`, `.reg`, `.wasm`
+  are now stored as `.bin` like `.html`/`.js`/`.exe` (they were already downloaded
+  with `Content-Disposition: attachment` + `CSP: sandbox`, so this closes the
+  "internal tooling could import the stored file" gap).
+- **Outgoing webhooks had no dispatch-time SSRF gate.** `_send_http_post()` validated
+  nothing, so a webhook URL injected through `.env` / the process environment could
+  be `file://` (urllib reads local files), `ftp://`, or an internal address, and
+  `urlopen()` silently followed redirects. Now every dispatch and **every redirect
+  target** is validated with `services.webhook_dispatcher.validate_webhook_target()`
+  → `utils.ssrf.validate_external_url()`: HTTP(S) only, loopback / private /
+  link-local (`169.254.169.254`) / multicast blocked, cross-host redirects
+  re-validated. `/api/settings` already validated webhook URLs at save time; this
+  adds the defense-in-depth layer for values that bypass the UI.
+
 ### Fixed — Security / RBAC
 
 - **Private cards could be read through the card-code lookup path.**

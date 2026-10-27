@@ -192,16 +192,21 @@ def tmp_data_dir(tmp_path):
 class MockHandler:
     """Mock HTTP handler that captures responses for testing API handlers."""
 
-    def __init__(self, session=None, cfg=None):
+    def __init__(self, session=None, cfg=None, token=None):
         self._response_code = None
         self._response_body = None
         self._response_headers = {}
         self._session = session
+        self._token = token
         self.cfg = cfg or {}
 
     def _send_json(self, code, data):
         self._response_code = code
         self._response_body = data
+
+    def _extract_token(self):
+        """Session token used by handlers that revoke/log out the current device."""
+        return self._token
 
     def _get_session_or_401(self):
         if self._session is None:
@@ -224,6 +229,6 @@ class MockHandler:
 @pytest.fixture
 def mock_handler():
     """Factory fixture to create MockHandler instances."""
-    def _factory(session=None, cfg=None):
-        return MockHandler(session=session, cfg=cfg)
+    def _factory(session=None, cfg=None, token=None):
+        return MockHandler(session=session, cfg=cfg, token=token)
     return _factory

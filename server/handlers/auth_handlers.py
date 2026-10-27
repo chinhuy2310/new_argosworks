@@ -274,7 +274,7 @@ def handle_account_logout(handler, raw_body, ip):
     if session:
         from services.audit_logger import log_audit
         log_audit(session=session, ip=ip, action="LOGOUT", target_type="auth", target_id=session.get("name"))
-    token = handler._extract_token()
+    token = handler._extract_token() if hasattr(handler, "_extract_token") else None
     if token:
         try:
             from services.auth import delete_session
@@ -326,18 +326,34 @@ def handle_account_update_profile(handler, raw_body, ip):
         new_email = cur_email
     requested_org = (payload.get("org") or payload.get("department") or cur_org).strip()
     new_org = requested_org
+    cur_password = (payload.get("current_password") or payload.get("old_password") or "").strip()
     new_password = (payload.get("password") or "").strip()
+    confirm_password = (payload.get("confirm_password") or "").strip()
 
     if not new_name:
         handler._send_json(400, {"ok": False, "error": "이름은 필수 항목입니다."})
         return
 
     from db import get_one, execute, transaction
-    # Find current user row by name/email/dept from session
-    user_row = get_one(
-        "SELECT id, username, name, dept_id, email, avatar_url, salt, password_hash, iterations, is_admin FROM users WHERE (name = ? AND dept_id = ?) OR (email != '' AND email = ?) LIMIT 1",
-        (cur_name, cur_org, cur_email)
-    )
+    # Prefer the immutable session id: the name/email stored in the session row are
+    # denormalised copies, so after an admin rename the old lookup returned 404 and
+    # the user could not change their own password until they logged in again.
+    user_row = None
+    sess_uid = session.get("id")
+    if sess_uid is None:
+        sess_uid = session.get("user_id")
+    if isinstance(sess_uid, str) and sess_uid.strip().isdigit():
+        sess_uid = int(sess_uid.strip())
+    if sess_uid not in (None, ""):
+        user_row = get_one(
+            "SELECT id, username, name, dept_id, email, avatar_url, salt, password_hash, iterations, is_admin FROM users WHERE id = ? LIMIT 1",
+            (sess_uid,)
+        )
+    if not user_row:
+        user_row = get_one(
+            "SELECT id, username, name, dept_id, email, avatar_url, salt, password_hash, iterations, is_admin FROM users WHERE (name = ? AND dept_id = ?) OR (email != '' AND email = ?) LIMIT 1",
+            (cur_name, cur_org, cur_email)
+        )
 
     if not user_row:
         handler._send_json(404, {"ok": False, "error": "사용자 계정을 찾을 수 없습니다."})
@@ -387,11 +403,40 @@ def handle_account_update_profile(handler, raw_body, ip):
         if not candidate or candidate.startswith("/") or candidate.lower().startswith("https://"):
             new_avatar = candidate
 
-    if new_password:
+    if new_password or cur_password or confirm_password:
+        if not cur_password:
+            handler._send_json(400, {"ok": False, "error": "현재 비밀번호를 입력해주세요."})
+            return
+        if not new_password:
+            handler._send_json(400, {"ok": False, "error": "새 비밀번호를 입력해주세요."})
+            return
+        # The confirmation fields are mandatory on the API too (the browser form is not
+        # the only client): a typo in an unchecked password would lock the account out.
+        if not confirm_password:
+            handler._send_json(400, {"ok": False, "error": "새 비밀번호 확인을 입력해주세요."})
+            return
+        if new_password != confirm_password:
+            handler._send_json(400, {"ok": False, "error": "새 비밀번호가 일치하지 않습니다."})
+            return
         if len(new_password) < 8:
             handler._send_json(400, {"ok": False, "error": "보안 강화를 위해 비밀번호는 최소 8자 이상이어야 합니다."})
             return
-        from services.auth import _effective_pbkdf2_rounds
+        from services.auth import (
+            verify_password, _effective_pbkdf2_rounds,
+            check_login_rate_limit, record_login_failure, clear_login_failures,
+        )
+        # The password-change form is a second place where the account password can be
+        # guessed from a stolen session, so it shares the login lockout counter.
+        login_ident = (user_row.get("username") or cur_name or "").strip().lower()
+        allowed, rate_msg = check_login_rate_limit(ip, login_ident)
+        if not allowed:
+            handler._send_json(429, {"ok": False, "error": rate_msg})
+            return
+        if not verify_password(cur_password, user_row["salt"], user_row["password_hash"], iterations=user_row.get("iterations"), user_id=user_row.get("id")):
+            record_login_failure(ip, login_ident)
+            handler._send_json(400, {"ok": False, "error": "현재 비밀번호가 일치하지 않습니다."})
+            return
+        clear_login_failures(ip, login_ident)
         salt, pwd_hash = hash_password(new_password)
         pwd_iterations = _effective_pbkdf2_rounds()
 
@@ -418,26 +463,42 @@ def handle_account_update_profile(handler, raw_body, ip):
         handler._send_json(409, {"ok": False, "error": "해당 소속에 이미 동일한 이름의 사용자가 존재합니다."})
         return
 
+    # Number of other devices that were logged out because the password changed.
+    revoked = {"sessions": 0}
     try:
         def _update(conn):
             cur = conn.cursor()
             cur.execute(
-                """UPDATE users 
-                   SET name = ?, email = ?, dept_id = ?, avatar_url = ?, salt = ?, password_hash = ?, iterations = ?
+                """UPDATE users
+                   SET name = ?, email = ?, dept_id = ?, avatar_url = ?, salt = ?, password_hash = ?,
+                       iterations = ?, hash_algo = 'pbkdf2_sha256'
                    WHERE id = ?""",
                 (new_name, new_email, new_org, new_avatar, salt, pwd_hash, pwd_iterations, user_id)
             )
             # Update current session table via extracted cookie or bearer token
-            token = handler._extract_token()
+            token = handler._extract_token() if hasattr(handler, "_extract_token") else None
+            token_hash = None
             if token:
                 from services.auth import hash_session_token
                 token_hash = hash_session_token(token)
                 cur.execute(
-                    """UPDATE sessions 
+                    """UPDATE sessions
                        SET user_name = ?, user_dept_id = ?, user_email = ?
                        WHERE token = ? OR token = ?""",
                     (new_name, new_org, new_email, token_hash, token)
                 )
+            if new_password:
+                # A changed password must invalidate every other device: otherwise a
+                # stolen session keeps working after the victim "secured" the account.
+                # The current session is kept so the user is not logged out of the tab
+                # they are using.
+                cur.execute(
+                    """DELETE FROM sessions
+                       WHERE (user_id = ? OR user_name = ? OR user_name = ?)
+                         AND token NOT IN (?, ?)""",
+                    (user_id, cur_name, new_name, token or "", token_hash or "")
+                )
+                revoked["sessions"] = cur.rowcount if (cur.rowcount or 0) > 0 else 0
         transaction(_update)
     except Exception as e:
         handler._send_json(500, {"ok": False, "error": f"정보 수정 실패: {e}"})
@@ -480,13 +541,19 @@ def handle_account_update_profile(handler, raw_body, ip):
         details={"old_name": cur_name, "new_name": new_name, "old_dept": cur_org, "new_dept": new_org,
                  "requested_dept": requested_org if dept_change_pending else None,
                  "dept_change_pending": dept_change_pending,
-                 "password_changed": bool(new_password), "avatar_changed": new_avatar != cur_avatar}
+                 "password_changed": bool(new_password), "avatar_changed": new_avatar != cur_avatar,
+                 "sessions_revoked": revoked["sessions"]}
     )
 
     if dept_change_pending:
         message = (
             f"소속 변경({cur_org or '미지정'} → {requested_org}) 요청이 관리자에게 전달되었습니다. "
             "관리자 승인 후 반영됩니다."
+        )
+    elif new_password and revoked["sessions"]:
+        message = (
+            "회원 정보가 성공적으로 수정되었습니다. "
+            f"비밀번호가 변경되어 다른 기기의 로그인 {revoked['sessions']}건이 만료되었습니다."
         )
     else:
         message = "회원 정보가 성공적으로 수정되었습니다."
@@ -496,6 +563,8 @@ def handle_account_update_profile(handler, raw_body, ip):
         "message": message,
         "deptChangePending": dept_change_pending,
         "requestedOrg": requested_org if dept_change_pending else None,
+        "passwordChanged": bool(new_password),
+        "sessionsRevoked": revoked["sessions"],
         "user": {
             "name": new_name,
             "username": user_row.get("username") or new_name,
@@ -514,7 +583,7 @@ def handle_account_me(handler, parsed, ip):
     session = handler._get_session_or_401()
     if not session:
         return
-    token = handler._extract_token()
+    token = handler._extract_token() if hasattr(handler, "_extract_token") else None
     name = session.get("name", "")
     org = session.get("org", "")
     email = session.get("email", "")
@@ -550,7 +619,7 @@ def handle_account_me(handler, parsed, ip):
 
 # ---- /api/account/csrf (GET) — CSRF 토큰 발급/갱신 ----
 def handle_account_csrf(handler, parsed, ip):
-    token = handler._extract_token()
+    token = handler._extract_token() if hasattr(handler, "_extract_token") else None
     if not token:
         handler._send_json(401, {"ok": False, "error": "인증 세션이 없습니다."})
         return

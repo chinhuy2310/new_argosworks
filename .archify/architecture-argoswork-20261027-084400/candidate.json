@@ -1,0 +1,281 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "ARGOS WORKS Architecture",
+    "output": ".archify/architecture-argoswork-20261027-084400/argoswork.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/chinhuy2310/argosworks",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "8a162b8cd37e135d93fe28795413d466648ada69"
+    }
+  },
+  "components": [
+    {
+      "id": "browser",
+      "type": "external",
+      "label": "Web Browser",
+      "sublabel": "SPA Client (JS / HTML5)",
+      "tag": "Dark / Light Mode",
+      "sources": [
+        { "path": "web/index.html", "line": 1, "end_line": 30, "label": "SPA Entry" }
+      ],
+      "pos": [40, 230],
+      "size": [130, 60]
+    },
+    {
+      "id": "caddy",
+      "type": "security",
+      "label": "Caddy Proxy",
+      "sublabel": "HTTPS & Security Headers",
+      "tag": "TLS Termination",
+      "sources": [
+        { "path": "Caddyfile", "line": 9, "end_line": 29, "label": "Proxy Config" }
+      ],
+      "pos": [260, 230],
+      "size": [130, 60]
+    },
+    {
+      "id": "storage",
+      "type": "backend",
+      "label": "Static Assets",
+      "sublabel": "Static UI & Upload Files",
+      "tag": "File Serving",
+      "sources": [
+        { "path": "server/handler.py", "line": 40, "end_line": 65, "label": "Static Handler" }
+      ],
+      "pos": [490, 80],
+      "size": [150, 60]
+    },
+    {
+      "id": "server",
+      "type": "backend",
+      "label": "HTTP Server",
+      "sublabel": "Waitress / Threading :8080",
+      "tag": "Entrypoint & SSE",
+      "sources": [
+        { "path": "server/main.py", "line": 40, "end_line": 65, "label": "Server Bootstrap" }
+      ],
+      "pos": [490, 230],
+      "size": [150, 60]
+    },
+    {
+      "id": "reports",
+      "type": "backend",
+      "label": "Reports Engine",
+      "sublabel": "Excel Generator (openpyxl)",
+      "tag": "Weekly / Monthly",
+      "sources": [
+        { "path": "server/services/sheets_reporter.py", "line": 10, "end_line": 35, "label": "Sheets Reporter" }
+      ],
+      "pos": [490, 380],
+      "size": [150, 60]
+    },
+    {
+      "id": "ai_agent",
+      "type": "backend",
+      "label": "ReAct AI Agent",
+      "sublabel": "Multi-turn Loop & Tools",
+      "tag": "Autonomous Loop",
+      "sources": [
+        { "path": "server/services/chat_agent.py", "line": 13, "end_line": 35, "label": "ReAct Agent" }
+      ],
+      "pos": [730, 80],
+      "size": [150, 60]
+    },
+    {
+      "id": "router",
+      "type": "backend",
+      "label": "Router & Handlers",
+      "sublabel": "REST API & Auth Session",
+      "tag": "PBKDF2 & RBAC",
+      "sources": [
+        { "path": "server/router.py", "line": 11, "end_line": 35, "label": "Route Table" }
+      ],
+      "pos": [730, 230],
+      "size": [150, 60]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "Dual-Engine DB",
+      "sublabel": "SQLite WAL / PostgreSQL",
+      "tag": "Auto SQL Translation",
+      "sources": [
+        { "path": "server/db.py", "line": 23, "end_line": 45, "label": "DB Abstraction" }
+      ],
+      "pos": [730, 380],
+      "size": [150, 60]
+    },
+    {
+      "id": "llm_api",
+      "type": "external",
+      "label": "LLM Services",
+      "sublabel": "Gemini / OpenAI / Claude",
+      "tag": "BYOK / Server Key",
+      "sources": [
+        { "path": "server/services/ai_client.py", "line": 20, "end_line": 45, "label": "Multi-LLM Client" }
+      ],
+      "pos": [990, 80],
+      "size": [160, 60]
+    },
+    {
+      "id": "vector_service",
+      "type": "database",
+      "label": "Vector Engine",
+      "sublabel": "SQLite Vectors & Semantic",
+      "tag": "VoyageAI / Local",
+      "sources": [
+        { "path": "server/services/vector_store.py", "line": 25, "end_line": 50, "label": "Vector Sync" }
+      ],
+      "pos": [990, 230],
+      "size": [160, 60]
+    },
+    {
+      "id": "jira_api",
+      "type": "cloud",
+      "label": "Jira Cloud",
+      "sublabel": "Atlassian REST API",
+      "tag": "Issue & JQL Sync",
+      "sources": [
+        { "path": "server/services/jira_client.py", "line": 18, "end_line": 44, "label": "Jira REST Client" }
+      ],
+      "pos": [990, 380],
+      "size": [160, 60]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "ARGOS Application Runtime",
+      "wraps": ["storage", "server", "reports", "ai_agent", "router", "db"]
+    },
+    {
+      "kind": "security-group",
+      "label": "Edge Security",
+      "wraps": ["caddy"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "browser-to-caddy",
+      "from": "browser",
+      "to": "caddy",
+      "label": "HTTPS :443",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "caddy-to-server",
+      "from": "caddy",
+      "to": "server",
+      "label": "proxy :8080",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "server-to-router",
+      "from": "server",
+      "to": "router",
+      "label": "dispatch",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "server-to-storage",
+      "from": "server",
+      "to": "storage",
+      "label": "static web",
+      "variant": "default",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "server-to-reports",
+      "from": "server",
+      "to": "reports",
+      "label": "reports",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "router-to-ai",
+      "from": "router",
+      "to": "ai_agent",
+      "label": "SSE chat",
+      "variant": "default",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "ai-to-llm",
+      "from": "ai_agent",
+      "to": "llm_api",
+      "label": "completions",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "router-to-vector",
+      "from": "router",
+      "to": "vector_service",
+      "label": "vector search",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "router-to-db",
+      "from": "router",
+      "to": "db",
+      "label": "SQL query",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "db-to-jira",
+      "from": "db",
+      "to": "jira_api",
+      "label": "REST sync",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Ingress & Presentation",
+      "items": [
+        "Caddy reverse proxy terminates TLS and injects enterprise security headers",
+        "Lightweight Single Page Application (HTML5 / Vanilla JS) with responsive dark/light theme"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Application Core & AI",
+      "items": [
+        "Threading / Waitress WSGI HTTP server with real-time SSE streaming",
+        "Autonomous ReAct AI agent loop supporting Gemini, OpenAI, Claude, and local Ollama",
+        "Local SQLite vector store for semantic retrieval augmented generation (RAG)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Data & Integration",
+      "items": [
+        "Zero-code dual engine database layer: SQLite WAL mode or enterprise PostgreSQL",
+        "Automated bi-directional synchronization with Jira Cloud REST API",
+        "Excel report generation and management via openpyxl engine"
+      ]
+    }
+  ]
+}

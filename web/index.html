@@ -2479,7 +2479,7 @@
       <input type="hidden" id="adminEditUserId">
       <div class="dept-modal-body">
         <div class="dept-modal-field">
-          <label>사용자 ID</label>
+          <label data-i18n="admin_user.id_label">사용자 ID</label>
           <input type="text" id="adminEditUsername" readonly style="background: var(--code-bg); opacity: 0.85;">
         </div>
         <div class="dept-modal-field">
@@ -2512,9 +2512,14 @@
           </select>
         </div>
         <div class="dept-modal-field">
-          <label for="adminEditNewPassword">비밀번호 변경 (재설정 시에만 입력)</label>
-          <input type="password" id="adminEditNewPassword" placeholder="변경하지 않을 경우 공란으로 둡니다 (최소 8자)" autocomplete="new-password">
+          <label for="adminEditNewPassword" data-i18n="admin_user.new_password_label">새 비밀번호 (재설정 시에만 입력)</label>
+          <input type="password" id="adminEditNewPassword" placeholder="변경하지 않을 경우 공란으로 둡니다 (최소 8자)" data-i18n-ph="admin_user.new_password_ph" autocomplete="new-password">
         </div>
+        <div class="dept-modal-field">
+          <label for="adminEditNewPasswordConfirm" data-i18n="admin_user.new_password_confirm_label">새 비밀번호 확인</label>
+          <input type="password" id="adminEditNewPasswordConfirm" placeholder="새 비밀번호 재입력" data-i18n-ph="admin_user.new_password_confirm_ph" autocomplete="new-password">
+        </div>
+        <div id="adminEditUserError" class="form-error" style="display: none;"></div>
       </div>
       <div class="dept-modal-footer">
         <button type="button" class="btn-cancel" id="adminEditUserModalCancelBtn">취소</button>
@@ -2721,9 +2726,17 @@
         <label for="editProfileOrgSelect" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;" data-i18n="profile.org_label">소속 부서 (조직)</label>
         <select id="editProfileOrgSelect" class="settings-select" style="width: 100%;"></select>
       </div>
+      <div class="field" style="margin-bottom: 14px;">
+        <label for="editProfileCurrentPasswordInput" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;"><span data-i18n="profile.current_password_label">현재 비밀번호</span> <span class="optional" style="font-weight: 400; color: var(--ink-faint);" data-i18n="profile.optional_change_only">(변경 시에만 입력)</span></label>
+        <input type="password" id="editProfileCurrentPasswordInput" class="settings-input" data-i18n-ph="profile.current_password_ph" placeholder="현재 비밀번호 입력" autocomplete="current-password">
+      </div>
+      <div class="field" style="margin-bottom: 14px;">
+        <label for="editProfilePasswordInput" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;"><span data-i18n="profile.password_label">새 비밀번호</span> <span class="optional" style="font-weight: 400; color: var(--ink-faint);" data-i18n="profile.optional_change_only">(변경 시에만 입력)</span></label>
+        <input type="password" id="editProfilePasswordInput" class="settings-input" data-i18n-ph="profile.password_ph" placeholder="최소 8자 이상 (비워두면 기존 유지)" autocomplete="new-password">
+      </div>
       <div class="field" style="margin-bottom: 16px;">
-        <label for="editProfilePasswordInput" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;"><span data-i18n="profile.password_label">새 비밀번호</span> <span class="optional" style="font-weight: 400; color: var(--ink-faint);">(변경 시에만 입력)</span></label>
-        <input type="password" id="editProfilePasswordInput" class="settings-input" data-i18n-ph="profile.password_ph" placeholder="4자 이상 (비워두면 기존 유지)" autocomplete="new-password">
+        <label for="editProfilePasswordConfirmInput" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;"><span data-i18n="profile.confirm_password_label">새 비밀번호 확인</span></label>
+        <input type="password" id="editProfilePasswordConfirmInput" class="settings-input" data-i18n-ph="profile.confirm_password_ph" placeholder="새 비밀번호 재입력" autocomplete="new-password">
       </div>
       <div id="editProfileError" class="form-error" style="margin-bottom: 12px;"></div>
       <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px;">

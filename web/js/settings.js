@@ -2211,6 +2211,10 @@ function openAdminEditUserModal(userId) {
   document.getElementById("adminEditRole").value = user.role || "member";
   document.getElementById("adminEditDisabled").value = (user.disabled == 1) ? "1" : "0";
   document.getElementById("adminEditNewPassword").value = "";
+  var confirmPwdInput = document.getElementById("adminEditNewPasswordConfirm");
+  if (confirmPwdInput) confirmPwdInput.value = "";
+  var errBox = document.getElementById("adminEditUserError");
+  if (errBox) { errBox.style.display = "none"; errBox.textContent = ""; }
 
   var backdrop = document.getElementById("adminEditUserModalBackdrop");
   if (backdrop) backdrop.hidden = false;
@@ -2219,6 +2223,12 @@ function openAdminEditUserModal(userId) {
 function closeAdminEditUserModal() {
   var backdrop = document.getElementById("adminEditUserModalBackdrop");
   if (backdrop) backdrop.hidden = true;
+  var pwdInput = document.getElementById("adminEditNewPassword");
+  if (pwdInput) pwdInput.value = "";
+  var confirmPwdInput = document.getElementById("adminEditNewPasswordConfirm");
+  if (confirmPwdInput) confirmPwdInput.value = "";
+  var errBox = document.getElementById("adminEditUserError");
+  if (errBox) { errBox.style.display = "none"; errBox.textContent = ""; }
 }
 
 async function submitAdminEditUser(e) {
@@ -2237,13 +2247,42 @@ async function submitAdminEditUser(e) {
   };
 
   var newPwd = (document.getElementById("adminEditNewPassword").value || "").trim();
-  if (newPwd) {
+  var confirmPwd = (document.getElementById("adminEditNewPasswordConfirm") ? document.getElementById("adminEditNewPasswordConfirm").value : "").trim();
+  var errBox = document.getElementById("adminEditUserError");
+  function showEditError(msg) {
+    // Inline error keeps the modal usable; alert() blocked the whole page.
+    if (errBox) {
+      errBox.style.display = "block";
+      errBox.textContent = msg;
+    } else {
+      alert(msg);
+    }
+  }
+  if (errBox) { errBox.style.display = "none"; errBox.textContent = ""; }
+
+  if (newPwd || confirmPwd) {
+    if (!newPwd) {
+      showEditError("새 비밀번호를 입력해주세요.");
+      if (btn) btn.disabled = false;
+      return;
+    }
     if (newPwd.length < 8) {
-      alert("비밀번호는 최소 8자 이상이어야 합니다.");
+      showEditError("비밀번호는 최소 8자 이상이어야 합니다.");
+      if (btn) btn.disabled = false;
+      return;
+    }
+    if (!confirmPwd) {
+      showEditError("새 비밀번호 확인을 입력해주세요.");
+      if (btn) btn.disabled = false;
+      return;
+    }
+    if (newPwd !== confirmPwd) {
+      showEditError("새 비밀번호가 일치하지 않습니다. 다시 확인해주세요.");
       if (btn) btn.disabled = false;
       return;
     }
     payload.new_password = newPwd;
+    payload.new_password_confirm = confirmPwd;
   }
 
   try {
@@ -2253,10 +2292,10 @@ async function submitAdminEditUser(e) {
       closeAdminEditUserModal();
       await loadAdminUsers();
     } else {
-      alert("사용자 수정 실패: " + ((res && res.error) || "알 수 없는 오류"));
+      showEditError("사용자 수정 실패: " + ((res && res.error) || "알 수 없는 오류"));
     }
   } catch (err) {
-    alert("오류: " + err.message);
+    showEditError("오류: " + err.message);
   } finally {
     if (btn) btn.disabled = false;
   }

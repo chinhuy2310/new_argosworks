@@ -1,0 +1,386 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "startedAt": "2026-10-26T23:44:22.326Z",
+  "specification": {
+    "path": "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\candidate.json",
+    "sha256": "9a62a731eb5a1c1f8f4258bb9740010d2dda560c61af66fb13791ee3e5b869cc",
+    "bytes": 7526
+  },
+  "artifact": {
+    "path": "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\argoswork.html",
+    "sha256": "66c113fc0aa260480b9761212a89c0499e93573bddb16469051f32f3df58b6ed",
+    "bytes": 855106
+  },
+  "stages": {
+    "validate": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": null,
+      "execution": "embedded-in-deliver",
+      "command": [
+        "C:\\Program Files\\nodejs\\node.exe",
+        "C:\\Users\\Vision\\.gemini\\config\\skills\\archify\\bin\\archify.mjs",
+        "deliver",
+        "architecture",
+        "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\candidate.json",
+        "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\argoswork.html",
+        "--quality",
+        "showcase",
+        "--repo-root",
+        "C:\\Users\\Vision\\Desktop\\argoswork",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": true,
+        "command": "validate",
+        "specification": {
+          "sha256": "9a62a731eb5a1c1f8f4258bb9740010d2dda560c61af66fb13791ee3e5b869cc",
+          "bytes": 7526
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        }
+      }
+    },
+    "deliver": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 2684,
+      "command": [
+        "C:\\Program Files\\nodejs\\node.exe",
+        "C:\\Users\\Vision\\.gemini\\config\\skills\\archify\\bin\\archify.mjs",
+        "deliver",
+        "architecture",
+        "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\candidate.json",
+        "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\argoswork.html",
+        "--quality",
+        "showcase",
+        "--repo-root",
+        "C:\\Users\\Vision\\Desktop\\argoswork",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "receiptId": "a0271a07-7d33-40b1-9a84-cf156b9c770e",
+        "ok": true,
+        "command": "deliver",
+        "type": "architecture",
+        "input": "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\candidate.json",
+        "output": "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\argoswork.html",
+        "specification": {
+          "sha256": "9a62a731eb5a1c1f8f4258bb9740010d2dda560c61af66fb13791ee3e5b869cc",
+          "bytes": 7526
+        },
+        "artifact": {
+          "sha256": "66c113fc0aa260480b9761212a89c0499e93573bddb16469051f32f3df58b6ed",
+          "bytes": 855106
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        },
+        "evidence": {
+          "verified": true,
+          "repository": "https://github.com/chinhuy2310/argosworks",
+          "revision": "8a162b8cd37e135d93fe28795413d466648ada69",
+          "references": 11
+        },
+        "update": {
+          "status": "unavailable",
+          "installedVersion": null,
+          "availableVersion": null,
+          "releaseNotes": null,
+          "checkedAt": null,
+          "source": null,
+          "noticeRequired": false,
+          "noticeText": null,
+          "reason": "disabled"
+        }
+      }
+    },
+    "check": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 513,
+      "command": [
+        "C:\\Program Files\\nodejs\\node.exe",
+        "C:\\Users\\Vision\\.gemini\\config\\skills\\archify\\bin\\archify.mjs",
+        "check",
+        "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\argoswork.html",
+        "--require-provenance"
+      ],
+      "receipt": {
+        "ok": true,
+        "file": "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\argoswork.html",
+        "artifact": {
+          "sha256": "66c113fc0aa260480b9761212a89c0499e93573bddb16469051f32f3df58b6ed",
+          "bytes": 855106
+        },
+        "checks": [
+          {
+            "name": "single_svg",
+            "ok": true,
+            "details": [
+              "found 1 <svg> block(s)"
+            ]
+          },
+          {
+            "name": "finite_svg",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "orthogonal_arrows",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "label_route_clearance",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_crossings",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_corridors",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "container_border_runs",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "route_rhythm",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "legend_clearance",
+            "ok": true,
+            "details": []
+          }
+        ],
+        "composition": {
+          "schemaVersion": 1,
+          "profile": "showcase",
+          "status": "pass",
+          "summary": {
+            "errors": 0,
+            "warnings": 0
+          },
+          "metrics": {
+            "properCrossings": 0,
+            "resolvedCrossovers": 0,
+            "ambiguousCorridors": 0,
+            "arrowheadCollisions": 0,
+            "containerBorderRuns": 0,
+            "labelRouteClearanceIssues": 0,
+            "labelCanvasOverflowIssues": 0,
+            "minLabelRouteClearance": 58.4,
+            "desktopReadabilityIssues": 0,
+            "viewportHeightIssues": 0,
+            "minProjectedNodeTextPx": 7.5,
+            "maxBends": 0,
+            "routesOverSuggestedBends": 0,
+            "maxStretch": 1,
+            "routesOverSuggestedStretch": 0,
+            "minSegmentPx": 90,
+            "minInteriorSegmentPx": null,
+            "shortSegmentCount": 0,
+            "shortEndpointSegmentCount": 0,
+            "shortInteriorSegmentCount": 0,
+            "microSegmentCount": 0
+          },
+          "suggestedLimits": {
+            "bendsPerRelationship": 2,
+            "stretch": 1.35,
+            "segmentPx": 16,
+            "microSegmentPx": 8
+          },
+          "routeReview": {
+            "crossings": [],
+            "detours": []
+          },
+          "leadingSpace": {
+            "measured": true,
+            "emptyTopPx": 50,
+            "emptyTopRatio": 0.095,
+            "occupiedTop": 50,
+            "viewBoxTop": 0,
+            "canvasHeight": 528,
+            "typicalNodeHeight": 60,
+            "reviewSuggested": false
+          },
+          "desktopReadability": {
+            "budgetBasis": "recognized-declared-wide",
+            "readerContract": "declared-wide-v1",
+            "availableDiagramWidth": 1115.625,
+            "actualBudgetPx": 1115.625,
+            "actualReaderWidth": 1145.625,
+            "desiredReaderWidth": 1145.625,
+            "viewportCap": 1376,
+            "limit": "source-size",
+            "requestedTargetPx": 7.5,
+            "requestedTargetMet": true,
+            "hardFloorPx": 6,
+            "hardFloorMet": true,
+            "minimumOwner": {
+              "kind": "edge",
+              "id": "browser-to-caddy",
+              "from": "browser",
+              "to": "caddy"
+            },
+            "minimumSourceTextPx": 8,
+            "minimumProjectedTextPx": 7.5,
+            "semanticTextCount": 34
+          },
+          "issues": []
+        },
+        "provenance": "current",
+        "deliveryReceiptId": "a0271a07-7d33-40b1-9a84-cf156b9c770e"
+      }
+    },
+    "browser-check": {
+      "status": "fail",
+      "exitCode": 1,
+      "durationMs": 13011,
+      "command": [
+        "C:\\Program Files\\nodejs\\node.exe",
+        "C:\\Users\\Vision\\.gemini\\config\\skills\\archify\\bin\\archify.mjs",
+        "browser-check",
+        "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\argoswork.html",
+        "--json",
+        "--require-provenance"
+      ],
+      "execution": "in-process",
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": false,
+        "command": "browser-check",
+        "evidenceKind": "automated-browser",
+        "status": "fail",
+        "visualReview": "not-requested",
+        "provenance": "current",
+        "deliveryReceiptId": "a0271a07-7d33-40b1-9a84-cf156b9c770e",
+        "artifact": {
+          "path": "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\argoswork.html",
+          "sha256": "66c113fc0aa260480b9761212a89c0499e93573bddb16469051f32f3df58b6ed",
+          "bytes": 855106
+        },
+        "state": {
+          "detail": "read",
+          "motion": "still"
+        },
+        "chrome": {
+          "status": "available",
+          "executable": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+        },
+        "diagnostics": [
+          {
+            "code": "viewer/temp-cleanup-incomplete",
+            "severity": "error",
+            "message": "Browser cleanup could not safely finish; inspect the reported retained path.",
+            "subject": {
+              "artifact": "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\argoswork.html"
+            },
+            "evidence": {
+              "reason": "Chrome did not exit; retained temporary profile \"C:\\Users\\Vision\\AppData\\Local\\Temp\\archify-visual-check-profile-lNTtRT\".",
+              "retainedDirectory": "C:\\Users\\Vision\\AppData\\Local\\Temp\\archify-visual-check-profile-lNTtRT"
+            },
+            "supportedFixes": [
+              "resolve the reported process or filesystem failure; verify directory ownership before manual cleanup"
+            ]
+          }
+        ],
+        "containment": {
+          "status": "fail",
+          "policy": "fit-or-reader-declared-readable-vertical-scroll",
+          "viewports": []
+        },
+        "themeStates": {
+          "status": "fail",
+          "viewports": []
+        },
+        "readability": {
+          "status": "fail",
+          "minimumProjectedNodeTextPx": 6,
+          "viewports": []
+        },
+        "viewerChrome": {
+          "status": "fail",
+          "viewports": []
+        },
+        "captures": {
+          "status": "not-requested",
+          "screenshots": [],
+          "contactSheet": null
+        },
+        "sidecars": {
+          "receipt": "argoswork.browser-check.json",
+          "files": []
+        },
+        "error": "Chrome did not exit; retained temporary profile \"C:\\Users\\Vision\\AppData\\Local\\Temp\\archify-visual-check-profile-lNTtRT\"."
+      }
+    }
+  },
+  "browserCheck": {
+    "requested": true,
+    "ran": false
+  },
+  "diagnostics": [
+    {
+      "code": "viewer/temp-cleanup-incomplete",
+      "severity": "error",
+      "message": "Browser cleanup could not safely finish; inspect the reported retained path.",
+      "subject": {
+        "artifact": "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\argoswork.html"
+      },
+      "evidence": {
+        "reason": "Chrome did not exit; retained temporary profile \"C:\\Users\\Vision\\AppData\\Local\\Temp\\archify-visual-check-profile-lNTtRT\".",
+        "retainedDirectory": "C:\\Users\\Vision\\AppData\\Local\\Temp\\archify-visual-check-profile-lNTtRT"
+      },
+      "supportedFixes": [
+        "resolve the reported process or filesystem failure; verify directory ownership before manual cleanup"
+      ]
+    }
+  ],
+  "evidence": {
+    "receipt": "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\argoswork.finalize.json",
+    "summaryReceipt": "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\argoswork.finalize-summary.json",
+    "browserCheckReceipt": "C:\\Users\\Vision\\Desktop\\argoswork\\.archify\\architecture-argoswork-20261027-084400\\argoswork.browser-check.json"
+  },
+  "visualReview": "not-requested",
+  "failedStage": "browser-check",
+  "finishedAt": "2026-10-26T23:44:39.481Z",
+  "durationMs": 17168,
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-26T23:44:22.999Z",
+    "source": "network",
+    "noticeRequired": false,
+    "noticeText": null
+  }
+}
