@@ -24,7 +24,6 @@ services:
       # Persistent SQLite CSDL, backups, attachments, vectors
       - ./data:/app/data
       # Server runtime configuration
-      - ./server/config.json:/app/server/config.json
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
       interval: 30s
