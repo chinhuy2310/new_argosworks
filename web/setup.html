@@ -513,19 +513,19 @@
           </div>
           <div class="license-meta-grid">
             <div class="meta-item">
-              <div class="meta-label">고객사 (Customer)</div>
+              <div class="meta-label" id="lblMetaCustomer">고객사 (Customer)</div>
               <div class="meta-val" id="valCustomer">-</div>
             </div>
             <div class="meta-item">
-              <div class="meta-label">허용 좌석 (Max Seats)</div>
+              <div class="meta-label" id="lblMetaSeats">허용 좌석 (Max Seats)</div>
               <div class="meta-val" id="valSeats">- Seats</div>
             </div>
             <div class="meta-item">
-              <div class="meta-label">계약 만료일 (Expiry Date)</div>
+              <div class="meta-label" id="lblMetaExpiry">계약 만료일 (Expiry Date)</div>
               <div class="meta-val" id="valExpiry">-</div>
             </div>
             <div class="meta-item">
-              <div class="meta-label">포함 모듈 (Modules)</div>
+              <div class="meta-label" id="lblMetaModules">포함 모듈 (Modules)</div>
               <div class="meta-val" id="valModules" style="font-size: 11.5px;">All Modules</div>
             </div>
           </div>
@@ -589,45 +589,45 @@
         <div class="form-group">
           <label class="form-label" id="lblAdminDeptSelect">마스터 관리자 소속 부서</label>
           <select id="selectAdminDept" class="form-input" style="background: var(--input-bg);">
-            <option value="mgmt">경영기획팀 (Management / MGMT)</option>
-            <option value="dev">연구개발팀 (R&D / DEV)</option>
-            <option value="sales">영업마케팅팀 (Sales / SALES)</option>
-            <option value="hr">인사총무팀 (HR / HR)</option>
+            <option value="mgmt" id="optDeptMgmt">경영기획팀 (Management / MGMT)</option>
+            <option value="dev" id="optDeptDev">연구개발팀 (R&D / DEV)</option>
+            <option value="sales" id="optDeptSales">영업마케팅팀 (Sales / SALES)</option>
+            <option value="hr" id="optDeptHr">인사총무팀 (HR / HR)</option>
           </select>
         </div>
 
         <div class="form-group">
           <div class="form-label">
             <span id="lblDeptPreset">초기 기본 생성 부서 목록</span>
-            <span style="font-size: 11px; color: var(--argos-light);">4개 기본 부서 자동 생성</span>
+            <span id="lblDeptPresetSub" style="font-size: 11px; color: var(--argos-light);">4개 기본 부서 자동 생성</span>
           </div>
           <table class="dept-list-table">
             <thead>
               <tr>
-                <th style="width: 80px;">부서코드</th>
-                <th>부서명</th>
-                <th style="width: 100px;">업무코드 Prefix</th>
+                <th style="width: 80px;" id="thDeptCode">부서코드</th>
+                <th id="thDeptName">부서명</th>
+                <th style="width: 100px;" id="thDeptPrefix">업무코드 Prefix</th>
               </tr>
             </thead>
             <tbody id="deptTableBody">
               <tr>
                 <td><code>mgmt</code></td>
-                <td>경영기획팀 (Management)</td>
+                <td id="tdDeptMgmt">경영기획팀 (Management)</td>
                 <td><code>MGMT-xxx</code></td>
               </tr>
               <tr>
                 <td><code>dev</code></td>
-                <td>연구개발팀 (R&D)</td>
+                <td id="tdDeptDev">연구개발팀 (R&D)</td>
                 <td><code>DEV-xxx</code></td>
               </tr>
               <tr>
                 <td><code>sales</code></td>
-                <td>영업마케팅팀 (Sales)</td>
+                <td id="tdDeptSales">영업마케팅팀 (Sales)</td>
                 <td><code>SALES-xxx</code></td>
               </tr>
               <tr>
                 <td><code>hr</code></td>
-                <td>인사총무팀 (HR)</td>
+                <td id="tdDeptHr">인사총무팀 (HR)</td>
                 <td><code>HR-xxx</code></td>
               </tr>
             </tbody>
@@ -650,60 +650,240 @@
 
   <script>
     // =========================================================================
-    // ARGOS WORKS ENTERPRISE SETUP WIZARD CONTROLLER
+    // ARGOS WORKS SERVER SETUP WIZARD CONTROLLER (100% BILINGUAL KO / EN)
     // =========================================================================
     let currentStep = 1;
     let verifiedLicenseData = null;
     let currentLang = localStorage.getItem('argos_lang') || 'ko';
     if (currentLang !== 'en') currentLang = 'ko';
 
+    const DEFAULT_TRIAL_KEY = 'AGY-eyJjdXN0b21lciI6IkFyZ29zIEVudGVycHJpc2UgVHJpYWwiLCJleHBpcnkiOiIyMDI3LTEyLTMxIiwiaWF0IjoiMjAyNi0xMC0yMyIsIm1vZHVsZXMiOlsiY2FudmFzIiwicGltIiwiamlyYSIsInJhZyIsInNjaGVkdWxlIiwiYXVkaXQiXSwic2VhdHMiOjUwfQ.yEYIb5-mi0VGep5q-vMMi_EHjG8xb2Frsamytfw_sUKjQFFizBci55Q-0bh8sdoq9NOAorGqC_xbmtp5LlDMDw';
+
     const dict = {
       ko: {
         langBtn: "KO",
         brandSub: "Server B2B 초기 온보딩 마법사",
+        
+        // Stepper
         step1: "라이선스 인증",
         step2: "마스터 관리자",
         step3: "조직 및 부서",
+
+        // Step 1: License
+        titleStep1: "B2B 계약 라이선스 키 인증",
+        descStep1: "도입 계약 시 발급받으신 정품 라이선스 키를 입력하세요. 오프라인 망에서도 서명 검증을 통해 좌석(Seat)과 모듈이 활성화됩니다.",
+        lblLicenseInput: "라이선스 키 (License Key)",
+        btnAutoTrial: "⚡ 무료 평가판(Trial) 키 입력",
+        phLicenseKey: "AGY-eyJjdXN0b21lciI... 또는 TRIAL 입력",
+        hintLicense: "엔터프라이즈 정품 키 (AGY-xxxx.xxxx) 또는 테스트용 TRIAL을 지원합니다.",
+        btnVerifyLicense: "🔍 라이선스 키 유효성 검증",
+        txtLicStatus: "정품 라이선스 인증 완료",
+        lblMetaCustomer: "고객사 (Customer)",
+        lblMetaSeats: "허용 좌석 (Max Seats)",
+        lblMetaExpiry: "계약 만료일 (Expiry Date)",
+        lblMetaModules: "포함 모듈 (Modules)",
+
+        // Step 2: Master Admin
+        titleStep2: "마스터 관리자(Master Admin) 계정 생성",
+        descStep2: "전사 시스템을 총괄할 최고 관리자 계정을 설정합니다. 이 계정은 향후 사내 임직원의 계정 발급 요청을 승인하고 권한을 통제합니다.",
+        lblAdminId: "관리자 ID (아이디)",
+        phAdminId: "예: admin",
+        lblAdminName: "관리자 성명 (Full Name)",
+        phAdminName: "예: 시스템관리자",
+        lblAdminEmail: "대표 관리자 이메일",
+        lblAdminPassword: "마스터 비밀번호",
+        phAdminPassword: "최소 8자 이상",
+        lblAdminPasswordConfirm: "비밀번호 확인",
+        phAdminPasswordConfirm: "비밀번호 재입력",
+
+        // Step 3: Workspace & Depts
+        titleStep3: "워크스페이스 및 기본 부서 설정",
+        descStep3: "사내 조직 체계에 맞추어 워크스페이스 명칭과 기본 부서를 구성합니다. 초기 설정 완료 후 언제든 관리자 패널에서 추가/수정 가능합니다.",
+        lblCompanyName: "회사명 / 워크스페이스 명칭",
+        phCompanyName: "예: (주)아르고스 엔터프라이즈",
+        lblAdminDeptSelect: "마스터 관리자 소속 부서",
+        optDeptMgmt: "경영기획팀 (Management / MGMT)",
+        optDeptDev: "연구개발팀 (R&D / DEV)",
+        optDeptSales: "영업마케팅팀 (Sales / SALES)",
+        optDeptHr: "인사총무팀 (HR / HR)",
+        lblDeptPreset: "초기 기본 생성 부서 목록",
+        lblDeptPresetSub: "4개 기본 부서 자동 생성",
+        thDeptCode: "부서코드",
+        thDeptName: "부서명",
+        thDeptPrefix: "업무코드 Prefix",
+        tdDeptMgmt: "경영기획팀 (Management)",
+        tdDeptDev: "연구개발팀 (R&D)",
+        tdDeptSales: "영업마케팅팀 (Sales)",
+        tdDeptHr: "인사총무팀 (HR)",
+
+        // Actions
         btnPrev: "이전",
         btnNext: "다음 단계",
-        btnComplete: "🚀 엔터프라이즈 시스템 가동 시작",
+        btnComplete: "🚀 시스템 가동 시작",
         btnProcessing: "초기화 처리 중...",
+
+        // Alerts & Errors
         errNeedVerifyLicense: "라이선스 유효성 검증을 먼저 완료해주세요.",
         errFillRequired: "모든 필수 항목을 입력해주세요.",
         errPwdMismatch: "비밀번호가 일치하지 않습니다.",
-        errPwdShort: "관리자 비밀번호는 최소 8자 이상이어야 합니다."
+        errPwdShort: "관리자 비밀번호는 최소 8자 이상이어야 합니다.",
+        errNeedLicenseKey: "라이선스 키를 입력해주세요.",
+        txtVerifying: "검증 중...",
+        txtVerifyLicenseBtn: "🔍 라이선스 키 유효성 검증",
+        msgLicSuccess: "라이선스 검증에 성공했습니다. [다음 단계]로 이동하세요.",
+        errServerComm: "서버 통신 오류: ",
+        errInvalidLicense: "유효하지 않은 라이선스 키입니다.",
+        errSetupFailed: "초기 설정 실패: ",
+        errCommFailed: "통신 오류: "
       },
       en: {
         langBtn: "EN",
         brandSub: "Server B2B Initial Onboarding Wizard",
+        
+        // Stepper
         step1: "License Auth",
         step2: "Master Admin",
         step3: "Workspace & Depts",
+
+        // Step 1: License
+        titleStep1: "B2B Contract License Key Authentication",
+        descStep1: "Enter your official license key issued upon contract. User seats and modules will be activated via offline asymmetric signature verification.",
+        lblLicenseInput: "License Key",
+        btnAutoTrial: "⚡ Auto-fill Free Trial Key",
+        phLicenseKey: "AGY-eyJjdXN0b21lciI... or enter TRIAL",
+        hintLicense: "Supports official Enterprise keys (AGY-xxxx.xxxx) or test TRIAL key.",
+        btnVerifyLicense: "🔍 Verify License Key",
+        txtLicStatus: "License Verified Successfully",
+        lblMetaCustomer: "Customer",
+        lblMetaSeats: "Max Seats",
+        lblMetaExpiry: "Expiry Date",
+        lblMetaModules: "Included Modules",
+
+        // Step 2: Master Admin
+        titleStep2: "Create Master Administrator Account",
+        descStep2: "Configure the super-admin account to manage the entire system, approve staff access requests, and control permissions.",
+        lblAdminId: "Admin Username (ID)",
+        phAdminId: "e.g. admin",
+        lblAdminName: "Full Name",
+        phAdminName: "e.g. System Admin",
+        lblAdminEmail: "Admin Email",
+        lblAdminPassword: "Master Password",
+        phAdminPassword: "At least 8 characters",
+        lblAdminPasswordConfirm: "Confirm Password",
+        phAdminPasswordConfirm: "Re-enter password",
+
+        // Step 3: Workspace & Depts
+        titleStep3: "Configure Workspace & Default Departments",
+        descStep3: "Configure your organization workspace name and initial departments. You can modify or add more later in the Admin Panel.",
+        lblCompanyName: "Company / Workspace Name",
+        phCompanyName: "e.g. ARGOS WORKS Corp.",
+        lblAdminDeptSelect: "Master Admin Department",
+        optDeptMgmt: "Management & Planning (MGMT)",
+        optDeptDev: "Research & Development (DEV)",
+        optDeptSales: "Sales & Marketing (SALES)",
+        optDeptHr: "Human Resources (HR)",
+        lblDeptPreset: "Initial Default Departments",
+        lblDeptPresetSub: "4 default departments automatically created",
+        thDeptCode: "Dept Code",
+        thDeptName: "Department Name",
+        thDeptPrefix: "Work Code Prefix",
+        tdDeptMgmt: "Management & Planning (MGMT)",
+        tdDeptDev: "Research & Development (R&D)",
+        tdDeptSales: "Sales & Marketing (SALES)",
+        tdDeptHr: "Human Resources (HR)",
+
+        // Actions
         btnPrev: "Back",
         btnNext: "Next Step",
         btnComplete: "🚀 Complete Setup & Launch",
         btnProcessing: "Initializing...",
+
+        // Alerts & Errors
         errNeedVerifyLicense: "Please verify your license key first.",
         errFillRequired: "Please fill in all required fields.",
         errPwdMismatch: "Passwords do not match.",
-        errPwdShort: "Password must be at least 8 characters long."
+        errPwdShort: "Password must be at least 8 characters long.",
+        errNeedLicenseKey: "Please enter a license key.",
+        txtVerifying: "Verifying...",
+        txtVerifyLicenseBtn: "🔍 Verify License Key",
+        msgLicSuccess: "License verified successfully. Click [Next Step] to proceed.",
+        errServerComm: "Server communication error: ",
+        errInvalidLicense: "Invalid license key.",
+        errSetupFailed: "Initial setup failed: ",
+        errCommFailed: "Network communication error: "
       }
     };
 
     function renderI18n() {
       const t = dict[currentLang] || dict.ko;
-      document.getElementById('txt-lang-btn').textContent = t.langBtn;
-      document.getElementById('txt-brand-sub').textContent = t.brandSub;
-      document.getElementById('lblStep1').textContent = t.step1;
-      document.getElementById('lblStep2').textContent = t.step2;
-      document.getElementById('lblStep3').textContent = t.step3;
-      document.getElementById('txtBtnPrev').textContent = t.btnPrev;
+      
+      // Top bar
+      const langBtn = document.getElementById('txt-lang-btn');
+      if (langBtn) langBtn.textContent = t.langBtn;
+      const brandSub = document.getElementById('txt-brand-sub');
+      if (brandSub) brandSub.textContent = t.brandSub;
+
+      // Stepper
+      const s1 = document.getElementById('lblStep1'); if (s1) s1.textContent = t.step1;
+      const s2 = document.getElementById('lblStep2'); if (s2) s2.textContent = t.step2;
+      const s3 = document.getElementById('lblStep3'); if (s3) s3.textContent = t.step3;
+
+      // Step 1: License
+      const tStep1 = document.getElementById('titleStep1'); if (tStep1) tStep1.textContent = t.titleStep1;
+      const dStep1 = document.getElementById('descStep1'); if (dStep1) dStep1.textContent = t.descStep1;
+      const lblLic = document.getElementById('lblLicenseInput'); if (lblLic) lblLic.textContent = t.lblLicenseInput;
+      const btnTrial = document.getElementById('btnAutoTrial'); if (btnTrial) btnTrial.textContent = t.btnAutoTrial;
+      const inLic = document.getElementById('inputLicenseKey'); if (inLic) inLic.placeholder = t.phLicenseKey;
+      const hLic = document.getElementById('hintLicense'); if (hLic) hLic.textContent = t.hintLicense;
+      const bVerify = document.getElementById('btnVerifyLicense'); if (bVerify) bVerify.textContent = t.btnVerifyLicense;
+      const txtLicSt = document.getElementById('txtLicStatus'); if (txtLicSt) txtLicSt.textContent = t.txtLicStatus;
+      const lCust = document.getElementById('lblMetaCustomer'); if (lCust) lCust.textContent = t.lblMetaCustomer;
+      const lSeats = document.getElementById('lblMetaSeats'); if (lSeats) lSeats.textContent = t.lblMetaSeats;
+      const lExp = document.getElementById('lblMetaExpiry'); if (lExp) lExp.textContent = t.lblMetaExpiry;
+      const lMod = document.getElementById('lblMetaModules'); if (lMod) lMod.textContent = t.lblMetaModules;
+
+      // Step 2: Master Admin
+      const tStep2 = document.getElementById('titleStep2'); if (tStep2) tStep2.textContent = t.titleStep2;
+      const dStep2 = document.getElementById('descStep2'); if (dStep2) dStep2.textContent = t.descStep2;
+      const lAdmId = document.getElementById('lblAdminId'); if (lAdmId) lAdmId.textContent = t.lblAdminId;
+      const inAdmId = document.getElementById('adminUsername'); if (inAdmId) inAdmId.placeholder = t.phAdminId;
+      const lAdmNm = document.getElementById('lblAdminName'); if (lAdmNm) lAdmNm.textContent = t.lblAdminName;
+      const inAdmNm = document.getElementById('adminName'); if (inAdmNm) inAdmNm.placeholder = t.phAdminName;
+      const lAdmEm = document.getElementById('lblAdminEmail'); if (lAdmEm) lAdmEm.textContent = t.lblAdminEmail;
+      const lAdmPw = document.getElementById('lblAdminPassword'); if (lAdmPw) lAdmPw.textContent = t.lblAdminPassword;
+      const inAdmPw = document.getElementById('adminPassword'); if (inAdmPw) inAdmPw.placeholder = t.phAdminPassword;
+      const lAdmPwC = document.getElementById('lblAdminPasswordConfirm'); if (lAdmPwC) lAdmPwC.textContent = t.lblAdminPasswordConfirm;
+      const inAdmPwC = document.getElementById('adminPasswordConfirm'); if (inAdmPwC) inAdmPwC.placeholder = t.phAdminPasswordConfirm;
+
+      // Step 3: Workspace & Depts
+      const tStep3 = document.getElementById('titleStep3'); if (tStep3) tStep3.textContent = t.titleStep3;
+      const dStep3 = document.getElementById('descStep3'); if (dStep3) dStep3.textContent = t.descStep3;
+      const lComp = document.getElementById('lblCompanyName'); if (lComp) lComp.textContent = t.lblCompanyName;
+      const inComp = document.getElementById('inputCompanyName'); if (inComp) inComp.placeholder = t.phCompanyName;
+      const lAdmDept = document.getElementById('lblAdminDeptSelect'); if (lAdmDept) lAdmDept.textContent = t.lblAdminDeptSelect;
+      const optM = document.getElementById('optDeptMgmt'); if (optM) optM.textContent = t.optDeptMgmt;
+      const optD = document.getElementById('optDeptDev'); if (optD) optD.textContent = t.optDeptDev;
+      const optS = document.getElementById('optDeptSales'); if (optS) optS.textContent = t.optDeptSales;
+      const optH = document.getElementById('optDeptHr'); if (optH) optH.textContent = t.optDeptHr;
+      const lPreset = document.getElementById('lblDeptPreset'); if (lPreset) lPreset.textContent = t.lblDeptPreset;
+      const lPresetSub = document.getElementById('lblDeptPresetSub'); if (lPresetSub) lPresetSub.textContent = t.lblDeptPresetSub;
+      const thCode = document.getElementById('thDeptCode'); if (thCode) thCode.textContent = t.thDeptCode;
+      const thName = document.getElementById('thDeptName'); if (thName) thName.textContent = t.thDeptName;
+      const thPre = document.getElementById('thDeptPrefix'); if (thPre) thPre.textContent = t.thDeptPrefix;
+      const tdM = document.getElementById('tdDeptMgmt'); if (tdM) tdM.textContent = t.tdDeptMgmt;
+      const tdD = document.getElementById('tdDeptDev'); if (tdD) tdD.textContent = t.tdDeptDev;
+      const tdS = document.getElementById('tdDeptSales'); if (tdS) tdS.textContent = t.tdDeptSales;
+      const tdH = document.getElementById('tdDeptHr'); if (tdH) tdH.textContent = t.tdDeptHr;
+
+      // Navigation Buttons
+      const btnP = document.getElementById('txtBtnPrev'); if (btnP) btnP.textContent = t.btnPrev;
       updateNextButtonText();
     }
 
     function updateNextButtonText() {
       const t = dict[currentLang] || dict.ko;
       const nextTxt = document.getElementById('txtBtnNext');
+      if (!nextTxt) return;
       if (currentStep === 3) {
         nextTxt.textContent = t.btnComplete;
       } else {
@@ -713,6 +893,7 @@
 
     function showAlert(msg, isError = true) {
       const al = document.getElementById('setupAlert');
+      if (!al) return;
       al.className = 'banner-alert ' + (isError ? 'error' : 'success');
       al.textContent = (isError ? '⚠️ ' : '✅ ') + msg;
       al.style.display = 'block';
@@ -720,6 +901,7 @@
 
     function hideAlert() {
       const al = document.getElementById('setupAlert');
+      if (!al) return;
       al.style.display = 'none';
       al.textContent = '';
     }
@@ -728,58 +910,53 @@
       hideAlert();
       currentStep = step;
 
-      // Update progress line
       const line = document.getElementById('stepperLine');
-      line.style.width = ((step - 1) * 50) + '%';
+      if (line) line.style.width = ((step - 1) * 50) + '%';
 
-      // Update stepper circles
       for (let i = 1; i <= 3; i++) {
         const item = document.getElementById('stepIndicator' + i);
         const circle = document.getElementById('circle' + i);
-        item.classList.remove('active', 'completed');
-        if (i < step) {
-          item.classList.add('completed');
-          circle.innerHTML = '✓';
-        } else if (i === step) {
-          item.classList.add('active');
-          circle.innerHTML = i;
-        } else {
-          circle.innerHTML = i;
+        if (item) item.classList.remove('active', 'completed');
+        if (circle) {
+          if (i < step) {
+            if (item) item.classList.add('completed');
+            circle.innerHTML = '✓';
+          } else if (i === step) {
+            if (item) item.classList.add('active');
+            circle.innerHTML = i;
+          } else {
+            circle.innerHTML = i;
+          }
         }
       }
 
-      // Update panes
       for (let i = 1; i <= 3; i++) {
         const pane = document.getElementById('paneStep' + i);
-        pane.classList.toggle('active', i === step);
+        if (pane) pane.classList.toggle('active', i === step);
       }
 
-      // Update buttons
-      const btnPrev = document.getElementById('btnPrevStep');
-      const btnNext = document.getElementById('btnNextStep');
-      btnPrev.style.visibility = (step === 1) ? 'hidden' : 'visible';
-
-      if (step === 1) {
-        btnNext.disabled = !verifiedLicenseData;
-      } else {
-        btnNext.disabled = false;
-      }
+      const prevBtn = document.getElementById('btnPrevStep');
+      if (prevBtn) prevBtn.style.visibility = (step === 1) ? 'hidden' : 'visible';
 
       updateNextButtonText();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     // License verification
     async function verifyLicense() {
       hideAlert();
+      const t = dict[currentLang] || dict.ko;
       const key = document.getElementById('inputLicenseKey').value.trim();
       if (!key) {
-        showAlert('라이선스 키를 입력해주세요.');
+        showAlert(t.errNeedLicenseKey);
         return;
       }
 
       const btn = document.getElementById('btnVerifyLicense');
-      btn.disabled = true;
-      btn.textContent = '검증 중...';
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = t.txtVerifying;
+      }
 
       try {
         const res = await fetch('/api/setup/verify-license', {
@@ -791,16 +968,15 @@
 
         if (res.ok && data.ok) {
           verifiedLicenseData = data.license;
-          document.getElementById('valCustomer').textContent = verifiedLicenseData.customer || 'Enterprise Customer';
+          document.getElementById('valCustomer').textContent = verifiedLicenseData.customer || (currentLang === 'en' ? 'Enterprise Customer' : '고객사');
           document.getElementById('valSeats').textContent = verifiedLicenseData.seats + ' Seats';
           document.getElementById('valExpiry').textContent = verifiedLicenseData.expiry || '2099-12-31';
           document.getElementById('valModules').textContent = (verifiedLicenseData.modules || []).join(', ');
 
           document.getElementById('licenseResultBox').classList.add('active');
           document.getElementById('btnNextStep').disabled = false;
-          showAlert('라이선스 검증에 성공했습니다. [다음 단계]로 이동하세요.', false);
+          showAlert(t.msgLicSuccess, false);
 
-          // Pre-fill company name if available
           const cNameInput = document.getElementById('inputCompanyName');
           if (cNameInput && !cNameInput.value) {
             cNameInput.value = verifiedLicenseData.customer || '';
@@ -809,18 +985,19 @@
           verifiedLicenseData = null;
           document.getElementById('licenseResultBox').classList.remove('active');
           document.getElementById('btnNextStep').disabled = true;
-          showAlert(data.error || '유효하지 않은 라이선스 키입니다.');
+          showAlert(data.error || t.errInvalidLicense);
         }
       } catch (err) {
-        showAlert('서버 통신 오류: ' + err.message);
+        showAlert(t.errServerComm + err.message);
       } finally {
-        btn.disabled = false;
-        btn.textContent = '🔍 라이선스 키 유효성 검증';
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = t.txtVerifyLicenseBtn;
+        }
       }
     }
 
     // Auto-fill Trial Key
-    const DEFAULT_TRIAL_KEY = 'AGY-eyJjdXN0b21lciI6IkFyZ29zIEVudGVycHJpc2UgVHJpYWwiLCJleHBpcnkiOiIyMDI3LTEyLTMxIiwiaWF0IjoiMjAyNi0xMC0yMyIsIm1vZHVsZXMiOlsiY2FudmFzIiwicGltIiwiamlyYSIsInJhZyIsInNjaGVkdWxlIiwiYXVkaXQiXSwic2VhdHMiOjUwfQ.yEYIb5-mi0VGep5q-vMMi_EHjG8xb2Frsamytfw_sUKjQFFizBci55Q-0bh8sdoq9NOAorGqC_xbmtp5LlDMDw';
     document.getElementById('btnAutoTrial')?.addEventListener('click', () => {
       document.getElementById('inputLicenseKey').value = DEFAULT_TRIAL_KEY;
       verifyLicense();
@@ -832,6 +1009,7 @@
     document.getElementById('adminPassword')?.addEventListener('input', (e) => {
       const p = e.target.value;
       const fill = document.getElementById('pwdStrengthFill');
+      if (!fill) return;
       if (!p) {
         fill.style.width = '0%';
         return;
@@ -888,10 +1066,18 @@
         }
         setStep(3);
       } else if (currentStep === 3) {
-        // Submit complete setup
         const nextBtn = document.getElementById('btnNextStep');
-        nextBtn.disabled = true;
-        nextBtn.textContent = t.btnProcessing;
+        if (nextBtn) {
+          nextBtn.disabled = true;
+          nextBtn.textContent = t.btnProcessing;
+        }
+
+        const deptNames = {
+          mgmt: (currentLang === 'en' ? "Management & Planning" : "경영기획팀 (Management)"),
+          dev: (currentLang === 'en' ? "Research & Development" : "연구개발팀 (R&D)"),
+          sales: (currentLang === 'en' ? "Sales & Marketing" : "영업마케팅팀 (Sales)"),
+          hr: (currentLang === 'en' ? "Human Resources" : "인사총무팀 (HR)")
+        };
 
         const payload = {
           license_key: document.getElementById('inputLicenseKey').value.trim(),
@@ -901,13 +1087,13 @@
             email: document.getElementById('adminEmail').value.trim(),
             password: document.getElementById('adminPassword').value
           },
-          company_name: document.getElementById('inputCompanyName').value.trim() || 'Argos Enterprise',
+          company_name: document.getElementById('inputCompanyName').value.trim() || (currentLang === 'en' ? 'ARGOS WORKS Corp.' : '아르고스 엔터프라이즈'),
           admin_dept_id: document.getElementById('selectAdminDept').value || 'mgmt',
           departments: [
-            { id: "mgmt", name: "경영기획팀 (Management)", prefix: "MGMT", color_index: 4 },
-            { id: "dev", name: "연구개발팀 (R&D)", prefix: "DEV", color_index: 1 },
-            { id: "sales", name: "영업마케팅팀 (Sales)", prefix: "SALES", color_index: 2 },
-            { id: "hr", name: "인사총무팀 (HR)", prefix: "HR", color_index: 3 }
+            { id: "mgmt", name: deptNames.mgmt, prefix: "MGMT", color_index: 4 },
+            { id: "dev", name: deptNames.dev, prefix: "DEV", color_index: 1 },
+            { id: "sales", name: deptNames.sales, prefix: "SALES", color_index: 2 },
+            { id: "hr", name: deptNames.hr, prefix: "HR", color_index: 3 }
           ]
         };
 
@@ -921,7 +1107,6 @@
 
           if (res.ok && data.ok) {
             showAlert('🎉 ' + data.message, false);
-            // Save user data in local storage
             if (data.user) {
               localStorage.setItem('argosUser', JSON.stringify(data.user));
               sessionStorage.setItem('argosUser', JSON.stringify(data.user));
@@ -930,22 +1115,27 @@
               window.location.replace('/');
             }, 1200);
           } else {
-            showAlert('초기 설정 실패: ' + (data.error || '알 수 없는 오류'));
+            showAlert(t.errSetupFailed + (data.error || 'Unknown error'));
+            if (nextBtn) {
+              nextBtn.disabled = false;
+              updateNextButtonText();
+            }
+          }
+        } catch (err) {
+          showAlert(t.errCommFailed + err.message);
+          if (nextBtn) {
             nextBtn.disabled = false;
             updateNextButtonText();
           }
-        } catch (err) {
-          showAlert('통신 오류: ' + err.message);
-          nextBtn.disabled = false;
-          updateNextButtonText();
         }
       }
     });
 
-    // Language switch
+    // Language switch button
     document.getElementById('btn-lang-toggle')?.addEventListener('click', () => {
       currentLang = (currentLang === 'ko') ? 'en' : 'ko';
       localStorage.setItem('argos_lang', currentLang);
+      localStorage.setItem('jarvisLang', currentLang);
       renderI18n();
     });
 
@@ -959,7 +1149,7 @@
       })
       .catch(() => {});
 
-    // Init
+    // Initial render
     renderI18n();
   </script>
 </body>
