@@ -78,7 +78,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-argos_admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?bắt buộc đặt}
     volumes:
-      - ./data/postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./server/schema.postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "127.0.0.1:5432:5432"
@@ -96,3 +96,6 @@ services:
       timeout: 5s
       retries: 5
 
+
+volumes:
+  postgres_data:

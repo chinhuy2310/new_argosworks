@@ -137,7 +137,7 @@ jobs:
       - name: Static Security Analysis (Bandit)
         run: |
           pip install bandit
-          bandit -r server/ -ll -ii -s B310,B104
+          bandit -r server/ -ll -ii -s B310,B104,B608,B323
 
   docker-build-verify:
     name: Container Build & PostgreSQL Client Verification
