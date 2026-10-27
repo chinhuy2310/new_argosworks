@@ -142,7 +142,7 @@ class TestAssigneeLookup:
 # Bidirectional user aliases
 # ---------------------------------------------------------------------------
 class TestBidirectionalAliases:
-    ALIASES = {"Đồng Chí Huy": "Uy", "김철수": "chulsoo.kim@company.com"}
+    ALIASES = {"John Doe": "johnd", "김철수": "chulsoo.kim@company.com"}
 
     def _cfg(self):
         cfg = _cfg()
@@ -160,21 +160,21 @@ class TestBidirectionalAliases:
 
     # --- local -> Jira ---------------------------------------------------
     def test_local_to_jira_exact(self):
-        assert jira_client.resolve_local_to_jira_query(self._cfg(), "Đồng Chí Huy") == "Uy"
+        assert jira_client.resolve_local_to_jira_query(self._cfg(), "John Doe") == "johnd"
 
     def test_local_to_jira_case_insensitive(self):
-        assert jira_client.resolve_local_to_jira_query(self._cfg(), "đồng chí huy") == "Uy"
+        assert jira_client.resolve_local_to_jira_query(self._cfg(), "john doe") == "johnd"
 
     def test_local_to_jira_base_name(self):
         # "김철수 대리" (chức danh) vẫn khớp alias của "김철수"
         assert jira_client.resolve_local_to_jira_query(self._cfg(), "김철수 대리") == "chulsoo.kim@company.com"
 
     def test_local_to_jira_without_alias_passthrough(self):
-        assert jira_client.resolve_local_to_jira_query(self._cfg(), "Người Khác") == "Người Khác"
+        assert jira_client.resolve_local_to_jira_query(self._cfg(), "Other Person") == "Other Person"
 
     # --- Jira -> local ---------------------------------------------------
     def test_jira_to_local_by_display_name(self):
-        assert jira_client.resolve_jira_to_local_name(self._cfg(), "Uy") == "Đồng Chí Huy"
+        assert jira_client.resolve_jira_to_local_name(self._cfg(), "johnd") == "John Doe"
 
     def test_jira_to_local_by_email(self):
         assert jira_client.resolve_jira_to_local_name(
@@ -185,48 +185,48 @@ class TestBidirectionalAliases:
         assert jira_client.resolve_jira_to_local_name(self._cfg(), "Random User") == "Random User"
 
     def test_normalize_cached_assignee_keeps_display_name(self):
-        record = {"assignee": "Uy", "jira": {"key": "SCRUM-1"}}
+        record = {"assignee": "johnd", "jira": {"key": "SCRUM-1"}}
         normalized = jira_client._normalize_cached_assignee(self._cfg(), record)
-        assert normalized["assignee"] == "Đồng Chí Huy"
-        assert normalized["jira"]["displayAssignee"] == "Uy"
+        assert normalized["assignee"] == "John Doe"
+        assert normalized["jira"]["displayAssignee"] == "johnd"
 
     def test_lookup_uses_alias_query(self, monkeypatch):
         captured = {}
 
         def fake_urlopen(req, *args, **kwargs):
             captured["url"] = req.full_url
-            return _FakeResponse([{"accountId": "acc-uy", "displayName": "Uy"}])
+            return _FakeResponse([{"accountId": "acc-johnd", "displayName": "johnd"}])
 
         monkeypatch.setattr(jira_client.urllib.request, "urlopen", fake_urlopen)
-        assert jira_client.lookup_jira_account_id(self._cfg(), "Đồng Chí Huy") == "acc-uy"
-        assert "Uy" in captured["url"]
+        assert jira_client.lookup_jira_account_id(self._cfg(), "John Doe") == "acc-johnd"
+        assert "johnd" in captured["url"]
 
     # --- "내 업무" matching ------------------------------------------------
     def test_my_jira_records_matches_by_alias_and_tolerates_empty_org(self, monkeypatch):
         cfg = self._cfg()
         records = [
-            {"org": "dev", "assignee": "Uy", "assigneeEmail": "uy@company.com", "jira": {"key": "SCRUM-1"}},
-            {"org": "", "assignee": "Uy", "assigneeEmail": "", "jira": {"key": "SCRUM-2"}},
-            {"org": "hr", "assignee": "Uy", "assigneeEmail": "", "jira": {"key": "SCRUM-3"}},
-            {"org": "dev", "assignee": "Người Khác", "assigneeEmail": "x@company.com", "jira": {"key": "SCRUM-4"}},
+            {"org": "dev", "assignee": "johnd", "assigneeEmail": "johnd@company.com", "jira": {"key": "SCRUM-1"}},
+            {"org": "", "assignee": "johnd", "assigneeEmail": "", "jira": {"key": "SCRUM-2"}},
+            {"org": "hr", "assignee": "johnd", "assigneeEmail": "", "jira": {"key": "SCRUM-3"}},
+            {"org": "dev", "assignee": "Other Person", "assigneeEmail": "x@company.com", "jira": {"key": "SCRUM-4"}},
         ]
         monkeypatch.setattr(
             jira_client, "get_cached_jira_records", lambda _cfg: {"records": records}
         )
 
-        mine = jira_client.my_jira_records(cfg, "Đồng Chí Huy", "dev", "uy@company.com")
+        mine = jira_client.my_jira_records(cfg, "John Doe", "dev", "johnd@company.com")
         keys = {r["jira"]["key"] for r in mine}
         assert keys == {"SCRUM-1", "SCRUM-2"}  # khác phòng (hr) bị loại, người khác bị loại
 
     def test_my_jira_records_matches_by_email_only(self, monkeypatch):
         cfg = self._cfg()
         records = [
-            {"org": "dev", "assignee": "Tên Jira Khác", "assigneeEmail": "uy@company.com", "jira": {"key": "SCRUM-9"}},
+            {"org": "dev", "assignee": "Other Jira Name", "assigneeEmail": "johnd@company.com", "jira": {"key": "SCRUM-9"}},
         ]
         monkeypatch.setattr(
             jira_client, "get_cached_jira_records", lambda _cfg: {"records": records}
         )
-        mine = jira_client.my_jira_records(cfg, "Đồng Chí Huy", "dev", "uy@company.com")
+        mine = jira_client.my_jira_records(cfg, "John Doe", "dev", "johnd@company.com")
         assert [r["jira"]["key"] for r in mine] == ["SCRUM-9"]
 
 

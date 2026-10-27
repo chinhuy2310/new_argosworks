@@ -143,16 +143,16 @@ curl    https://<domain>/api/version    # {"version":"1.0.0"}
 
 ## 11. Jira: ánh xạ người dùng (alias 2 chiều)
 
-Tên người trên ARGOS và Jira thường khác nhau (ví dụ ARGOS `Đồng Chí Huy` ↔ Jira `Uy`,
+Tên người trên ARGOS và Jira thường khác nhau (ví dụ ARGOS `John Doe` ↔ Jira `johnd`,
 hoặc ARGOS `김철수` ↔ Jira `chulsoo.kim@company.com`). Khai báo một lần, dùng cho **cả hai chiều**:
 
 **Settings → API 및 외부 연동 → Jira → 사용자 별칭 (User Aliases, JSON)**
 
 ```json
 {
-  "Đồng Chí Huy": "Uy",
+  "홍길동": "gildong.hong@company.com",
   "김철수": "chulsoo.kim@company.com",
-  "Nguyễn Văn A": "a.nguyen@congty.com"
+  "John Doe": "johnd"
 }
 ```
 
