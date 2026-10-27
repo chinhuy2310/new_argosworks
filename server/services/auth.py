@@ -33,8 +33,10 @@ def _effective_pbkdf2_rounds():
     return PBKDF2_ROUNDS
 
 
+from app_paths import APP_HOME
+
 SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BASE_DIR = os.path.dirname(SERVER_DIR)
+BASE_DIR = APP_HOME
 
 
 def account_key(name, org):

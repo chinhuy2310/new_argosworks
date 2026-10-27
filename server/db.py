@@ -170,8 +170,8 @@ if ENGINE == "sqlite":
 
     def get_db_path():
         """Returns the absolute path to the database file."""
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        data_dir = os.path.join(base_dir, 'data')
+        from app_paths import APP_HOME
+        data_dir = os.path.join(APP_HOME, 'data')
         os.makedirs(data_dir, exist_ok=True)
         return os.path.join(data_dir, 'argos.db')
 
@@ -181,7 +181,8 @@ if ENGINE == "sqlite":
         enables WAL mode, foreign keys, and sets a busy timeout.
         """
         db_path = get_db_path()
-        schema_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'schema.sql')
+        from app_paths import RES_DIR
+        schema_path = os.path.join(RES_DIR, 'schema.sql')
 
         logger.info(f"Initializing SQLite database at {db_path}")
 
@@ -649,7 +650,8 @@ else:
         Initializes the PostgreSQL database with versioned migration check.
         Ensures baseline schema is applied only when needed and tracked in schema_migrations.
         """
-        schema_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'schema.postgres.sql')
+        from app_paths import RES_DIR
+        schema_path = os.path.join(RES_DIR, 'schema.postgres.sql')
         logger.info(f"[db/postgres] Initializing database with schema: {schema_path}")
 
         pool = _get_pool()

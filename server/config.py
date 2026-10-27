@@ -11,14 +11,17 @@ from datetime import datetime
 # ---------------------------------------------------------------------------
 # 경로 / 설정
 # ---------------------------------------------------------------------------
+from app_paths import IS_FROZEN, APP_HOME, WEB_ROOT
+
 SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
-BASE_DIR = os.path.dirname(SERVER_DIR)          # JARVIS 루트
+BASE_DIR = APP_HOME                              # 쓰기 가능한 루트 (.env, data, logs)
 DATA_DIR = os.path.join(BASE_DIR, "data")
-WEB_DIR = os.path.join(BASE_DIR, "web")
+WEB_DIR = os.path.join(WEB_ROOT, "web")          # 읽기 전용 정적 UI (패키지 빌드에서는 번들 내부)
 LOG_DIR = os.path.join(BASE_DIR, "logs")
 ATTACH_DIR = os.path.join(DATA_DIR, "attachments")
 PRODUCT_ATTACH_DIR = os.path.join(ATTACH_DIR, "products")
-CONFIG_PATH = os.path.join(SERVER_DIR, "config.json")
+# 패키지 빌드에서는 config.json 을 exe 옆에 둔다 (고객이 수정/보존 가능, 업그레이드 시 유지).
+CONFIG_PATH = os.path.join(BASE_DIR if IS_FROZEN else SERVER_DIR, "config.json")
 DEPTS_PATH = os.path.join(DATA_DIR, "departments.json")
 RECORDS_PATH = os.path.join(DATA_DIR, "records.jsonl")
 ACCOUNTS_PATH = os.path.join(DATA_DIR, "accounts.json")
@@ -31,7 +34,7 @@ TEMPLATES_DIR = os.path.join(DATA_DIR, "templates")
 def _load_app_version():
     """Read the release version from the VERSION file (single source of truth)."""
     try:
-        with open(os.path.join(BASE_DIR, "VERSION"), "r", encoding="utf-8") as fh:
+        with open(os.path.join(WEB_ROOT, "VERSION"), "r", encoding="utf-8") as fh:
             value = fh.read().strip()
         if value:
             return value
