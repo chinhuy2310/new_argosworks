@@ -47,9 +47,8 @@ Name: "startupicon"; Description: "Tự động khởi động cùng Windows"; G
 [Files]
 ; Sao chép toàn bộ tệp từ bản dựng đã giấu code Nuitka
 Source: "..\dist\ArgosWorks-1.0.0-win64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Không ghi đè cơ sở dữ liệu và cấu hình khi khách hàng cài bản nâng cấp
-Source: "..\dist\ArgosWorks-1.0.0-win64\.env"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall
-Source: "..\dist\ArgosWorks-1.0.0-win64\config.json"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall
+; Khởi tạo .env nếu chưa có và không ghi đè khi nâng cấp
+Source: "..\dist\ArgosWorks-1.0.0-win64\.env.example"; DestName: ".env"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall
 
 [Dirs]
 Name: "{app}\data"; Permissions: users-full
