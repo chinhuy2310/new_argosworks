@@ -123,6 +123,9 @@ def nuitka_command(onefile, version):
         sys.executable, "-m", "nuitka",
         "--standalone",
         "--assume-yes-for-downloads",
+        "--low-memory",
+        "--jobs=1",
+        "--lto=no",
         "--output-dir=" + BUILD_DIR,
         "--output-filename=" + EXE_NAME,
         "--remove-output",
@@ -153,7 +156,7 @@ def compile_app(onefile, version):
     if subprocess.call([sys.executable, "-c", "import nuitka"], stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL) != 0:
         sys.exit("Nuitka is not installed. Run:  pip install nuitka ordered-set zstandard")
-    shutil.rmtree(BUILD_DIR, ignore_errors=True)
+    # Keep BUILD_DIR to allow resuming incremental C compilation
     os.makedirs(BUILD_DIR, exist_ok=True)
     cmd = nuitka_command(onefile, version)
     print("[build] " + " ".join(cmd))
