@@ -41,10 +41,11 @@ class TestProductSpecKeySafety(unittest.TestCase):
         # 2. Insert a product that uses 'res_key'
         prod_id = "prod_safety_test_01"
         execute("DELETE FROM products WHERE id = ?", (prod_id,))
+        iso_now = "2026-10-27T00:00:00"
         execute(
             """INSERT INTO products(id, model, display_name, category, specs, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
-            (prod_id, "TEST-MODEL", "Test Model", cat_name, json.dumps({"res_key": "4K Ultra HD"}))
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (prod_id, "TEST-MODEL", "Test Model", cat_name, json.dumps({"res_key": "4K Ultra HD"}), iso_now, iso_now)
         )
 
         # 3. get_used_spec_keys should identify 'res_key' as used, but not 'bat_key'
