@@ -709,7 +709,7 @@ function renderAssigneeTable(){
     return (
       '<tr class="assignee-row' + (isSelected ? " selected" : "") + '" data-assignee="' + escapeHtml(a.name) + '" style="cursor:pointer;' + (isSelected ? 'background:var(--accent-2-soft);' : '') + '">' +
         '<td class="assignee-name">' + escapeHtml(a.name) + '</td>' +
-        '<td class="assignee-col-org"><span class="org-tag" style="--tag-color:' + colorVar(dept.colorIndex) + '">' + escapeHtml(dept.name) + '</span></td>' +
+        '<td class="assignee-col-org"><span class="org-tag" style="--tag-color:' + colorVar(dept.colorIndex) + '" title="' + escapeHtml(dept.name) + '">' + escapeHtml(dept.name) + '</span></td>' +
         '<td class="num assignee-col-count" title="' + escapeHtml(assignedText + " (" + sDone + " " + a.done + ", " + sReview + " " + a.review + ", " + sInprog + " " + a.inprog + ", " + sTodo + " " + a.todo + ")") + '">' + a.count + '</td>' +
         '<td class="assignee-col-cats"><div class="assignee-cat-tags">' + shown + overflow + '</div></td>' +
         '<td class="assignee-col-progress">' +
