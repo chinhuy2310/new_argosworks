@@ -801,16 +801,25 @@ window.renderHomePortalSection = renderHomePortalSection;
 function refreshHomePortal(){
   var btn = document.getElementById("homePortalRefreshBtn");
   if(btn) btn.classList.add("spinning");
+  var startTime = Date.now();
   var p = (typeof loadRecords === "function") ? loadRecords() : Promise.resolve();
   return Promise.resolve(p).then(function(){
     renderHomePortalSection();
+    if(typeof showToast === "function") {
+      showToast("포털 데이터가 최신 상태로 갱신되었습니다.", 2000);
+    }
     return true;
   }).catch(function(err){
     console.warn("[HomePortal] Live refresh failed:", err);
+    if(typeof showToast === "function") {
+      showToast("데이터 새로고침에 실패했습니다.", 2500, true);
+    }
     return false;
   }).finally(function(){
     if(btn){
-      setTimeout(function(){ btn.classList.remove("spinning"); }, 400);
+      var elapsed = Date.now() - startTime;
+      var remaining = Math.max(0, 650 - elapsed);
+      setTimeout(function(){ btn.classList.remove("spinning"); }, remaining);
     }
   });
 }
@@ -820,10 +829,6 @@ window.refreshHomePortal = refreshHomePortal;
 (function initHomePortalRefresh(){
   var btn = document.getElementById("homePortalRefreshBtn");
   if(!btn) return;
-  btn.onclick = function(e){
-    if(e && typeof e.preventDefault === "function") e.preventDefault();
-    return refreshHomePortal();
-  };
   btn.addEventListener("click", function(e){
     e.preventDefault();
     refreshHomePortal();
