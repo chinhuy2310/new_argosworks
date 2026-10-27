@@ -49,6 +49,12 @@ class TestGovernanceRBAC(unittest.TestCase):
                    (9005, 'viewer_dev', 'ViewDev', 'dev', 'viewdev@test.com', 0, 'viewer', 0, 'active', 's', 'p')
         """)
 
+    @classmethod
+    def tearDownClass(cls):
+        execute("DELETE FROM users WHERE id IN (9001, 9002, 9003, 9004, 9005)")
+        execute("DELETE FROM records WHERE id IN (88001, 88002, 88003)")
+        execute("DELETE FROM notifications WHERE link_id = 'DEV-88003'")
+
     def setUp(self):
         self.admin_sess = {"id": 9001, "username": "admin_gov", "name": "AdminGov", "role": "admin", "is_admin": 1, "dept_id": "dev", "email": "admingov@test.com"}
         self.mgr_dev_sess = {"id": 9002, "username": "manager_dev", "name": "MgrDev", "role": "manager", "is_admin": 0, "dept_id": "dev", "email": "mgrdev@test.com"}
@@ -134,34 +140,38 @@ class TestGovernanceRBAC(unittest.TestCase):
         self.assertEqual(req_admin.status_code, 200)
 
     def test_http_transition_member_review_and_done(self):
-        # Create record in DB
-        execute("""
-            INSERT OR REPLACE INTO records (id, dept_id, category, title, assignee_name, card_code, status)
-            VALUES (88003, 'dev', '개발', 'Test Transition Workflow', 'MemDev', 'DEV-88003', '진행')
-        """)
+        try:
+            # Create record in DB
+            execute("""
+                INSERT OR REPLACE INTO records (id, dept_id, category, title, assignee_name, card_code, status)
+                VALUES (88003, 'dev', '개발', 'Test Transition Workflow', 'MemDev', 'DEV-88003', '진행')
+            """)
 
-        # Member tries to transition to '완료' -> 403 Forbidden
-        req_done = MockRequestHelper(session=self.mem_dev_sess)
-        handle_post_issue_transition(req_done, json.dumps({"key": "DEV-88003", "status": "완료"}).encode('utf-8'), "127.0.0.1")
-        self.assertEqual(req_done.status_code, 403)
-        self.assertIn("일반 사용자는 '완료' 상태로 직접 변경할 수 없습니다", req_done.response_body.get("error", ""))
+            # Member tries to transition to '완료' -> 403 Forbidden
+            req_done = MockRequestHelper(session=self.mem_dev_sess)
+            handle_post_issue_transition(req_done, json.dumps({"key": "DEV-88003", "status": "완료"}).encode('utf-8'), "127.0.0.1")
+            self.assertEqual(req_done.status_code, 403)
+            self.assertIn("일반 사용자는 '완료' 상태로 직접 변경할 수 없습니다", req_done.response_body.get("error", ""))
 
-        # Member transitions to '검토' -> 200 OK and notification created
-        req_rev = MockRequestHelper(session=self.mem_dev_sess)
-        handle_post_issue_transition(req_rev, json.dumps({"key": "DEV-88003", "status": "검토"}).encode('utf-8'), "127.0.0.1")
-        self.assertEqual(req_rev.status_code, 200)
+            # Member transitions to '검토' -> 200 OK and notification created
+            req_rev = MockRequestHelper(session=self.mem_dev_sess)
+            handle_post_issue_transition(req_rev, json.dumps({"key": "DEV-88003", "status": "검토"}).encode('utf-8'), "127.0.0.1")
+            self.assertEqual(req_rev.status_code, 200)
 
-        # Verify notification was sent to manager (mgrdev@test.com) and admin (admingov@test.com)
-        notifs = query("SELECT * FROM notifications WHERE link_id = 'DEV-88003' ORDER BY id DESC")
-        self.assertTrue(len(notifs) >= 1)
-        recipients = [n["recipient_email"] for n in notifs]
-        self.assertIn("mgrdev@test.com", recipients)
-        self.assertIn("admingov@test.com", recipients)
+            # Verify notification was sent to manager (mgrdev@test.com) and admin (admingov@test.com)
+            notifs = query("SELECT * FROM notifications WHERE link_id = 'DEV-88003' ORDER BY id DESC")
+            self.assertTrue(len(notifs) >= 1)
+            recipients = [n["recipient_email"] for n in notifs]
+            self.assertIn("mgrdev@test.com", recipients)
+            self.assertIn("admingov@test.com", recipients)
 
-        # Now Manager transitions to '완료' -> 200 OK
-        req_mgr_done = MockRequestHelper(session=self.mgr_dev_sess)
-        handle_post_issue_transition(req_mgr_done, json.dumps({"key": "DEV-88003", "status": "완료"}).encode('utf-8'), "127.0.0.1")
-        self.assertEqual(req_mgr_done.status_code, 200)
+            # Now Manager transitions to '완료' -> 200 OK
+            req_mgr_done = MockRequestHelper(session=self.mgr_dev_sess)
+            handle_post_issue_transition(req_mgr_done, json.dumps({"key": "DEV-88003", "status": "완료"}).encode('utf-8'), "127.0.0.1")
+            self.assertEqual(req_mgr_done.status_code, 200)
+        finally:
+            execute("DELETE FROM records WHERE id = 88003")
+            execute("DELETE FROM notifications WHERE link_id = 'DEV-88003'")
 
 
 if __name__ == "__main__":
