@@ -252,11 +252,20 @@ def generate_signed_license_key(customer_name, max_seats, expiry_date_str, modul
     return f"AGY-{b64_payload}.{b64_sig}"
 
 
+DEFAULT_TRIAL_LICENSE_KEY = (
+    "AGY-eyJjdXN0b21lciI6IkFyZ29zIEVudGVycHJpc2UgVHJpYWwiLCJleHBpcnkiOiIyMDI3LTEyLTMxIiwiaWF0IjoiMjAyNi0xMC0yMyIsIm1vZHVsZXMiOlsiY2FudmFzIiwicGltIiwiamlyYSIsInJhZyIsInNjaGVkdWxlIiwiYXVkaXQiXSwic2VhdHMiOjUwfQ.yEYIb5-mi0VGep5q-vMMi_EHjG8xb2Frsamytfw_sUKjQFFizBci55Q-0bh8sdoq9NOAorGqC_xbmtp5LlDMDw"
+)
+
+
 def verify_license_key(license_key_str):
     """라이선스 키의 유효성을 Ed25519 공개키로 비대칭 검증하고 메타데이터를 반환한다."""
     key = (license_key_str or "").strip()
     if not key:
         return False, "라이선스 키를 입력해주세요.", None
+
+    # Convenience: Automatically expand 'TRIAL' alias to the official signed trial key
+    if key.upper() == "TRIAL":
+        key = DEFAULT_TRIAL_LICENSE_KEY
 
     if "." not in key:
         return False, "잘못된 라이선스 키 형식입니다 (AGY-payload.signature 구조 필요).", None
