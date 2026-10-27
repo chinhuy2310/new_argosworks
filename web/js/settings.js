@@ -1456,38 +1456,59 @@ function renderSettingsProductCategoryTable() {
 
   var cats = window.SETTINGS_PRODUCT_CATEGORIES || [];
   if (cats.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:20px; color:var(--ink-faint, #64748b);">등록된 제품 카테고리가 없습니다. 우측 상단의 [➕ 새 카테고리 추가]를 눌러 추가하세요.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:24px; color:var(--ink-faint, #64748b);">등록된 제품 카테고리가 없습니다. 우측 상단의 [➕ 새 카테고리 추가]를 눌러 추가하세요.</td></tr>';
     return;
   }
 
   var html = cats.map(function(c) {
-    var tpl = c.spec_template || [];
+    var rawTpl = c.spec_template || [];
+    var tpl = rawTpl.map(function(f) {
+      if (typeof f === "string") {
+        return { group: "", label: f, key: f };
+      }
+      if (f && typeof f === "object") {
+        var lbl = f.label || f.name || f.key || "";
+        var grp = f.group || "";
+        var ky = f.key || (lbl ? lbl.toLowerCase().replace(/[^a-zA-Z0-9]/g, "_").replace(/^_+|_+$/g, "") : "");
+        return { group: grp, label: lbl, key: ky };
+      }
+      return null;
+    }).filter(Boolean);
+
     var fieldsBadges = "";
     if (tpl.length === 0) {
-      fieldsBadges = '<span style="color:var(--ink-faint, #94a3b8); font-style:italic;">기본 규격 없음 (자유 서술형)</span>';
+      fieldsBadges = '<span class="prod-spec-empty-hint">기본 규격 없음 (자유 서술형)</span>';
     } else {
-      fieldsBadges = tpl.map(function(f) {
-        var groupPrefix = f.group ? ('<span style="opacity:0.65; margin-right:3px;">[' + escapeHtml(f.group) + ']</span>') : '';
-        return '<span class="dept-sub-pill prod-spec-field-pill">' +
-          groupPrefix + '<strong>' + escapeHtml(f.label) + '</strong> <span class="spec-field-key">(' + escapeHtml(f.key) + ')</span>' +
+      fieldsBadges = '<div class="prod-spec-badges-wrap">' + tpl.map(function(f) {
+        var groupPrefix = f.group ? ('<span class="spec-pill-group">' + escapeHtml(f.group) + '</span>') : '';
+        var keySuffix = (f.key && f.key !== f.label) ? ('<span class="spec-pill-key">(' + escapeHtml(f.key) + ')</span>') : '';
+        return '<span class="prod-spec-badge">' +
+          groupPrefix +
+          '<strong class="spec-pill-label">' + escapeHtml(f.label) + '</strong>' +
+          keySuffix +
         '</span>';
-      }).join("");
+      }).join("") + '</div>';
     }
 
     return (
       '<tr class="settings-prod-cat-row">' +
         '<td class="prod-cat-cell-name">' +
-          '<div style="display: flex; align-items: center; gap: 6px;">' +
-            '<span style="font-size: 14px;">🏷️</span>' +
-            '<span>' + escapeHtml(c.name) + '</span>' +
+          '<div class="prod-cat-name-box">' +
+            '<span class="prod-cat-badge-icon">🏷️</span>' +
+            '<div class="prod-cat-name-content">' +
+              '<span class="prod-cat-title">' + escapeHtml(c.name) + '</span>' +
+              (c.id ? ('<span class="prod-cat-id-code">' + escapeHtml(c.id) + '</span>') : '') +
+            '</div>' +
           '</div>' +
         '</td>' +
         '<td class="prod-cat-cell-fields">' +
           fieldsBadges +
         '</td>' +
         '<td class="prod-cat-cell-actions">' +
-          '<button type="button" class="btn-table-action" data-edit-prod-cat="' + escapeHtml(c.id) + '" style="background:var(--code-bg, rgba(0,0,0,0.06)); border:1px solid var(--line, #cbd5e1); color:var(--ink); border-radius:4px; padding:4px 10px; font-size:11.5px; cursor:pointer; font-weight:600; margin-right:6px;">수정</button>' +
-          '<button type="button" class="btn-table-action" data-del-prod-cat="' + escapeHtml(c.id) + '" style="background:none; border:1px solid #ef4444; color:#ef4444; border-radius:4px; padding:4px 10px; font-size:11.5px; cursor:pointer; font-weight:600;">삭제</button>' +
+          '<div class="prod-cat-actions-box">' +
+            '<button type="button" class="btn-table-action btn-cat-edit" data-edit-prod-cat="' + escapeHtml(c.id) + '">수정</button>' +
+            '<button type="button" class="btn-table-action btn-cat-del" data-del-prod-cat="' + escapeHtml(c.id) + '">삭제</button>' +
+          '</div>' +
         '</td>' +
       '</tr>'
     );
@@ -1520,8 +1541,13 @@ window.renderSettingsProductCategoryTable = renderSettingsProductCategoryTable;
       if (titleEl) titleEl.textContent = "제품 카테고리 및 규격 수정";
       if (idInput) idInput.value = catObj.id || "";
       if (nameInput) nameInput.value = catObj.name || "";
-      var tpl = catObj.spec_template || [];
-      tpl.forEach(function(f) { addSpecRow(f.group, f.label, f.key); });
+      var rawTpl = catObj.spec_template || [];
+      rawTpl.forEach(function(f) {
+        var grp = (typeof f === "object" && f.group) ? f.group : "사양";
+        var lbl = typeof f === "string" ? f : (f.label || f.name || f.key || "");
+        var ky = typeof f === "string" ? f : (f.key || (lbl ? lbl.toLowerCase().replace(/[^a-zA-Z0-9]/g, "_").replace(/^_+|_+$/g, "") : ""));
+        addSpecRow(grp, lbl, ky);
+      });
     } else {
       if (titleEl) titleEl.textContent = "새 제품 카테고리 추가";
       if (idInput) idInput.value = "";
