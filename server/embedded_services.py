@@ -157,22 +157,23 @@ def start_embedded_services(app_home: str):
     caddy_exe = next((c for c in candidate_caddy_bins if os.path.isfile(c)), None)
 
     if caddy_exe:
-        caddyfile = os.path.join(app_home, "Caddyfile")
-        if not os.path.isfile(caddyfile):
-            default_caddy_content = (
-                "{\n"
-                "    admin off\n"
-                "    local_certs\n"
-                "}\n\n"
-                "https://localhost:8443 {\n"
-                "    reverse_proxy 127.0.0.1:8080\n"
-                "}\n"
-            )
-            try:
-                with open(caddyfile, "w", encoding="utf-8") as f:
-                    f.write(default_caddy_content)
-            except Exception:
-                pass
+        # Use dedicated standalone Caddyfile to avoid conflict with Docker Caddyfile (:443)
+        caddyfile = os.path.join(app_home, "data", "Caddyfile.embedded")
+        default_caddy_content = (
+            "{\n"
+            "    admin off\n"
+            "    auto_https disable_redirects\n"
+            "}\n\n"
+            "https://localhost:8443 {\n"
+            "    tls internal\n"
+            "    reverse_proxy 127.0.0.1:8080\n"
+            "}\n"
+        )
+        try:
+            with open(caddyfile, "w", encoding="utf-8") as f:
+                f.write(default_caddy_content)
+        except Exception:
+            pass
 
         if os.path.isfile(caddyfile) and not _is_port_open("127.0.0.1", 8443):
             print("[Embedded HTTPS] Starting Caddy reverse proxy on https://localhost:8443...", flush=True)
