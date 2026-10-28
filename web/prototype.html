@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>담당자별 현황 디자인 프로토타입 (Design Prototypes)</title>
+  <link rel="stylesheet" href="/css/variables.css">
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface-elevated: #243248;
+      --surface-hover: #2d3f5a;
+      --border: #334155;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-faint: #64748b;
+      --primary: #0284c7;
+      --primary-soft: rgba(2, 132, 199, 0.15);
+      --done-color: #10b981;
+      --done-bg: rgba(16, 185, 129, 0.15);
+      --inprog-color: #0284c7;
+      --inprog-bg: rgba(2, 132, 199, 0.15);
+      --todo-color: #f59e0b;
+      --todo-bg: rgba(245, 158, 11, 0.15);
+      --overdue-color: #ef4444;
+      --overdue-bg: rgba(239, 68, 68, 0.18);
+    }
+
+    [data-theme="light"] {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface-elevated: #f1f5f9;
+      --surface-hover: #e2e8f0;
+      --border: #e2e8f0;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-faint: #94a3b8;
+      --primary: #0284c7;
+      --primary-soft: #e0f2fe;
+      --done-color: #059669;
+      --done-bg: #ecfdf5;
+      --inprog-color: #0284c7;
+      --inprog-bg: #eff6ff;
+      --todo-color: #d97706;
+      --todo-bg: #fffbeb;
+      --overdue-color: #dc2626;
+      --overdue-bg: #fef2f2;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Malgun Gothic", sans-serif; }
+    body {
+      background: var(--bg);
+      color: var(--text-main);
+      padding: 30px 20px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 1100px;
+    }
+
+    /* Top Control Bar */
+    .prototype-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 24px;
+      padding: 14px 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+
+    .brand-title {
+      font-size: 16px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-title .badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      font-weight: 600;
+    }
+
+    .tabs-group {
+      display: flex;
+      background: var(--surface-elevated);
+      padding: 3px;
+      border-radius: 8px;
+      gap: 3px;
+    }
+
+    .tab-btn {
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .tab-btn.active {
+      background: var(--primary);
+      color: #ffffff;
+      box-shadow: 0 2px 6px rgba(2, 132, 199, 0.3);
+    }
+
+    .theme-toggle-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .theme-toggle-btn:hover {
+      background: var(--surface-hover);
+    }
+
+    /* Explanation Banner */
+    .concept-desc-card {
+      margin-bottom: 20px;
+      padding: 16px 20px;
+      background: var(--surface);
+      border-left: 4px solid var(--primary);
+      border-radius: 8px;
+      border-top: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .concept-desc-title {
+      font-size: 14.5px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      color: var(--text-main);
+    }
+    .concept-desc-text {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Shared Card Container */
+    .preview-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+      width: 100%;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .card-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .count-pill {
+      font-size: 12px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-weight: 700;
+    }
+
+    /* ==========================================================================
+       CONCEPT 1: JIRA AGILE STACKED VIEW
+       ========================================================================== */
+    .jira-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+    .jira-table th {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-faint);
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .jira-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+      font-size: 13px;
+    }
+    .jira-table tr:hover td {
+      background: var(--surface-elevated);
+      cursor: pointer;
+    }
+
+    .user-profile-cell {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .avatar-circle {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+      color: #ffffff;
+      flex-shrink: 0;
+    }
+    .user-name-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .user-name {
+      font-weight: 700;
+      color: var(--text-main);
+      font-size: 13.5px;
+    }
+    .user-dept-sub {
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    /* Horizontal Stacked Bar */
+    .stacked-bar-cell {
+      width: 320px;
+    }
+    .stacked-bar-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .stacked-bar {
+      height: 9px;
+      border-radius: 6px;
+      background: var(--surface-hover);
+      display: flex;
+      overflow: hidden;
+      width: 100%;
+    }
+    .bar-seg {
+      height: 100%;
+      transition: width 0.3s ease;
+    }
+    .bar-done { background: var(--done-color); }
+    .bar-inprog { background: var(--inprog-color); }
+    .bar-todo { background: var(--todo-color); }
+
+    .stacked-bar-legend {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+    .stacked-bar-legend .pct {
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .task-count-badge {
+      display: inline-block;
+      font-weight: 700;
+      font-size: 13px;
+      color: var(--text-main);
+      padding: 3px 10px;
+      border-radius: 6px;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+    }
+
+    .cats-cell {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    .cat-chip {
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: var(--surface-elevated);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+
+    /* ==========================================================================
+       CONCEPT 2: DAOUOFFICE ENTERPRISE STATUS MATRIX
+       ========================================================================== */
+    .daou-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: center;
+    }
+    .daou-table th {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      padding: 10px 12px;
+      border-bottom: 2px solid var(--border);
+      background: var(--surface-elevated);
+    }
+    .daou-table th:first-child, .daou-table td:first-child { text-align: left; }
+    .daou-table td {
+      padding: 12px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .daou-table tr:hover td {
+      background: var(--surface-hover);
+      cursor: pointer;
+    }
+
+    .status-count-cell {
+      font-weight: 700;
+      font-size: 13.5px;
+    }
+    .num-done { color: var(--done-color); }
+    .num-inprog { color: var(--inprog-color); }
+    .num-todo { color: var(--todo-color); }
+    .num-overdue {
+      color: var(--overdue-color);
+      font-weight: 800;
+      background: var(--overdue-bg);
+      padding: 2px 8px;
+      border-radius: 12px;
+      display: inline-block;
+    }
+    .num-zero { color: var(--text-faint); font-weight: normal; }
+
+    .progress-bar-simple-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      justify-content: center;
+    }
+    .progress-bar-simple {
+      width: 70px;
+      height: 6px;
+      border-radius: 4px;
+      background: var(--border);
+      overflow: hidden;
+    }
+    .progress-bar-simple-fill {
+      height: 100%;
+      background: var(--primary);
+    }
+
+    /* ==========================================================================
+       CONCEPT 3: MODERN MEMBER KANBAN GRID CARDS
+       ========================================================================== */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
+    }
+
+    .member-card {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+    .member-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--primary);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+    }
+
+    .member-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .member-card-body {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .status-pills-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .status-pill-item {
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 6px;
+    }
+    .pill-done { background: var(--done-bg); color: var(--done-color); }
+    .pill-inprog { background: var(--inprog-bg); color: var(--inprog-color); }
+    .pill-todo { background: var(--todo-bg); color: var(--todo-color); }
+    .pill-overdue { background: var(--overdue-bg); color: var(--overdue-color); }
+
+    .member-card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    .hidden-panel { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    
+    <!-- Top Controller -->
+    <div class="prototype-bar">
+      <div class="brand-title">
+        ARGOS WORKS <span>Dashboard Mockup</span>
+        <span class="badge">담당자별 현황</span>
+      </div>
+
+      <div class="tabs-group">
+        <button class="tab-btn active" onclick="switchConcept('concept-jira')">Mẫu 1: Jira Agile Stacked</button>
+        <button class="tab-btn" onclick="switchConcept('concept-daou')">Mẫu 2: DaouOffice Matrix</button>
+        <button class="tab-btn" onclick="switchConcept('concept-cards')">Mẫu 3: Linear Card Grid</button>
+      </div>
+
+      <button class="theme-toggle-btn" onclick="toggleTheme()">
+        <span id="themeIcon">☀️</span> <span id="themeText">Chế độ Sáng</span>
+      </button>
+    </div>
+
+    <!-- Concept Description Banner -->
+    <div class="concept-desc-card">
+      <div class="concept-desc-title" id="conceptTitle">📌 Mẫu 1: Jira Cloud Style — Thanh tiến độ đa đoạn (Stacked Bar)</div>
+      <div class="concept-desc-text" id="conceptDesc">
+        Tối ưu cho quản lý dự án Agile: Kết hợp Avatar tròn, gom tên và phòng ban vào 1 cột, thanh tiến độ đa màu (Xanh lá: Xong / Xanh dương: Đang làm / Cam: Chờ) giúp so sánh hiệu suất giữa các thành viên chỉ trong 1 giây.
+      </div>
+    </div>
+
+    <!-- PREVIEW AREA -->
+    <div class="preview-card">
+      <div class="card-header">
+        <div class="card-title-wrap">
+          <span class="card-title">담당자별 현황</span>
+          <span class="count-pill">6명 분석</span>
+        </div>
+        <span style="font-size:12.5px;color:var(--text-muted);">💡 Bấm vào bất kỳ dòng nào để lọc thẻ công việc</span>
+      </div>
+
+      <!-- ====================================================================
+           1. JIRA AGILE STACKED VIEW
+           ==================================================================== -->
+      <div id="concept-jira">
+        <table class="jira-table">
+          <thead>
+            <tr>
+              <th style="width: 240px;">담당자 (Nhân sự)</th>
+              <th style="width: 90px; text-align: center;">담당 건수</th>
+              <th>진행률 및 작업 분포 (Tiến độ Stacked Bar)</th>
+              <th style="width: 220px;">주요 카테고리</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #64748b;">?</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">미배정 (Chưa gán)</span>
+                    <span class="user-dept-sub" style="color:var(--overdue-color);">⚠️ 1 건 지연 (Trễ hạn)</span>
+                  </div>
+                </div>
+              </td>
+              <td style="text-align: center;"><span class="task-count-badge">9 건</span></td>
+              <td class="stacked-bar-cell">
+                <div class="stacked-bar-wrap">
+                  <div class="stacked-bar">
+                    <div class="bar-seg bar-done" style="width: 11%;"></div>
+                    <div class="bar-seg bar-inprog" style="width: 89%;"></div>
+                  </div>
+                  <div class="stacked-bar-legend">
+                    <span>완료 1 · 진행 8</span>
+                    <span class="pct">56%</span>
+                  </div>
+                </div>
+              </td>
+              <td><div class="cats-cell"><span class="cat-chip">작업</span><span class="cat-chip">기타</span><span class="cat-chip">하위 작업</span></div></td>
+            </tr>
+
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #0284c7;">U</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">Uy</span>
+                    <span class="user-dept-sub">개발팀 (Dev Team)</span>
+                  </div>
+                </div>
+              </td>
+              <td style="text-align: center;"><span class="task-count-badge">6 건</span></td>
+              <td class="stacked-bar-cell">
+                <div class="stacked-bar-wrap">
+                  <div class="stacked-bar">
+                    <div class="bar-seg bar-inprog" style="width: 100%;"></div>
+                  </div>
+                  <div class="stacked-bar-legend">
+                    <span>진행 6</span>
+                    <span class="pct">50%</span>
+                  </div>
+                </div>
+              </td>
+              <td><div class="cats-cell"><span class="cat-chip">개발</span><span class="cat-chip">기타</span></div></td>
+            </tr>
+
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #eab308;">u</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">uy (나)</span>
+                    <span class="user-dept-sub">경영기획팀 (Management)</span>
+                  </div>
+                </div>
+              </td>
+              <td style="text-align: center;"><span class="task-count-badge">4 건</span></td>
+              <td class="stacked-bar-cell">
+                <div class="stacked-bar-wrap">
+                  <div class="stacked-bar">
+                    <div class="bar-seg bar-inprog" style="width: 75%;"></div>
+                    <div class="bar-seg bar-todo" style="width: 25%;"></div>
+                  </div>
+                  <div class="stacked-bar-legend">
+                    <span>진행 3 · 대기 1</span>
+                    <span class="pct">38%</span>
+                  </div>
+                </div>
+              </td>
+              <td><div class="cats-cell"><span class="cat-chip">기획</span><span class="cat-chip">보안점검</span><span class="cat-chip">사업</span></div></td>
+            </tr>
+
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #c24a2c;">박</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">박서준</span>
+                    <span class="user-dept-sub">연구개발팀 (R&D)</span>
+                  </div>
+                </div>
+              </td>
+              <td style="text-align: center;"><span class="task-count-badge">2 건</span></td>
+              <td class="stacked-bar-cell">
+                <div class="stacked-bar-wrap">
+                  <div class="stacked-bar">
+                    <div class="bar-seg bar-inprog" style="width: 100%;"></div>
+                  </div>
+                  <div class="stacked-bar-legend">
+                    <span>진행 2</span>
+                    <span class="pct">50%</span>
+                  </div>
+                </div>
+              </td>
+              <td><div class="cats-cell"><span class="cat-chip">프론트엔드</span><span class="cat-chip">개발</span></div></td>
+            </tr>
+
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #c24a2c;">최</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">최유진</span>
+                    <span class="user-dept-sub">연구개발팀 (R&D)</span>
+                  </div>
+                </div>
+              </td>
+              <td style="text-align: center;"><span class="task-count-badge">2 건</span></td>
+              <td class="stacked-bar-cell">
+                <div class="stacked-bar-wrap">
+                  <div class="stacked-bar">
+                    <div class="bar-seg bar-inprog" style="width: 50%;"></div>
+                    <div class="bar-seg bar-todo" style="width: 50%;"></div>
+                  </div>
+                  <div class="stacked-bar-legend">
+                    <span>진행 1 · 대기 1</span>
+                    <span class="pct">25%</span>
+                  </div>
+                </div>
+              </td>
+              <td><div class="cats-cell"><span class="cat-chip">검증</span><span class="cat-chip">연구</span></div></td>
+            </tr>
+
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #8b5cf6;">한</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">한소영</span>
+                    <span class="user-dept-sub">인사총무팀 (HR)</span>
+                  </div>
+                </div>
+              </td>
+              <td style="text-align: center;"><span class="task-count-badge">2 건</span></td>
+              <td class="stacked-bar-cell">
+                <div class="stacked-bar-wrap">
+                  <div class="stacked-bar">
+                    <div class="bar-seg bar-inprog" style="width: 100%;"></div>
+                  </div>
+                  <div class="stacked-bar-legend">
+                    <span>진행 2</span>
+                    <span class="pct">50%</span>
+                  </div>
+                </div>
+              </td>
+              <td><div class="cats-cell"><span class="cat-chip">총무</span><span class="cat-chip">인사</span></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ====================================================================
+           2. DAOUOFFICE ENTERPRISE MATRIX
+           ==================================================================== -->
+      <div id="concept-daou" class="hidden-panel">
+        <table class="daou-table">
+          <thead>
+            <tr>
+              <th style="width: 250px;">담당자 / 부서</th>
+              <th style="width: 80px;">대기 (Todo)</th>
+              <th style="width: 80px;">진행 (In Prog)</th>
+              <th style="width: 80px;">완료 (Done)</th>
+              <th style="width: 90px;">지연 (Overdue) ⚠️</th>
+              <th style="width: 80px;">합계</th>
+              <th style="width: 140px;">진행률 (%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #64748b;">?</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">미배정</span>
+                    <span class="user-dept-sub">-</span>
+                  </div>
+                </div>
+              </td>
+              <td><span class="status-count-cell num-zero">0</span></td>
+              <td><span class="status-count-cell num-inprog">8</span></td>
+              <td><span class="status-count-cell num-done">1</span></td>
+              <td><span class="status-count-cell num-overdue">1</span></td>
+              <td><strong>9</strong></td>
+              <td>
+                <div class="progress-bar-simple-wrap">
+                  <div class="progress-bar-simple"><div class="progress-bar-simple-fill" style="width: 56%;"></div></div>
+                  <span style="font-weight:700;">56%</span>
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #0284c7;">U</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">Uy</span>
+                    <span class="user-dept-sub">-</span>
+                  </div>
+                </div>
+              </td>
+              <td><span class="status-count-cell num-zero">0</span></td>
+              <td><span class="status-count-cell num-inprog">6</span></td>
+              <td><span class="status-count-cell num-zero">0</span></td>
+              <td><span class="status-count-cell num-zero">0</span></td>
+              <td><strong>6</strong></td>
+              <td>
+                <div class="progress-bar-simple-wrap">
+                  <div class="progress-bar-simple"><div class="progress-bar-simple-fill" style="width: 50%;"></div></div>
+                  <span style="font-weight:700;">50%</span>
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #eab308;">u</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">uy (나)</span>
+                    <span class="user-dept-sub">경영기획팀</span>
+                  </div>
+                </div>
+              </td>
+              <td><span class="status-count-cell num-todo">1</span></td>
+              <td><span class="status-count-cell num-inprog">3</span></td>
+              <td><span class="status-count-cell num-zero">0</span></td>
+              <td><span class="status-count-cell num-zero">0</span></td>
+              <td><strong>4</strong></td>
+              <td>
+                <div class="progress-bar-simple-wrap">
+                  <div class="progress-bar-simple"><div class="progress-bar-simple-fill" style="width: 38%;"></div></div>
+                  <span style="font-weight:700;">38%</span>
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #c24a2c;">박</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">박서준</span>
+                    <span class="user-dept-sub">연구개발팀</span>
+                  </div>
+                </div>
+              </td>
+              <td><span class="status-count-cell num-zero">0</span></td>
+              <td><span class="status-count-cell num-inprog">2</span></td>
+              <td><span class="status-count-cell num-zero">0</span></td>
+              <td><span class="status-count-cell num-zero">0</span></td>
+              <td><strong>2</strong></td>
+              <td>
+                <div class="progress-bar-simple-wrap">
+                  <div class="progress-bar-simple"><div class="progress-bar-simple-fill" style="width: 50%;"></div></div>
+                  <span style="font-weight:700;">50%</span>
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #c24a2c;">최</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">최유진</span>
+                    <span class="user-dept-sub">연구개발팀</span>
+                  </div>
+                </div>
+              </td>
+              <td><span class="status-count-cell num-todo">1</span></td>
+              <td><span class="status-count-cell num-inprog">1</span></td>
+              <td><span class="status-count-cell num-zero">0</span></td>
+              <td><span class="status-count-cell num-zero">0</span></td>
+              <td><strong>2</strong></td>
+              <td>
+                <div class="progress-bar-simple-wrap">
+                  <div class="progress-bar-simple"><div class="progress-bar-simple-fill" style="width: 25%;"></div></div>
+                  <span style="font-weight:700;">25%</span>
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #8b5cf6;">한</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">한소영</span>
+                    <span class="user-dept-sub">인사총무팀</span>
+                  </div>
+                </div>
+              </td>
+              <td><span class="status-count-cell num-zero">0</span></td>
+              <td><span class="status-count-cell num-inprog">2</span></td>
+              <td><span class="status-count-cell num-zero">0</span></td>
+              <td><span class="status-count-cell num-zero">0</span></td>
+              <td><strong>2</strong></td>
+              <td>
+                <div class="progress-bar-simple-wrap">
+                  <div class="progress-bar-simple"><div class="progress-bar-simple-fill" style="width: 50%;"></div></div>
+                  <span style="font-weight:700;">50%</span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ====================================================================
+           3. MODERN KANBAN CARDS GRID
+           ==================================================================== -->
+      <div id="concept-cards" class="hidden-panel">
+        <div class="cards-grid">
+          
+          <div class="member-card">
+            <div class="member-card-top">
+              <div class="user-profile-cell">
+                <div class="avatar-circle" style="background: #64748b;">?</div>
+                <div class="user-name-wrap">
+                  <span class="user-name">미배정 (Unassigned)</span>
+                  <span class="user-dept-sub">미지정 소속</span>
+                </div>
+              </div>
+              <span class="task-count-badge" style="color:var(--primary);font-size:14px;">9 건</span>
+            </div>
+            <div class="member-card-body">
+              <div class="stacked-bar">
+                <div class="bar-seg bar-done" style="width: 11%;"></div>
+                <div class="bar-seg bar-inprog" style="width: 89%;"></div>
+              </div>
+              <div class="status-pills-row">
+                <span class="status-pill-item pill-done">완료 1</span>
+                <span class="status-pill-item pill-inprog">진행 8</span>
+                <span class="status-pill-item pill-overdue">⚠️ 지연 1</span>
+              </div>
+            </div>
+            <div class="member-card-footer">
+              <span>작업 · 기타 · 하위 작업</span>
+              <span style="font-weight:700;color:var(--text-main);">진행률 56%</span>
+            </div>
+          </div>
+
+          <div class="member-card">
+            <div class="member-card-top">
+              <div class="user-profile-cell">
+                <div class="avatar-circle" style="background: #0284c7;">U</div>
+                <div class="user-name-wrap">
+                  <span class="user-name">Uy</span>
+                  <span class="user-dept-sub">개발팀 (Dev Team)</span>
+                </div>
+              </div>
+              <span class="task-count-badge">6 건</span>
+            </div>
+            <div class="member-card-body">
+              <div class="stacked-bar">
+                <div class="bar-seg bar-inprog" style="width: 100%;"></div>
+              </div>
+              <div class="status-pills-row">
+                <span class="status-pill-item pill-inprog">진행 6</span>
+              </div>
+            </div>
+            <div class="member-card-footer">
+              <span>개발 · 기타</span>
+              <span style="font-weight:700;color:var(--text-main);">진행률 50%</span>
+            </div>
+          </div>
+
+          <div class="member-card">
+            <div class="member-card-top">
+              <div class="user-profile-cell">
+                <div class="avatar-circle" style="background: #eab308;">u</div>
+                <div class="user-name-wrap">
+                  <span class="user-name">uy (나)</span>
+                  <span class="user-dept-sub">경영기획팀</span>
+                </div>
+              </div>
+              <span class="task-count-badge">4 건</span>
+            </div>
+            <div class="member-card-body">
+              <div class="stacked-bar">
+                <div class="bar-seg bar-inprog" style="width: 75%;"></div>
+                <div class="bar-seg bar-todo" style="width: 25%;"></div>
+              </div>
+              <div class="status-pills-row">
+                <span class="status-pill-item pill-inprog">진행 3</span>
+                <span class="status-pill-item pill-todo">대기 1</span>
+              </div>
+            </div>
+            <div class="member-card-footer">
+              <span>기획 · 보안점검 · 사업</span>
+              <span style="font-weight:700;color:var(--text-main);">진행률 38%</span>
+            </div>
+          </div>
+
+          <div class="member-card">
+            <div class="member-card-top">
+              <div class="user-profile-cell">
+                <div class="avatar-circle" style="background: #c24a2c;">박</div>
+                <div class="user-name-wrap">
+                  <span class="user-name">박서준</span>
+                  <span class="user-dept-sub">연구개발팀 (R&D)</span>
+                </div>
+              </div>
+              <span class="task-count-badge">2 건</span>
+            </div>
+            <div class="member-card-body">
+              <div class="stacked-bar">
+                <div class="bar-seg bar-inprog" style="width: 100%;"></div>
+              </div>
+              <div class="status-pills-row">
+                <span class="status-pill-item pill-inprog">진행 2</span>
+              </div>
+            </div>
+            <div class="member-card-footer">
+              <span>프론트엔드 · 개발</span>
+              <span style="font-weight:700;color:var(--text-main);">진행률 50%</span>
+            </div>
+          </div>
+
+          <div class="member-card">
+            <div class="member-card-top">
+              <div class="user-profile-cell">
+                <div class="avatar-circle" style="background: #c24a2c;">최</div>
+                <div class="user-name-wrap">
+                  <span class="user-name">최유진</span>
+                  <span class="user-dept-sub">연구개발팀 (R&D)</span>
+                </div>
+              </div>
+              <span class="task-count-badge">2 건</span>
+            </div>
+            <div class="member-card-body">
+              <div class="stacked-bar">
+                <div class="bar-seg bar-inprog" style="width: 50%;"></div>
+                <div class="bar-seg bar-todo" style="width: 50%;"></div>
+              </div>
+              <div class="status-pills-row">
+                <span class="status-pill-item pill-inprog">진행 1</span>
+                <span class="status-pill-item pill-todo">대기 1</span>
+              </div>
+            </div>
+            <div class="member-card-footer">
+              <span>검증 · 연구</span>
+              <span style="font-weight:700;color:var(--text-main);">진행률 25%</span>
+            </div>
+          </div>
+
+          <div class="member-card">
+            <div class="member-card-top">
+              <div class="user-profile-cell">
+                <div class="avatar-circle" style="background: #8b5cf6;">한</div>
+                <div class="user-name-wrap">
+                  <span class="user-name">한소영</span>
+                  <span class="user-dept-sub">인사총무팀 (HR)</span>
+                </div>
+              </div>
+              <span class="task-count-badge">2 건</span>
+            </div>
+            <div class="member-card-body">
+              <div class="stacked-bar">
+                <div class="bar-seg bar-inprog" style="width: 100%;"></div>
+              </div>
+              <div class="status-pills-row">
+                <span class="status-pill-item pill-inprog">진행 2</span>
+              </div>
+            </div>
+            <div class="member-card-footer">
+              <span>총무 · 인사</span>
+              <span style="font-weight:700;color:var(--text-main);">진행률 50%</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const descriptions = {
+      'concept-jira': {
+        title: '📌 Mẫu 1: Jira Cloud Style — Thanh tiến độ đa đoạn (Stacked Bar)',
+        desc: 'Tối ưu cho quản lý dự án Agile: Kết hợp Avatar tròn, gom tên và phòng ban vào 1 cột, thanh tiến độ đa màu (Xanh lá: Xong / Xanh dương: Đang làm / Cam: Chờ) giúp so sánh hiệu suất giữa các thành viên chỉ trong 1 giây.'
+      },
+      'concept-daou': {
+        title: '🏢 Mẫu 2: DaouOffice Enterprise Style — Phân rã trạng thái & Cảnh báo trễ hạn',
+        desc: 'Chuẩn Groupware Hàn Quốc: Phân tách rõ ràng 4 cột số (대기, 진행, 완료, 지연). Có cột đỏ cảnh báo [지연 - Trễ hạn] để lãnh đạo nắm bắt rủi ro chậm trễ công việc ngay lập tức.'
+      },
+      'concept-cards': {
+        title: '🗂️ Mẫu 3: Linear / Notion Card Grid — Dạng thẻ Profile trực quan',
+        desc: 'Chuẩn SaaS hiện đại: Chia thành lưới thẻ (Grid) hiển thị Avatar, tiến độ dạng thanh ngang bao trọn card, các pill trạng thái công việc. Rất đẹp và cân đối không gian trên màn hình lớn.'
+      }
+    };
+
+    function switchConcept(id) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+
+      document.getElementById('concept-jira').classList.add('hidden-panel');
+      document.getElementById('concept-daou').classList.add('hidden-panel');
+      document.getElementById('concept-cards').classList.add('hidden-panel');
+
+      document.getElementById(id).classList.remove('hidden-panel');
+
+      document.getElementById('conceptTitle').innerText = descriptions[id].title;
+      document.getElementById('conceptDesc').innerText = descriptions[id].desc;
+    }
+
+    function toggleTheme() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme') || 'dark';
+      const next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+
+      document.getElementById('themeIcon').innerText = next === 'dark' ? '☀️' : '🌙';
+      document.getElementById('themeText').innerText = next === 'dark' ? 'Chế độ Sáng' : 'Chế độ Tối';
+    }
+  </script>
+</body>
+</html>
