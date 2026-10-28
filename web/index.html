@@ -10,12 +10,12 @@
 <script src="js/tom-select.complete.min.js"></script>
 
 <link rel="stylesheet" href="css/variables.css?v=4.2">
-<link rel="stylesheet" href="css/layout.css?v=5.7">
+<link rel="stylesheet" href="css/layout.css?v=5.8">
 <link rel="stylesheet" href="css/dashboard.css?v=7.6">
 <link rel="stylesheet" href="css/form.css?v=4.7">
-<link rel="stylesheet" href="css/calendar.css?v=7.3">
+<link rel="stylesheet" href="css/calendar.css?v=9.7">
 <link rel="stylesheet" href="css/pim.css?v=4.5">
-<link rel="stylesheet" href="css/home.css?v=5.5">
+<link rel="stylesheet" href="css/home.css?v=5.6">
 <link rel="stylesheet" href="css/settings.css?v=4.6">
 <link rel="stylesheet" href="css/history.css?v=1.2">
 <link rel="stylesheet" href="css/components.css?v=4.3">
@@ -601,21 +601,21 @@
         <!-- Cột Trái: Nội dung công việc & Tệp đính kèm -->
         <div class="form-col-main">
           <div class="field">
-            <label for="titleInput">제목 <span class="optional">(선택, 간결한 업무명)</span></label>
-            <input type="text" id="titleInput" placeholder="업무 요약 및 제목을 간결하게 입력하세요 (비워두면 메모에서 자동 추출)" autocomplete="off">
+            <label for="titleInput"><span data-i18n="form.title_label">제목</span> <span class="optional" data-i18n="form.title_optional">(선택, 간결한 업무명)</span></label>
+            <input type="text" id="titleInput" data-i18n-ph="form.title_ph" placeholder="업무 요약 및 제목을 간결하게 입력하세요 (비워두면 메모에서 자동 추출)" autocomplete="off">
           </div>
 
           <div class="field">
-            <label for="memoInput">메모 / 상세 내용 <span class="optional">(선택, 업무 상세 내용)</span></label>
-            <textarea id="memoInput" placeholder="설명, 인수인계 대상자, 후속조치 필요 여부 등을 자유롭게 적어주세요." autocomplete="off"></textarea>
+            <label for="memoInput"><span data-i18n="form.memo_label">메모 / 상세 내용</span> <span class="optional" data-i18n="form.memo_optional">(선택, 업무 상세 내용)</span></label>
+            <textarea id="memoInput" data-i18n-ph="form.memo_ph" placeholder="설명, 인수인계 대상자, 후속조치 필요 여부 등을 자유롭게 적어주세요." autocomplete="off"></textarea>
           </div>
 
           <div class="field">
-            <label>첨부 파일 <span class="optional">(선택)</span></label>
+            <label><span data-i18n="form.file_label">첨부 파일</span> <span class="optional" data-i18n="form.file_optional">(선택)</span></label>
             <div class="dropzone" id="dropzone">
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 16V4M12 4l-4 4M12 4l4 4"></path><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"></path></svg>
-              <div class="dz-title">파일을 끌어다 놓거나 클릭해 선택</div>
-              <div class="dz-sub">문서, 스프레드시트, 이미지, 압축파일 등</div>
+              <div class="dz-title" data-i18n="form.dropzone_title">파일을 끌어다 놓거나 클릭해 선택</div>
+              <div class="dz-sub" data-i18n="form.dropzone_sub">문서, 스프레드시트, 이미지, 압축파일 등</div>
             </div>
             <input type="file" id="fileInput" multiple>
             <div id="fileList"></div>
@@ -625,49 +625,49 @@
         <!-- Cột Phải: Phân loại & Kế hoạch thực hiện -->
         <div class="form-col-side">
           <div class="field">
-            <label for="orgSelect">소속 / 프로젝트</label>
+            <label for="orgSelect" data-i18n="form.org_label">소속 / 프로젝트</label>
             <select id="orgSelect" required></select>
           </div>
 
           <div class="field-row">
             <div class="field">
-              <label for="catSelect">카테고리</label>
+              <label for="catSelect" data-i18n="form.cat_label">카테고리</label>
               <select id="catSelect">
-                <option value="">기타 / 자동 분류</option>
+                <option value="" data-i18n="form.cat_default">기타 / 자동 분류</option>
               </select>
             </div>
             <div class="field">
-              <label for="prioritySelect">우선순위</label>
+              <label for="prioritySelect" data-i18n="form.priority_label">우선순위</label>
               <select id="prioritySelect" class="priority-select" onchange="window.updatePrioritySelectColor && window.updatePrioritySelectColor(this)" oninput="window.updatePrioritySelectColor && window.updatePrioritySelectColor(this)">
-                <option value="낮음">낮음</option>
-                <option value="보통" selected>보통</option>
-                <option value="높음">높음</option>
-                <option value="긴급">긴급</option>
+                <option value="낮음" data-i18n="form.priority_low">낮음</option>
+                <option value="보통" selected data-i18n="form.priority_normal">보통</option>
+                <option value="높음" data-i18n="form.priority_high">높음</option>
+                <option value="긴급" data-i18n="form.priority_urgent">긴급</option>
               </select>
             </div>
           </div>
 
           <div class="field">
-            <label for="parentKeySelect">상위 작업 <span class="optional">(선택)</span></label>
+            <label for="parentKeySelect"><span data-i18n="form.parent_label">상위 작업</span> <span class="optional" data-i18n="form.parent_optional">(선택)</span></label>
             <select id="parentKeySelect">
-              <option value="">선택 안 함 (독립 상위 작업)</option>
+              <option value="" data-i18n="form.parent_default">선택 안 함 (독립 상위 작업)</option>
             </select>
           </div>
 
           <div class="field">
-            <label for="projectInput">관련 프로젝트 / 고객사 <span class="optional">(선택)</span></label>
-            <input type="text" id="projectInput" list="projectOptions" placeholder="예: 프로젝트명 입력" autocomplete="off">
+            <label for="projectInput"><span data-i18n="form.project_label">관련 프로젝트 / 고객사</span> <span class="optional" data-i18n="form.project_optional">(선택)</span></label>
+            <input type="text" id="projectInput" list="projectOptions" data-i18n-ph="form.project_ph" placeholder="예: 프로젝트명 입력" autocomplete="off">
             <datalist id="projectOptions"></datalist>
           </div>
 
           <div class="field">
-            <label for="participantsSelect">참여자 / 공동 작업자 <span class="optional">(선택, 복수 선택 가능)</span></label>
-            <select id="participantsSelect" multiple placeholder="함께 진행할 팀원을 선택하세요..."></select>
+            <label for="participantsSelect"><span data-i18n="form.participants_label">참여자 / 공동 작업자</span> <span class="optional" data-i18n="form.participants_optional">(선택, 복수 선택 가능)</span></label>
+            <select id="participantsSelect" multiple data-i18n-ph="form.participants_ph" placeholder="함께 진행할 팀원을 선택하세요..."></select>
           </div>
 
           <div class="field-row">
             <div class="field" id="startDateField">
-              <label for="startDateInput">시작일 <span class="optional">(선택)</span></label>
+              <label for="startDateInput"><span data-i18n="form.start_date_label">시작일</span> <span class="optional" data-i18n="form.start_date_optional">(선택)</span></label>
               <div class="custom-date-picker-wrap">
                 <input type="date" id="startDateInput" class="custom-date-native" lang="ko">
                 <div class="custom-date-overlay" id="startDateDisplay">
@@ -678,7 +678,7 @@
             </div>
 
             <div class="field" id="dueDateField">
-              <label for="dueDateInput">마감일 / 완료 목표일 <span class="optional">(선택)</span></label>
+              <label for="dueDateInput"><span data-i18n="form.due_date_label">마감일 / 완료 목표일</span> <span class="optional" data-i18n="form.due_date_optional">(선택)</span></label>
               <div class="custom-date-picker-wrap">
                 <input type="date" id="dueDateInput" class="custom-date-native" lang="ko">
                 <div class="custom-date-overlay" id="dueDateDisplay">
@@ -691,14 +691,14 @@
 
           <div class="field checkbox-field" id="followupCheckWrap" hidden>
             <input type="checkbox" id="followupCheck">
-            <label for="followupCheck" style="margin:0;">Jira Cloud 티켓 동시 발행 (선택 사항)</label>
+            <label for="followupCheck" style="margin:0;" data-i18n="form.jira_sync_label">Jira Cloud 티켓 동시 발행 (선택 사항)</label>
           </div>
 
-          <div class="form-error" id="formError">제목, 파일 또는 메모 중 하나는 입력해주세요.</div>
+          <div class="form-error" id="formError" data-i18n="form.error_required">제목, 파일 또는 메모 중 하나는 입력해주세요.</div>
 
           <div class="submit-row">
-            <button type="submit" class="btn-primary" id="submitBtn">제출</button>
-            <div class="processing-status" id="processingStatus"><span class="dot"></span> 처리 중입니다…</div>
+            <button type="submit" class="btn-primary" id="submitBtn" data-i18n="form.submit_btn">제출</button>
+            <div class="processing-status" id="processingStatus"><span class="dot"></span> <span data-i18n="form.processing">처리 중입니다…</span></div>
           </div>
         </div>
       </div>
@@ -708,66 +708,128 @@
   <!-- ============ SCHEDULE (CALENDAR) VIEW ============ -->
   <section id="viewSchedule" hidden>
     <div class="schedule-layout-modern">
-      <!-- ============ SCHEDULE LEFT SIDEBAR (팀원 목록 & 필터 - 접기/펼치기 가능) ============ -->
+      <!-- ============ SCHEDULE LEFT SIDEBAR (캘린더 필터 - 접기/펼치기 가능) ============ -->
       <aside class="schedule-members-sidebar" id="schedMembersSidebar">
-        <div class="sched-members-header">
-          <span class="sched-members-title">👥 팀원 일정</span>
-          <div style="display:flex;align-items:center;gap:6px;">
-            <button type="button" class="sched-members-toggle-all" id="schedMembersToggleAll">전체 해제</button>
-            <button type="button" class="sched-members-close-btn" id="schedMembersCloseBtn" title="닫기">✕</button>
+        <!-- 1. Header with Title & DaouOffice-style Primary Action Button -->
+        <div class="sched-sidebar-top">
+          <div class="sched-sidebar-brand">
+            <span class="sched-sidebar-title" data-i18n="sched.sidebar_title">캘린더</span>
+            <div class="sched-sidebar-brand-actions">
+              <button type="button" class="sched-sidebar-more-btn" id="schedSidebarMoreBtn" title="옵션">⋮</button>
+              <button type="button" class="sched-members-close-btn" id="schedMembersCloseBtn" title="닫기">✕</button>
+            </div>
+          </div>
+          <button type="button" class="btn-sched-create-sidebar" id="btnSchedOpenCreateModalSide" title="새 일정 등록">
+            <span data-i18n="sched.btn_create">일정등록</span>
+            <span class="btn-sched-create-caret">▾</span>
+          </button>
+        </div>
+
+        <!-- 2. Quick View Switcher: 내 캘린더 / 전체 -->
+        <div class="sched-quick-filter-bar">
+          <button type="button" class="sched-quick-btn" id="schedQuickOnlyMe" data-i18n="sched.quick_my" title="내 일정만 보기">내 캘린더</button>
+          <button type="button" class="sched-quick-btn active" id="schedQuickAll" data-i18n="sched.quick_all" title="전체 일정 보기">전체</button>
+        </div>
+
+        <div class="sched-filter-scrollable">
+          <!-- 1. Group: 전사 캘린더 (Company Calendar - Parent Checkbox Only) -->
+          <div class="sched-filter-group" id="schedGroupCompany">
+            <div class="sched-group-header">
+              <label class="sched-group-label" title="전사 캘린더 전체 켜기/끄기">
+                <input type="checkbox" id="schedCompanyMasterCb" checked>
+                <span class="sched-group-title" data-i18n="sched.group_company">전사 캘린더</span>
+              </label>
+              <div class="sched-group-meta">
+                <span class="sched-group-count" id="schedCompanyCount">0</span>
+              </div>
+            </div>
+            <!-- Hidden stub elements for backward compatibility if queried by JS -->
+            <input type="checkbox" id="schedTasksMasterCb" checked hidden style="display:none;">
+            <input type="checkbox" id="schedSubCompanyCb" checked hidden style="display:none;">
+            <input type="checkbox" id="schedSubLeaveCb" checked hidden style="display:none;">
+          </div>
+
+          <!-- 2. Group: 내 캘린더 (My Calendar - Single Checkbox Row) -->
+          <div class="sched-filter-group" id="schedGroupMy">
+            <label class="sched-member-item is-me" id="schedMyCalDefaultItem">
+              <input type="checkbox" id="schedMyCalDefaultCb" checked>
+              <span class="sched-member-name" data-i18n="sched.my_cal_default">내 일정(기본)</span>
+              <span class="sched-color-dot" style="background: #3b82f6;"></span>
+            </label>
+          </div>
+
+          <!-- 3. Group: 관심 캘린더 (Colleagues / Team Calendars) -->
+          <div class="sched-filter-group" id="schedGroupMembers">
+            <div class="sched-group-header">
+              <span class="sched-group-title" data-i18n="sched.group_members">관심 캘린더</span>
+              <div class="sched-group-meta">
+                <button type="button" class="sched-members-toggle-all" id="schedMembersToggleAll" data-i18n="sched.deselect_all">전체 해제</button>
+              </div>
+            </div>
+            <div class="sched-group-body" id="schedMembersBodyWrap">
+              <div class="sched-members-search-wrap">
+                <input type="text" id="schedMembersSearch" data-i18n-ph="sched.search_member_ph" placeholder="이름 또는 부서 검색…" autocomplete="off">
+              </div>
+              <div class="sched-members-list" id="schedMembersList">
+                <div class="empty-state" style="padding:16px 4px;font-size:12px;">팀원 목록을 불러오는 중…</div>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="sched-members-search-wrap">
-          <input type="text" id="schedMembersSearch" placeholder="이름 또는 부서 검색…" autocomplete="off">
-        </div>
-        <div class="sched-members-list" id="schedMembersList">
-          <div class="empty-state" style="padding:16px 4px;font-size:12px;">팀원 목록을 불러오는 중…</div>
+
+        <!-- 6. Sidebar Bottom Footer (Settings) -->
+        <div class="sched-sidebar-footer">
+          <button type="button" class="sched-sidebar-settings-btn" id="btnSchedSidebarSettings" title="캘린더 환경설정">
+            <span class="sched-settings-icon">⚙</span>
+            <span data-i18n="sched.settings_title">캘린더 환경설정</span>
+          </button>
         </div>
       </aside>
 
       <!-- ============ SCHEDULE MAIN AREA (넓은 캘린더 워크스페이스) ============ -->
       <main class="schedule-main-area">
-        <!-- Modern Calendar Toolbar -->
+        <!-- Seamless DaouOffice-style Calendar Toolbar -->
         <div class="schedule-toolbar-modern">
-          <!-- Row 1 (or Left on Wide): Navigation & Date -->
-          <div class="sched-tb-row sched-tb-row-nav">
-            <button type="button" class="btn-toggle-members-sidebar" id="btnToggleMembersSidebar" title="팀원 필터 접기/펼치기">
+          <!-- Left: Page Title, Filter Toggle & View Switcher -->
+          <div class="sched-tb-left">
+            <button type="button" class="btn-toggle-members-sidebar" id="btnToggleMembersSidebar" title="사이드바 필터 접기/펼치기">
               <span class="icon-toggle-side">☰</span>
-              <span class="text-toggle-side">팀원</span>
             </button>
-            <div class="schedule-nav-group">
-              <button type="button" class="sched-nav-btn" id="schedPrevBtn" title="이전">‹</button>
-              <span class="schedule-month-title" id="schedMonthLabel"></span>
-              <button type="button" class="sched-nav-btn" id="schedNextBtn" title="다음">›</button>
+            <span class="sched-main-title" data-i18n="sched.list_title">일정목록</span>
+            <div class="schedule-view-switcher" role="tablist">
+              <button type="button" class="sched-view-tab" data-view="week" id="schedViewWeekBtn" data-i18n="sched.view_week">주간</button>
+              <button type="button" class="sched-view-tab active" data-view="month" id="schedViewMonthBtn" data-i18n="sched.view_month">월간</button>
+              <button type="button" class="sched-view-tab" data-view="agenda" id="schedViewAgendaBtn" data-i18n="sched.view_agenda">목록</button>
             </div>
-            <button type="button" class="sched-today-pill" id="schedTodayBtn">오늘</button>
           </div>
 
-          <!-- Row 2 (or Right on Wide): Views & Actions -->
-          <div class="sched-tb-row sched-tb-row-actions">
-            <div class="schedule-view-switcher" role="tablist">
-              <button type="button" class="sched-view-tab active" data-view="month" id="schedViewMonthBtn">월</button>
-              <button type="button" class="sched-view-tab" data-view="week" id="schedViewWeekBtn">주</button>
-              <button type="button" class="sched-view-tab" data-view="agenda" id="schedViewAgendaBtn">목록</button>
+          <!-- Center: Month Navigation & Today -->
+          <div class="sched-tb-center">
+            <div class="schedule-nav-group">
+              <button type="button" class="sched-nav-btn" id="schedPrevBtn" title="이전" data-i18n-title="sched.btn_prev">‹</button>
+              <span class="schedule-month-title" id="schedMonthLabel"></span>
+              <button type="button" class="sched-nav-btn" id="schedNextBtn" title="다음" data-i18n-title="sched.btn_next">›</button>
             </div>
+            <button type="button" class="sched-today-pill" id="schedTodayBtn" data-i18n="sched.btn_today">오늘</button>
+          </div>
 
-            <div class="sched-tb-actions-group">
-              <label class="schedule-toggle-pill" title="주말(토/일) 표시 여부">
-                <input type="checkbox" id="schedShowWeekend">
-                <span class="sched-weekend-label">주말</span>
-              </label>
+          <!-- Right: Weekend toggle, Task Panel toggle, Create button -->
+          <div class="sched-tb-right">
+            <label class="schedule-toggle-pill" title="주말(토/일) 표시 여부">
+              <input type="checkbox" id="schedShowWeekend">
+              <span class="sched-weekend-label" data-i18n="sched.toggle_weekend">주말</span>
+            </label>
 
-              <button type="button" class="btn-toggle-task-panel active" id="btnToggleTaskDrawer" title="미배정 업무 보관함 열기/접기">
-                <span class="btn-ttp-icon">📋</span>
-                <span class="btn-ttp-label">보관함</span>
-                <span class="btn-ttp-count">(<span id="schedTaskCount">0</span>)</span>
-              </button>
+            <button type="button" class="btn-toggle-task-panel active" id="btnToggleTaskDrawer" title="미배정 업무 보관함 열기/접기">
+              <span class="btn-ttp-icon">📋</span>
+              <span class="btn-ttp-label" data-i18n="sched.btn_drawer">보관함</span>
+              <span class="btn-ttp-count">(<span id="schedTaskCount">0</span>)</span>
+            </button>
 
-              <button type="button" class="btn-sched-create-primary" id="btnSchedOpenCreateModal" title="새 일정 추가">
-                <span class="btn-sched-create-icon">＋</span>
-                <span class="btn-sched-create-label">일정 추가</span>
-              </button>
-            </div>
+            <button type="button" class="btn-sched-create-primary" id="btnSchedOpenCreateModal" title="새 일정 추가">
+              <span class="btn-sched-create-icon">＋</span>
+              <span class="btn-sched-create-label" data-i18n="sched.btn_create">일정 추가</span>
+            </button>
           </div>
         </div>
 
@@ -813,16 +875,16 @@
         <div class="std-panel-header">
           <div class="std-title-wrap">
             <span class="std-icon">📋</span>
-            <span class="std-title">업무 보관함</span>
+            <span class="std-title" data-i18n="sched.drawer_title">업무 보관함</span>
             <span class="std-count-badge" id="schedTaskBadgeCount">0건</span>
           </div>
           <button type="button" class="std-close-btn" id="btnSchedTaskClose" title="보관함 접기">✕</button>
         </div>
         <div class="std-search-wrap">
-          <input type="text" id="schedTaskSearch" placeholder="카드 코드 또는 제목 검색…" autocomplete="off">
+          <input type="text" id="schedTaskSearch" data-i18n-ph="sched.drawer_search_ph" placeholder="카드 코드 또는 제목 검색…" autocomplete="off">
         </div>
         <div class="std-hint-banner">
-          💡 카드를 마우스로 끌거나, [배정] 버튼으로 즉시 원하는 날짜에 배치하세요!
+          <span data-i18n="sched.drawer_tip">💡 카드를 마우스로 끌거나, [배정] 버튼으로 즉시 원하는 날짜에 배치하세요!</span>
         </div>
         <div class="schedule-task-cards-list" id="schedTaskCardsList">
           <div class="empty-state" style="padding:14px;font-size:12px;">불러오는 중…</div>
@@ -836,7 +898,7 @@
         <div class="sched-modal-header">
           <div class="sched-modal-title-wrap">
             <span class="sched-modal-icon">📅</span>
-            <h3 class="sched-modal-title" id="schedModalTitle">새 일정 추가</h3>
+            <h3 class="sched-modal-title" id="schedModalTitle" data-i18n="sched.modal_title_create">새 일정 추가</h3>
           </div>
           <button type="button" class="sched-modal-close" id="schedModalCloseBtn" title="닫기 (Esc)">✕</button>
         </div>
@@ -850,75 +912,75 @@
           <div class="sched-modal-body">
             <!-- Chọn nhanh thẻ Local liên kết -->
             <div class="field" id="schedCardSelectWrap">
-              <label for="schedCardSelect">연결할 업무 카드 <span class="optional">(선택 - 선택 시 자동 입력)</span></label>
+              <label for="schedCardSelect"><span data-i18n="sched.modal_card_select">연결할 업무 카드</span> <span class="optional" data-i18n="sched.modal_card_select_sub">(선택 - 선택 시 자동 입력)</span></label>
               <select id="schedCardSelect">
-                <option value="">-- 직접 입력 (일반 일정 / 휴가 / 출장 / 회의) --</option>
+                <option value="" data-i18n="sched.modal_manual_entry">-- 직접 입력 (일반 일정 / 휴가 / 출장 / 회의) --</option>
               </select>
             </div>
 
             <div class="sched-date-row">
               <div class="field">
-                <label for="schedDateStart">시작일</label>
+                <label for="schedDateStart" data-i18n="sched.modal_start_date">시작일</label>
                 <input type="date" id="schedDateStart" required>
               </div>
               <div class="field">
-                <label for="schedDateEnd">종료일 <span class="optional">(선택)</span></label>
+                <label for="schedDateEnd"><span data-i18n="sched.modal_end_date">종료일</span> <span class="optional" data-i18n="sched.modal_optional">(선택)</span></label>
                 <input type="date" id="schedDateEnd" title="종료일 (선택, 여러 날짜 일정일 때)">
               </div>
             </div>
 
             <div class="field">
-              <label for="schedType">유형</label>
+              <label for="schedType" data-i18n="sched.modal_type">유형</label>
               <select id="schedType">
-                <option value="업무">업무</option>
-                <option value="연차">연차</option>
-                <option value="반차">반차</option>
-                <option value="병가">병가</option>
-                <option value="출장">출장</option>
-                <option value="재택">재택</option>
-                <option value="회의">회의</option>
-                <option value="기타">기타</option>
+                <option value="업무" data-i18n="sched.type_work">업무</option>
+                <option value="연차" data-i18n="sched.type_annual">연차</option>
+                <option value="반차" data-i18n="sched.type_half">반차</option>
+                <option value="병가" data-i18n="sched.type_sick">병가</option>
+                <option value="출장" data-i18n="sched.type_trip">출장</option>
+                <option value="재택" data-i18n="sched.type_remote">재택</option>
+                <option value="회의" data-i18n="sched.type_meeting">회의</option>
+                <option value="기타" data-i18n="sched.type_other">기타</option>
               </select>
             </div>
 
             <div class="field">
-              <label for="schedTitle">제목</label>
-              <input type="text" id="schedTitle" placeholder="예: 연차, 학회 출장, 주간 회의 등" required autocomplete="off">
+              <label for="schedTitle" data-i18n="sched.modal_title_label">제목</label>
+              <input type="text" id="schedTitle" data-i18n-ph="sched.modal_title_ph" placeholder="예: 연차, 학회 출장, 주간 회의 등" required autocomplete="off">
             </div>
 
             <div class="field">
               <div class="sched-participants-header">
-                <label>참석자 / 동반 인원 <span class="optional">(선택)</span></label>
-                <button type="button" id="btnToggleAddParticipant" class="btn-add-participant-trigger" title="참석자 추가">＋ 참석자 추가</button>
+                <label><span data-i18n="sched.modal_participants">참석자 / 동반 인원</span> <span class="optional" data-i18n="sched.modal_optional">(선택)</span></label>
+                <button type="button" id="btnToggleAddParticipant" class="btn-add-participant-trigger" data-i18n="sched.modal_add_participant" title="참석자 추가">＋ 참석자 추가</button>
               </div>
               <!-- Selected participants chip container -->
               <div id="schedSelectedParticipants" class="sched-selected-participants-wrap"></div>
               <!-- Dropdown picker for selecting members -->
               <div id="schedParticipantPicker" class="sched-participant-picker" hidden>
                 <div class="picker-search-wrap">
-                  <input type="text" id="schedParticipantSearch" placeholder="이름 또는 부서 검색..." autocomplete="off">
+                  <input type="text" id="schedParticipantSearch" data-i18n-ph="sched.search_member_ph" placeholder="이름 또는 부서 검색..." autocomplete="off">
                 </div>
                 <div id="schedParticipantOptions" class="picker-options-list"></div>
               </div>
             </div>
 
             <div class="field">
-              <label for="schedMemo">메모 <span class="optional">(선택)</span></label>
-              <textarea id="schedMemo" placeholder="자유롭게 적어주세요" autocomplete="off" rows="3"></textarea>
+              <label for="schedMemo"><span data-i18n="sched.modal_memo">메모</span> <span class="optional" data-i18n="sched.modal_optional">(선택)</span></label>
+              <textarea id="schedMemo" data-i18n-ph="sched.modal_memo_ph" placeholder="자유롭게 적어주세요" autocomplete="off" rows="3"></textarea>
             </div>
 
             <p class="form-error show" id="schedFormError" style="min-height:16px; margin:4px 0 0;"></p>
           </div>
 
           <div class="sched-modal-footer">
-            <button type="button" class="btn-sched-delete" id="schedDeleteBtn" hidden>🗑️ 삭제</button>
+            <button type="button" class="btn-sched-delete" id="schedDeleteBtn" data-i18n="sched.modal_delete" hidden>🗑️ 삭제</button>
             <div id="schedApprovalActions" style="display:none; gap:6px; align-items:center;">
-              <button type="button" id="btnSchedApprove" style="background:#16a34a;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">✓ 승인</button>
-              <button type="button" id="btnSchedReject" style="background:#dc2626;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">✕ 반려</button>
+              <button type="button" id="btnSchedApprove" data-i18n="sched.modal_approve" style="background:#16a34a;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">✓ 승인</button>
+              <button type="button" id="btnSchedReject" data-i18n="sched.modal_reject" style="background:#dc2626;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">✕ 반려</button>
             </div>
             <div style="flex:1;"></div>
-            <button type="button" class="btn-sched-cancel" id="schedCancelEditBtn">취소</button>
-            <button type="submit" class="btn-sched-save" id="schedSaveBtn">추가</button>
+            <button type="button" class="btn-sched-cancel" id="schedCancelEditBtn" data-i18n="sched.modal_cancel">취소</button>
+            <button type="submit" class="btn-sched-save" id="schedSaveBtn" data-i18n="sched.modal_submit_add">추가</button>
           </div>
         </form>
       </div>
@@ -930,7 +992,7 @@
         <div class="sched-modal-header">
           <div class="sched-modal-title-wrap">
             <span class="sched-modal-icon">📅</span>
-            <h3 class="sched-modal-title" id="schedDayEventsModalTitle">전체 일정</h3>
+            <h3 class="sched-modal-title" id="schedDayEventsModalTitle" data-i18n="sched.modal_day_title">전체 일정</h3>
             <span class="std-count-badge" id="schedDayEventsModalCount" style="margin-left: 8px; font-size: 11px; padding: 2px 8px; border-radius: 12px; background: var(--bg-hover); color: var(--ink-soft); font-weight: 700;">0건</span>
           </div>
           <button type="button" class="sched-modal-close" id="btnSchedDayEventsClose" title="닫기 (Esc)">✕</button>
@@ -1025,8 +1087,8 @@
     <!-- 2. INTERNAL DB VIEW (사내 관리 제품) -->
     <div id="pimInternalView" class="pim-internal-view">
       <div class="pim-toolbar">
-        <input type="text" id="pimSearchInput" placeholder="사내 제품 검색 (모델명, 제품명, 식별명)" autocomplete="off">
-        <button type="button" class="btn-primary" id="pimNewBtn">＋ 신규 제품 등록</button>
+        <input type="text" id="pimSearchInput" data-i18n-ph="pim.search_ph" placeholder="사내 제품 검색 (모델명, 제품명, 식별명)" autocomplete="off">
+        <button type="button" class="btn-primary" id="pimNewBtn" data-i18n="pim.btn_new">＋ 신규 제품 등록</button>
       </div>
       <p class="records-eyebrow" id="pimListLabel">제품 목록</p>
       <div class="pim-web-grid" id="pimList"></div>
@@ -1216,11 +1278,11 @@
           <div class="history-toolbar">
             <!-- Date Navigator -->
             <div class="history-date-group">
-              <button type="button" id="btnHistoryPrevDate" class="history-date-btn history-date-btn-prev" title="이전 날짜">&lt;</button>
-              <input type="date" id="historyDateFilter" class="history-date-input" title="조회할 날짜 선택">
-              <button type="button" id="btnHistoryNextDate" class="history-date-btn history-date-btn-next" title="다음 날짜">&gt;</button>
+              <button type="button" id="btnHistoryPrevDate" class="history-date-btn history-date-btn-prev" title="이전 날짜" data-i18n-title="history.btn_prev">&lt;</button>
+              <input type="date" id="historyDateFilter" class="history-date-input" title="조회할 날짜 선택" data-i18n-title="history.date_picker_title">
+              <button type="button" id="btnHistoryNextDate" class="history-date-btn history-date-btn-next" title="다음 날짜" data-i18n-title="history.btn_next">&gt;</button>
             </div>
-            <button type="button" id="btnHistoryToday" class="history-btn-today" title="오늘 날짜로 이동">오늘</button>
+            <button type="button" id="btnHistoryToday" class="history-btn-today" title="오늘 날짜로 이동" data-i18n="history.btn_today">오늘</button>
           </div>
         </div>
       </div>
@@ -1252,7 +1314,7 @@
           </button>
           <button type="button" class="settings-subtab-btn" data-settings-tab="product_categories" role="tab" aria-selected="false">
             <span class="subtab-icon">📦</span>
-            <span class="subtab-text">제품 규격 템플릿</span>
+            <span class="subtab-text" data-i18n="settings.tab_product_categories">제품 규격 템플릿</span>
           </button>
           <button type="button" class="settings-subtab-btn" data-settings-tab="template" role="tab" aria-selected="false">
             <span class="subtab-icon">📑</span>
@@ -1268,15 +1330,15 @@
           </button>
           <button type="button" class="settings-subtab-btn" data-settings-tab="ai_usage" role="tab" aria-selected="false">
             <span class="subtab-icon">📈</span>
-            <span class="subtab-text">AI 사용량 & 비용</span>
+            <span class="subtab-text" data-i18n="settings.tab_ai_usage">AI 사용량 & 비용</span>
           </button>
           <button type="button" class="settings-subtab-btn" data-settings-tab="audit" role="tab" aria-selected="false">
             <span class="subtab-icon">📋</span>
-            <span class="subtab-text">감사 로그 (Audit)</span>
+            <span class="subtab-text" data-i18n="settings.tab_audit">감사 로그 (Audit)</span>
           </button>
           <button type="button" class="settings-subtab-btn" data-settings-tab="license" role="tab" aria-selected="false">
             <span class="subtab-icon">🔑</span>
-            <span class="subtab-text">라이선스 (License)</span>
+            <span class="subtab-text" data-i18n="settings.tab_license">라이선스 (License)</span>
           </button>
         </nav>
 
@@ -1323,7 +1385,7 @@
               <div class="settings-card" id="cardSettingsAi">
                 <div class="settings-card-header">
                   <h3 class="settings-card-title">
-                    <span>🤖</span> AI 엔진 설정 (LLM Assistant)
+                    <span>🤖</span> <span data-i18n="settings.card_ai_title">AI 엔진 설정 (LLM Assistant)</span>
                   </h3>
                   <span class="card-badge" id="badgeAiStatus">대기</span>
                 </div>
@@ -1335,7 +1397,7 @@
                     <input type="checkbox" id="setAiEnabled">
                     <span class="toggle-slider"></span>
                   </label>
-                  <span class="toggle-label">AI 어시스턴트 기능 활성화</span>
+                  <span class="toggle-label" data-i18n="settings.ai_enable_toggle">AI 어시스턴트 기능 활성화</span>
                 </div>
               </div>
 
@@ -1345,15 +1407,15 @@
                     <input type="checkbox" id="setAiAllowUserKeys">
                     <span class="toggle-slider"></span>
                   </label>
-                  <span class="toggle-label" style="font-weight: 700; color: var(--ink);">사용자 개인 AI Model/Key (BYOK) 허용</span>
+                  <span class="toggle-label" style="font-weight: 700; color: var(--ink);" data-i18n="settings.ai_byok_toggle">사용자 개인 AI Model/Key (BYOK) 허용</span>
                 </div>
                 <p style="margin: 4px 0 0 44px; font-size: 11.5px; color: var(--ink-soft); line-height: 1.4;">
-                  활성화하면 일반 사용자가 채팅창에서 직접 자신의 개인 API Key (Gemini, Claude, OpenAI 등)를 등록하고 자유롭게 모델을 전환하며 대화할 수 있습니다.
+                  <span data-i18n="settings.ai_byok_desc">활성화하면 일반 사용자가 채팅창에서 직접 자신의 개인 API Key (Gemini, Claude, OpenAI 등)를 등록하고 자유롭게 모델을 전환하며 대화할 수 있습니다.</span>
                 </p>
               </div>
 
               <div class="settings-field">
-                <label for="setAiProvider" class="settings-label">AI 제공자 (Provider)</label>
+                <label for="setAiProvider" class="settings-label" data-i18n="settings.ai_provider_label">AI 제공자 (Provider)</label>
                 <select id="setAiProvider" class="settings-select">
                   <option value="gemini">Google Gemini</option>
                   <option value="openai">OpenAI ChatGPT</option>
@@ -1367,18 +1429,18 @@
               </div>
 
               <div class="settings-field">
-                <label for="setAiModel" class="settings-label">모델명 (Model Name) <span id="aiModelBadge" class="optional"></span></label>
+                <label for="setAiModel" class="settings-label"><span data-i18n="settings.ai_model_label">모델명 (Model Name)</span> <span id="aiModelBadge" class="optional"></span></label>
                 <input type="text" id="setAiModel" class="settings-input" placeholder="gemini-2.5-flash / gpt-4o-mini">
               </div>
 
               <div class="settings-field full-width">
-                <label for="setAiApiKey" class="settings-label">AI API Key</label>
-                <input type="text" id="setAiApiKey" class="settings-input secure-token" placeholder="API Key 입력 (비워두면 기존 키 유지)" autocomplete="off" spellcheck="false" data-lpignore="true">
+                <label for="setAiApiKey" class="settings-label" data-i18n="settings.ai_key_label">AI API Key</label>
+                <input type="text" id="setAiApiKey" class="settings-input secure-token" data-i18n-ph="settings.ai_key_ph" placeholder="API Key 입력 (비워두면 기존 키 유지)" autocomplete="off" spellcheck="false" data-lpignore="true">
               </div>
 
               <div class="settings-field full-width">
-                <label for="setAiBaseUrl" class="settings-label">AI Custom Base URL <span id="aiBaseUrlBadge" class="optional">(선택)</span></label>
-                <input type="text" id="setAiBaseUrl" class="settings-input" placeholder="기본 게이트웨이 또는 프록시 URL (예: https://generativelanguage.googleapis.com)">
+                <label for="setAiBaseUrl" class="settings-label"><span data-i18n="settings.ai_base_url_label">AI Custom Base URL</span> <span id="aiBaseUrlBadge" class="optional" data-i18n="settings.ai_base_url_optional">(선택)</span></label>
+                <input type="text" id="setAiBaseUrl" class="settings-input" data-i18n-ph="settings.ai_base_url_ph" placeholder="기본 게이트웨이 또는 프록시 URL (예: https://generativelanguage.googleapis.com)">
                 <p id="aiCustomUrlHint" class="settings-hint" style="display: none; color: #0284c7; font-size: 12px; margin-top: 4px;">
                   💡 <strong>사용자 정의(Custom) 제공자:</strong> Base URL(예: <code>https://api.together.xyz/v1</code>)과 모델명(Model Name)을 반드시 입력해야 합니다. (OpenAI /chat/completions 규격 호환)
                 </p>
@@ -2689,57 +2751,59 @@
 
 <!-- Edit Profile Modal (내 정보 수정 팝업) -->
 <div id="modalEditProfile" class="pim-modal-backdrop" hidden>
-  <div class="pim-modal-card" style="max-width: 440px;">
-    <div class="pim-modal-header">
+  <div class="pim-modal-card" style="max-width: 440px; width: 92%; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden;">
+    <div class="pim-modal-header" style="flex-shrink: 0;">
       <div class="pim-modal-title-wrap">
         <h2 class="pim-modal-model" style="font-size: 16px;" data-i18n="profile.modal_title">내 정보 수정</h2>
       </div>
       <button type="button" class="pim-modal-close" id="btnEditProfileClose" aria-label="닫기">✕</button>
     </div>
-    <form id="formEditProfile" style="padding: 16px 20px 20px;">
-      <!-- Avatar Section -->
-      <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border-light);">
-        <div id="editProfileAvatarPreview" style="width: 56px; height: 56px; border-radius: 50%; background: #0284c7; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; overflow: hidden; flex-shrink: 0; border: 2px solid var(--border-light);">
-          ?
-        </div>
-        <div style="flex: 1;">
-          <div style="font-size: 12.5px; font-weight: 600; margin-bottom: 5px;" data-i18n="profile.avatar_title">프로필 사진 (Avatar)</div>
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <label class="btn-secondary" style="padding: 5px 12px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; margin: 0;">
-              <span data-i18n="profile.change_photo">사진 변경</span>
-              <input type="file" id="editProfileAvatarFile" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;">
-            </label>
-            <button type="button" class="btn-secondary" id="btnEditProfileAvatarReset" data-i18n="profile.reset_photo" style="padding: 5px 12px; font-size: 12px; display: none;">기본값으로 복원</button>
+    <form id="formEditProfile" style="display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; margin: 0;">
+      <div class="edit-profile-modal-body" style="padding: 16px 20px; overflow-y: auto; flex: 1; min-height: 0;">
+        <!-- Avatar Section -->
+        <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border-light);">
+          <div id="editProfileAvatarPreview" style="width: 56px; height: 56px; border-radius: 50%; background: #0284c7; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; overflow: hidden; flex-shrink: 0; border: 2px solid var(--border-light);">
+            ?
           </div>
-          <div style="font-size: 11px; color: var(--ink-faint); margin-top: 4px;" data-i18n="profile.avatar_hint">JPG, PNG, WebP (권장 1:1 비율, 최대 5MB)</div>
+          <div style="flex: 1;">
+            <div style="font-size: 12.5px; font-weight: 600; margin-bottom: 5px;" data-i18n="profile.avatar_title">프로필 사진 (Avatar)</div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <label class="btn-secondary" style="padding: 5px 12px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; margin: 0;">
+                <span data-i18n="profile.change_photo">사진 변경</span>
+                <input type="file" id="editProfileAvatarFile" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;">
+              </label>
+              <button type="button" class="btn-secondary" id="btnEditProfileAvatarReset" data-i18n="profile.reset_photo" style="padding: 5px 12px; font-size: 12px; display: none;">기본값으로 복원</button>
+            </div>
+            <div style="font-size: 11px; color: var(--ink-faint); margin-top: 4px;" data-i18n="profile.avatar_hint">JPG, PNG, WebP (권장 1:1 비율, 최대 5MB)</div>
+          </div>
         </div>
+        <div class="field" style="margin-bottom: 14px;">
+          <label for="editProfileNameInput" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;" data-i18n="profile.name_label">이름 (성명)</label>
+          <input type="text" id="editProfileNameInput" class="settings-input" required data-i18n-ph="profile.name_ph" placeholder="이름 입력">
+        </div>
+        <div class="field" style="margin-bottom: 14px;">
+          <label for="editProfileEmailInput" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;"><span data-i18n="profile.email_label">이메일</span> <span class="optional" style="font-weight: 400; color: var(--ink-faint);">(선택)</span></label>
+          <input type="email" id="editProfileEmailInput" class="settings-input" data-i18n-ph="profile.email_ph" placeholder="user@company.com">
+        </div>
+        <div class="field" style="margin-bottom: 14px;">
+          <label for="editProfileOrgSelect" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;" data-i18n="profile.org_label">소속 부서 (조직)</label>
+          <select id="editProfileOrgSelect" class="settings-select" style="width: 100%;"></select>
+        </div>
+        <div class="field" style="margin-bottom: 14px;">
+          <label for="editProfileCurrentPasswordInput" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;"><span data-i18n="profile.current_password_label">현재 비밀번호</span> <span class="optional" style="font-weight: 400; color: var(--ink-faint);" data-i18n="profile.optional_change_only">(변경 시에만 입력)</span></label>
+          <input type="password" id="editProfileCurrentPasswordInput" class="settings-input" data-i18n-ph="profile.current_password_ph" placeholder="현재 비밀번호 입력" autocomplete="current-password">
+        </div>
+        <div class="field" style="margin-bottom: 14px;">
+          <label for="editProfilePasswordInput" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;"><span data-i18n="profile.password_label">새 비밀번호</span> <span class="optional" style="font-weight: 400; color: var(--ink-faint);" data-i18n="profile.optional_change_only">(변경 시에만 입력)</span></label>
+          <input type="password" id="editProfilePasswordInput" class="settings-input" data-i18n-ph="profile.password_ph" placeholder="최소 8자 이상 (비워두면 기존 유지)" autocomplete="new-password">
+        </div>
+        <div class="field" style="margin-bottom: 16px;">
+          <label for="editProfilePasswordConfirmInput" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;"><span data-i18n="profile.confirm_password_label">새 비밀번호 확인</span></label>
+          <input type="password" id="editProfilePasswordConfirmInput" class="settings-input" data-i18n-ph="profile.confirm_password_ph" placeholder="새 비밀번호 재입력" autocomplete="new-password">
+        </div>
+        <div id="editProfileError" class="form-error" style="margin-bottom: 8px;"></div>
       </div>
-      <div class="field" style="margin-bottom: 14px;">
-        <label for="editProfileNameInput" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;" data-i18n="profile.name_label">이름 (성명)</label>
-        <input type="text" id="editProfileNameInput" class="settings-input" required data-i18n-ph="profile.name_ph" placeholder="이름 입력">
-      </div>
-      <div class="field" style="margin-bottom: 14px;">
-        <label for="editProfileEmailInput" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;"><span data-i18n="profile.email_label">이메일</span> <span class="optional" style="font-weight: 400; color: var(--ink-faint);">(선택)</span></label>
-        <input type="email" id="editProfileEmailInput" class="settings-input" data-i18n-ph="profile.email_ph" placeholder="user@company.com">
-      </div>
-      <div class="field" style="margin-bottom: 14px;">
-        <label for="editProfileOrgSelect" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;" data-i18n="profile.org_label">소속 부서 (조직)</label>
-        <select id="editProfileOrgSelect" class="settings-select" style="width: 100%;"></select>
-      </div>
-      <div class="field" style="margin-bottom: 14px;">
-        <label for="editProfileCurrentPasswordInput" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;"><span data-i18n="profile.current_password_label">현재 비밀번호</span> <span class="optional" style="font-weight: 400; color: var(--ink-faint);" data-i18n="profile.optional_change_only">(변경 시에만 입력)</span></label>
-        <input type="password" id="editProfileCurrentPasswordInput" class="settings-input" data-i18n-ph="profile.current_password_ph" placeholder="현재 비밀번호 입력" autocomplete="current-password">
-      </div>
-      <div class="field" style="margin-bottom: 14px;">
-        <label for="editProfilePasswordInput" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;"><span data-i18n="profile.password_label">새 비밀번호</span> <span class="optional" style="font-weight: 400; color: var(--ink-faint);" data-i18n="profile.optional_change_only">(변경 시에만 입력)</span></label>
-        <input type="password" id="editProfilePasswordInput" class="settings-input" data-i18n-ph="profile.password_ph" placeholder="최소 8자 이상 (비워두면 기존 유지)" autocomplete="new-password">
-      </div>
-      <div class="field" style="margin-bottom: 16px;">
-        <label for="editProfilePasswordConfirmInput" style="display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;"><span data-i18n="profile.confirm_password_label">새 비밀번호 확인</span></label>
-        <input type="password" id="editProfilePasswordConfirmInput" class="settings-input" data-i18n-ph="profile.confirm_password_ph" placeholder="새 비밀번호 재입력" autocomplete="new-password">
-      </div>
-      <div id="editProfileError" class="form-error" style="margin-bottom: 12px;"></div>
-      <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px;">
+      <div class="edit-profile-modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid var(--border-light); background: var(--surface); flex-shrink: 0;">
         <button type="button" class="btn-secondary" id="btnEditProfileCancel" data-i18n="profile.btn_cancel" style="padding: 8px 16px; font-size: 13px;">취소</button>
         <button type="submit" class="btn-primary" id="btnEditProfileSubmit" data-i18n="profile.btn_submit" style="padding: 8px 18px; font-size: 13px;">저장하기</button>
       </div>
@@ -2830,21 +2894,21 @@
 <div id="toast" role="status"></div>
 
 <script src="js/utils.js?v=4.4"></script>
-<script src="js/i18n.js?v=1.7"></script>
+<script src="js/i18n.js?v=2.0"></script>
 <script src="js/api.js?v=5.1"></script>
 <script src="js/auth.js?v=5.1"></script>
 <script src="js/dashboard.js?v=8.5"></script>
-<script src="js/jira-form.js?v=6.3"></script>
-<script src="js/calendar.js?v=8.3"></script>
-<script src="js/home.js?v=5.6"></script>
-<script src="js/pim.js?v=5.3"></script>
-<script src="js/history.js?v=1.5"></script>
-<script src="js/settings.js?v=5.5"></script>
+<script src="js/jira-form.js?v=6.4"></script>
+<script src="js/calendar.js?v=10.7"></script>
+<script src="js/home.js?v=5.7"></script>
+<script src="js/pim.js?v=5.4"></script>
+<script src="js/history.js?v=1.6"></script>
+<script src="js/settings.js?v=5.6"></script>
 <script src="js/settings-analytics.js?v=1.2"></script>
 <script src="js/chat.js?v=3.3"></script>
 <script src="js/canvas.js?v=6.9"></script>
 <script src="js/notifications.js?v=2.1"></script>
-<script src="js/app.js?v=6.8"></script>
+<script src="js/app.js?v=7.1"></script>
 
 </body>
 </html>

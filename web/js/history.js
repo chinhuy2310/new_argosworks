@@ -195,41 +195,58 @@ function renderHistoryTable() {
 
   var filtered = historyActivities || [];
 
+  var isEn = (window.i18n && window.i18n.getLang && window.i18n.getLang() === "en");
   if (subtitleEl) {
-    subtitleEl.textContent = selectedHistoryDate + " • 총 " + filtered.length + "건의 활동";
+    subtitleEl.textContent = (window.i18n && window.i18n.t)
+      ? window.i18n.t("history.subtitle", { date: selectedHistoryDate, count: filtered.length })
+      : (isEn ? (selectedHistoryDate + " • Total " + filtered.length + " activities") : (selectedHistoryDate + " • 총 " + filtered.length + "건의 활동"));
   }
 
   if (filtered.length === 0) {
     var quickDatesHtml = "";
+    var qLabel = (window.i18n && window.i18n.t) ? window.i18n.t("history.quick_label") : (isEn ? "Jump to recent activity date:" : "최근 활동이 기록된 날짜 바로가기:");
     if (historyRecentDates && historyRecentDates.length > 0) {
       quickDatesHtml = '<div style="margin-top:18px; display:flex; flex-direction:column; align-items:center; gap:10px;">' +
-        '<div style="font-size:12.5px; font-weight:600; color:var(--ink-soft);">최근 활동이 기록된 날짜 바로가기:</div>' +
+        '<div style="font-size:12.5px; font-weight:600; color:var(--ink-soft);">' + qLabel + '</div>' +
         '<div style="display:flex; flex-wrap:wrap; gap:8px; justify-content:center; max-width:600px;">' +
         historyRecentDates.map(function(item){
           return '<button type="button" class="history-quick-date-btn" onclick="loadHistoryActivities(\'' + item.date + '\')">' +
-            '📅 ' + item.date + ' <strong style="margin-left:4px; color:var(--tab-settings, #0284c7);">' + item.count + '건</strong>' +
+            '📅 ' + item.date + ' <strong style="margin-left:4px; color:var(--tab-settings, #0284c7);">' + item.count + (isEn ? " items" : "건") + '</strong>' +
             '</button>';
         }).join('') +
         '</div></div>';
     }
 
+    var emptyTitle = (window.i18n && window.i18n.t)
+      ? window.i18n.t("history.empty_title", { date: escapeHtml(selectedHistoryDate) })
+      : (isEn ? ("No activity recorded for " + escapeHtml(selectedHistoryDate) + ".") : ("선택한 날짜(" + escapeHtml(selectedHistoryDate) + ")에 활동 내역이 없습니다."));
+    var emptyDesc = (window.i18n && window.i18n.t)
+      ? window.i18n.t("history.empty_desc")
+      : (isEn ? "Use the arrows (< >) above to choose another date, or select a recent date below." : "상단 화살표(&lt; &gt;)로 다른 날짜를 선택하거나 아래 최근 기록일을 클릭해 보세요.");
+
     container.innerHTML = '<div class="history-empty">' +
       '<div class="history-empty-icon">📂</div>' +
-      '<div class="history-empty-title">선택한 날짜(' + escapeHtml(selectedHistoryDate) + ')에 활동 내역이 없습니다.</div>' +
-      '<div class="history-empty-desc">상단 화살표(&lt; &gt;)로 다른 날짜를 선택하거나 아래 최근 기록일을 클릭해 보세요.</div>' +
+      '<div class="history-empty-title">' + emptyTitle + '</div>' +
+      '<div class="history-empty-desc">' + emptyDesc + '</div>' +
       quickDatesHtml +
       '</div>';
     return;
   }
 
+  var thKey = isEn ? "Issue Key" : "이슈 키";
+  var thTitle = isEn ? "Issue / Task Title" : "이슈 / 업무명";
+  var thDetails = isEn ? "Activity & Changes" : "활동 및 변경 상세";
+  var thAuthor = isEn ? "Author" : "작업자";
+  var thTime = isEn ? "Time" : "시간";
+
   var html = '<div class="history-table-card">' +
     '<table class="history-table">' +
     '<thead><tr>' +
-    '<th style="width:110px;">이슈 키</th>' +
-    '<th style="width:28%;">이슈 / 업무명</th>' +
-    '<th>활동 및 변경 상세</th>' +
-    '<th style="width:150px;">작업자</th>' +
-    '<th style="width:85px; text-align:right;">시간</th>' +
+    '<th style="width:110px;">' + thKey + '</th>' +
+    '<th style="width:28%;">' + thTitle + '</th>' +
+    '<th>' + thDetails + '</th>' +
+    '<th style="width:150px;">' + thAuthor + '</th>' +
+    '<th style="width:85px; text-align:right;">' + thTime + '</th>' +
     '</tr></thead><tbody>';
 
   filtered.forEach(function(act) {
@@ -370,3 +387,7 @@ window.loadHistoryActivities = loadHistoryActivities;
 window.renderHistoryTable = renderHistoryTable;
 window.shiftHistoryDate = shiftHistoryDate;
 window.initHistoryEventListeners = initHistoryEventListeners;
+
+window.addEventListener("langchange", function(){
+  renderHistoryTable();
+});

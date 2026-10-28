@@ -99,3 +99,6 @@ $RECYCLE.BIN/
 
 # Nuitka build output
 build/
+
+data/postgres/
+.archify/

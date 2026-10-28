@@ -1393,3 +1393,12 @@ body.sidebar-collapsed .logout-btn {
   color: #ef4444;
   border-color: #ef4444;
 }
+
+/* Seamless full-bleed layout for Schedule View (No card gaps / margins) */
+body.view-schedule-active .page,
+.page:has(#viewSchedule:not([hidden])) {
+  padding: 0 !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  margin: 0 !important;
+}
