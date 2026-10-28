@@ -2975,8 +2975,6 @@ def match_get(path):
         if not needs_setup:
             return ("redirect", "/login", None)
         return ("file", os.path.join(WEB_DIR, "setup.html"), "text/html; charset=utf-8")
-    elif path == "/prototype.html":
-        return ("file", os.path.join(WEB_DIR, "prototype.html"), "text/html; charset=utf-8")
     elif path == "/api/setup/status":
         return ("handler", handle_get_setup_status, None)
 
