@@ -222,7 +222,7 @@ def create_backup(note="수동 백업", backup_type="manual"):
         try:
             if is_postgres:
                 # 1. PostgreSQL Enterprise Backup via pg_dump -Fc (Custom compressed format)
-                cmd = ["pg_dump", "-Fc", "-d", DATABASE_URL, "-f", temp_db_path]
+                cmd = [_find_pg_tool("pg_dump"), "-Fc", "-d", DATABASE_URL, "-f", temp_db_path]
                 try:
                     res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 except FileNotFoundError:
@@ -393,7 +393,7 @@ def restore_backup(backup_filename):
             if is_postgres:
                 safety_tmp = os.path.join(bdir, f"{safety_name}.dump")
                 try:
-                    res = subprocess.run(["pg_dump", "-Fc", "-d", DATABASE_URL, "-f", safety_tmp], capture_output=True)
+                    res = subprocess.run([_find_pg_tool("pg_dump"), "-Fc", "-d", DATABASE_URL, "-f", safety_tmp], capture_output=True)
                     if res.returncode == 0:
                         with tarfile.open(safety_path, "w:gz", compresslevel=6) as star:
                             star.add(safety_tmp, arcname="argos.dump")
@@ -461,7 +461,7 @@ def restore_backup(backup_filename):
 
             if is_postgres:
                 # PostgreSQL pg_restore execution with clean drop/create
-                cmd = ["pg_restore", "--clean", "--if-exists", "-d", DATABASE_URL, temp_restore_db]
+                cmd = [_find_pg_tool("pg_restore"), "--clean", "--if-exists", "-d", DATABASE_URL, temp_restore_db]
                 try:
                     res = subprocess.run(cmd, capture_output=True, text=True)
                 except FileNotFoundError:
