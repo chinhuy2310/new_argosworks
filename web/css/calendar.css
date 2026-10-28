@@ -1,15 +1,56 @@
-/* Scoped variables for Calendar Tab - Softened Corporate Blue (Anti-Glare) */
+/* Scoped variables for Calendar Tab - Softened Tinted Blue & Anti-Glare Palette */
 #viewSchedule {
-  --tab-schedule: #2563eb;
-  --tab-schedule-hover: #1d4ed8;
-  --tab-schedule-soft: rgba(37, 99, 235, 0.12);
-  --sched-blue-primary: #2563eb;
-  --sched-blue-hover: #1d4ed8;
+  --tab-schedule: #38bdf8;
+  --tab-schedule-soft: rgba(56, 189, 248, 0.1);
+  --sched-tint-blue-bg: rgba(59, 130, 246, 0.13);
+  --sched-tint-blue-border: rgba(59, 130, 246, 0.32);
+  --sched-tint-blue-text: #93c5fd;
+  --sched-tint-blue-hover: rgba(59, 130, 246, 0.25);
 }
 
+/* Custom Non-Glaring Modern Dark Checkbox for Calendar */
 #viewSchedule input[type="checkbox"],
 .schedule-layout-modern input[type="checkbox"] {
-  accent-color: #2563eb;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 1.2px solid #475569;
+  border-radius: 3.5px;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  margin: 0;
+  flex: none;
+  transition: all 0.12s ease;
+  vertical-align: middle;
+  position: relative;
+  box-sizing: border-box;
+}
+
+#viewSchedule input[type="checkbox"]:hover,
+.schedule-layout-modern input[type="checkbox"]:hover {
+  border-color: #64748b;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+#viewSchedule input[type="checkbox"]:checked,
+.schedule-layout-modern input[type="checkbox"]:checked {
+  background: #1e3a5f;
+  border-color: #3b82f6;
+}
+
+#viewSchedule input[type="checkbox"]:checked::after,
+.schedule-layout-modern input[type="checkbox"]:checked::after {
+  content: "";
+  display: block;
+  width: 3.5px;
+  height: 7px;
+  border: solid #93c5fd;
+  border-width: 0 1.8px 1.8px 0;
+  transform: rotate(45deg);
+  margin-top: -2px;
 }
 
 /* ==========================================================================
@@ -221,8 +262,7 @@
   height: 13px;
   margin: 0;
   flex: none;
-  accent-color: #2563eb;
-}
+  }
 
 .sched-group-title {
   font-size: 12px;
@@ -299,8 +339,7 @@
   margin: 0;
   cursor: pointer;
   flex: none;
-  accent-color: #2563eb;
-}
+  }
 .sched-type-dot {
   width: 8px;
   height: 8px;
@@ -446,8 +485,7 @@
   height: 14px;
   margin: 0;
   flex: none;
-  accent-color: #2563eb;
-}
+  }
 .sched-member-avatar {
   width: 22px;
   height: 22px;
@@ -679,8 +717,7 @@
   width: 13px;
   height: 13px;
   margin: 0;
-  accent-color: #2563eb;
-}
+  }
 
 /* Primary Create Button on Toolbar: Always accessible, especially when sidebar is collapsed */
 .btn-sched-create-primary {
@@ -689,22 +726,23 @@
   gap: 5px;
   height: 28px;
   padding: 0 12px;
-  background: #2563eb;
-  color: #ffffff !important;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(59, 130, 246, 0.14);
+  color: #93c5fd !important;
+  border: 1px solid rgba(59, 130, 246, 0.35);
   border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap !important;
   flex-shrink: 0 !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  box-shadow: none;
   transition: all 0.15s ease;
 }
 .btn-sched-create-primary:hover {
-  background: #1d4ed8;
+  background: rgba(59, 130, 246, 0.25);
+  color: #ffffff !important;
+  border-color: rgba(59, 130, 246, 0.55);
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 .btn-sched-create-icon {
   font-size: 13px;
@@ -1612,9 +1650,9 @@
 }
 
 .stc-assign-btn {
-  background: #2563eb;
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(59, 130, 246, 0.14);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.32);
   font-size: 10.5px;
   font-weight: 600;
   padding: 2.5px 8px;
@@ -1627,7 +1665,9 @@
   gap: 2px;
 }
 .stc-assign-btn:hover {
-  background: #1d4ed8;
+  background: rgba(59, 130, 246, 0.28);
+  color: #ffffff;
+  border-color: rgba(59, 130, 246, 0.55);
   transform: translateY(-1px);
 }
 
