@@ -202,6 +202,183 @@
     }
 
     
+    
+    /* ==========================================================================
+       CONCEPT 5: TWO-COLUMN SPLIT COMPACT TABLE
+       ========================================================================== */
+    .split-col-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 860px) {
+      .split-col-container { grid-template-columns: 1fr; }
+    }
+
+    .split-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+    }
+    .split-table th {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-faint);
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-elevated);
+      text-transform: uppercase;
+    }
+    .split-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    .split-table tr:hover td {
+      background: var(--surface-elevated);
+      cursor: pointer;
+    }
+
+    .compact-profile-cell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .compact-avatar {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .compact-name-block {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.25;
+      overflow: hidden;
+    }
+    .compact-name {
+      font-weight: 700;
+      color: var(--text-main);
+      font-size: 12.5px;
+      white-space: nowrap;
+    }
+    .compact-sub {
+      font-size: 10.5px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .compact-donut-box {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .compact-donut-inner {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8.5px;
+      font-weight: 800;
+      color: var(--text-main);
+    }
+    .split-progress-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ==========================================================================
+       CONCEPT 6: ULTRA HIGH-DENSITY CHIPS MATRIX
+       ========================================================================== */
+    .dense-chips-matrix {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .dense-chip-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 10px 4px 6px;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+    .dense-chip-item:hover {
+      background: var(--surface-hover);
+      border-color: var(--primary);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    }
+    .dense-chip-item.active {
+      background: var(--primary-soft);
+      border-color: var(--primary);
+    }
+
+    .chip-avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10.5px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .chip-label {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .chip-count-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 10px;
+      background: var(--surface);
+      color: var(--primary);
+      border: 1px solid var(--border);
+    }
+    .chip-ring-mini {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .chip-ring-mini-inner {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--surface);
+      font-size: 8px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-main);
+    }
+
     /* ==========================================================================
        CONCEPT 4: COMPACT CIRCULAR DONUT PRO (MAXIMIZED HORIZONTAL SPACE)
        ========================================================================== */
@@ -539,10 +716,11 @@
       </div>
 
       <div class="tabs-group">
-        <button class="tab-btn" onclick="switchConcept('concept-jira')">Mẫu 1: Jira Stacked Bar</button>
-        <button class="tab-btn" onclick="switchConcept('concept-daou')">Mẫu 2: DaouOffice Matrix</button>
-        <button class="tab-btn" onclick="switchConcept('concept-cards')">Mẫu 3: Card Grid</button>
-        <button class="tab-btn active" onclick="switchConcept('concept-donut-pro')">Mẫu 4: Donut Tròn Nâng Cấp ⭐</button>
+        <button class="tab-btn active" onclick="switchConcept('concept-split-col')">⚡ Mẫu 5: Lưới 2 Cột Song Song (Giảm 50% chiều cao)</button>
+        <button class="tab-btn" onclick="switchConcept('concept-dense-chips')">🚀 Mẫu 6: Ma Trận Mini Siêu Nén (Tiết kiệm 80%)</button>
+        <button class="tab-btn" onclick="switchConcept('concept-donut-pro')">Mẫu 4: Donut Tròn Nâng Cấp</button>
+        <button class="tab-btn" onclick="switchConcept('concept-jira')">Mẫu 1: Jira Stacked</button>
+        <button class="tab-btn" onclick="switchConcept('concept-daou')">Mẫu 2: Daou Matrix</button>
       </div>
 
       <button class="theme-toggle-btn" onclick="toggleTheme()">
@@ -552,9 +730,9 @@
 
     <!-- Concept Description Banner -->
     <div class="concept-desc-card">
-      <div class="concept-desc-title" id="conceptTitle">⭕ Mẫu 4: Dạng Tròn Nâng Cấp (Compact Circular Donut) — Tối đa hóa khoảng trống</div>
+      <div class="concept-desc-title" id="conceptTitle">⚡ Mẫu 5: Bảng Chia 2 Cột Song Song (Two-Column Split Table) — Tiết kiệm 50% chiều cao</div>
       <div class="concept-desc-text" id="conceptDesc">
-        Đúng như bạn nhận định: Dạng vòng tròn donut chỉ chiếm 36px bề ngang, giúp giải phóng hoàn toàn không gian hàng để hiển thị đầy đủ: Avatar + Phòng ban, thẻ Danh mục công việc, và các Pill chỉ số chi tiết (Hoàn thành, Đang làm, Chờ xử lý, Cảnh báo trễ hạn) mà không bị chật chội.
+        Giải pháp hoàn hảo: Thay vì kéo dài 13 dòng xuống dưới, danh sách chia đôi thành 2 cột song song (mỗi bên 6-7 người). Bạn nhìn thấy toàn bộ 13 thành viên trên 1 màn hình duy nhất trong chưa đầy 220px chiều cao, không cần cuộn trang!
       </div>
     </div>
 
@@ -575,7 +753,440 @@
       <!-- ====================================================================
            4. COMPACT CIRCULAR DONUT PRO (MAXIMIZED HORIZONTAL SPACE)
            ==================================================================== -->
-      <div id="concept-donut-pro">
+      
+      <!-- ====================================================================
+           5. CONCEPT 5: TWO-COLUMN SPLIT COMPACT TABLE (50% HEIGHT SAVINGS)
+           ==================================================================== -->
+      <div id="concept-split-col">
+        <div class="split-col-container">
+          
+          <!-- Column 1 (Left 6 Members) -->
+          <table class="split-table">
+            <thead>
+              <tr>
+                <th>담당자 / 부서</th>
+                <th style="width: 55px; text-align: center;">건수</th>
+                <th>진행률 및 상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <div class="compact-profile-cell">
+                    <div class="compact-avatar" style="background: #64748b;">?</div>
+                    <div class="compact-name-block">
+                      <span class="compact-name">미배정 (Chưa gán)</span>
+                      <span class="compact-sub" style="color:var(--overdue-color);">⚠️ 1건 지연</span>
+                    </div>
+                  </div>
+                </td>
+                <td style="text-align: center;"><span class="task-count-badge" style="padding:2px 7px;font-size:11.5px;">9</span></td>
+                <td>
+                  <div class="split-progress-wrap">
+                    <div class="compact-donut-box" style="background: conic-gradient(#10b981 0% 11%, #0284c7 11% 100%);">
+                      <div class="compact-donut-inner">56%</div>
+                    </div>
+                    <span style="font-size:11px;color:var(--text-muted);">완료 1 · 진행 8</span>
+                  </div>
+                </td>
+              </tr>
+
+              <tr>
+                <td>
+                  <div class="compact-profile-cell">
+                    <div class="compact-avatar" style="background: #0284c7;">U</div>
+                    <div class="compact-name-block">
+                      <span class="compact-name">Uy</span>
+                      <span class="compact-sub">개발팀</span>
+                    </div>
+                  </div>
+                </td>
+                <td style="text-align: center;"><span class="task-count-badge" style="padding:2px 7px;font-size:11.5px;">6</span></td>
+                <td>
+                  <div class="split-progress-wrap">
+                    <div class="compact-donut-box" style="background: conic-gradient(#0284c7 0% 100%);">
+                      <div class="compact-donut-inner">50%</div>
+                    </div>
+                    <span style="font-size:11px;color:var(--text-muted);">진행 6</span>
+                  </div>
+                </td>
+              </tr>
+
+              <tr>
+                <td>
+                  <div class="compact-profile-cell">
+                    <div class="compact-avatar" style="background: #eab308;">u</div>
+                    <div class="compact-name-block">
+                      <span class="compact-name">uy (나)</span>
+                      <span class="compact-sub">경영기획팀</span>
+                    </div>
+                  </div>
+                </td>
+                <td style="text-align: center;"><span class="task-count-badge" style="padding:2px 7px;font-size:11.5px;">4</span></td>
+                <td>
+                  <div class="split-progress-wrap">
+                    <div class="compact-donut-box" style="background: conic-gradient(#0284c7 0% 75%, #f59e0b 75% 100%);">
+                      <div class="compact-donut-inner">38%</div>
+                    </div>
+                    <span style="font-size:11px;color:var(--text-muted);">진행 3 · 대기 1</span>
+                  </div>
+                </td>
+              </tr>
+
+              <tr>
+                <td>
+                  <div class="compact-profile-cell">
+                    <div class="compact-avatar" style="background: #c24a2c;">박</div>
+                    <div class="compact-name-block">
+                      <span class="compact-name">박서준</span>
+                      <span class="compact-sub">연구개발팀</span>
+                    </div>
+                  </div>
+                </td>
+                <td style="text-align: center;"><span class="task-count-badge" style="padding:2px 7px;font-size:11.5px;">2</span></td>
+                <td>
+                  <div class="split-progress-wrap">
+                    <div class="compact-donut-box" style="background: conic-gradient(#0284c7 0% 100%);">
+                      <div class="compact-donut-inner">50%</div>
+                    </div>
+                    <span style="font-size:11px;color:var(--text-muted);">진행 2</span>
+                  </div>
+                </td>
+              </tr>
+
+              <tr>
+                <td>
+                  <div class="compact-profile-cell">
+                    <div class="compact-avatar" style="background: #c24a2c;">최</div>
+                    <div class="compact-name-block">
+                      <span class="compact-name">최유진</span>
+                      <span class="compact-sub">연구개발팀</span>
+                    </div>
+                  </div>
+                </td>
+                <td style="text-align: center;"><span class="task-count-badge" style="padding:2px 7px;font-size:11.5px;">2</span></td>
+                <td>
+                  <div class="split-progress-wrap">
+                    <div class="compact-donut-box" style="background: conic-gradient(#0284c7 0% 50%, #f59e0b 50% 100%);">
+                      <div class="compact-donut-inner">25%</div>
+                    </div>
+                    <span style="font-size:11px;color:var(--text-muted);">진행 1 · 대기 1</span>
+                  </div>
+                </td>
+              </tr>
+
+              <tr>
+                <td>
+                  <div class="compact-profile-cell">
+                    <div class="compact-avatar" style="background: #8b5cf6;">한</div>
+                    <div class="compact-name-block">
+                      <span class="compact-name">한소영</span>
+                      <span class="compact-sub">인사총무팀</span>
+                    </div>
+                  </div>
+                </td>
+                <td style="text-align: center;"><span class="task-count-badge" style="padding:2px 7px;font-size:11.5px;">2</span></td>
+                <td>
+                  <div class="split-progress-wrap">
+                    <div class="compact-donut-box" style="background: conic-gradient(#0284c7 0% 100%);">
+                      <div class="compact-donut-inner">50%</div>
+                    </div>
+                    <span style="font-size:11px;color:var(--text-muted);">진행 2</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- Column 2 (Right 7 Members) -->
+          <table class="split-table">
+            <thead>
+              <tr>
+                <th>담당자 / 부서</th>
+                <th style="width: 55px; text-align: center;">건수</th>
+                <th>진행률 및 상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <div class="compact-profile-cell">
+                    <div class="compact-avatar" style="background: #10b981;">강</div>
+                    <div class="compact-name-block">
+                      <span class="compact-name">강동원</span>
+                      <span class="compact-sub">영업마케팅팀</span>
+                    </div>
+                  </div>
+                </td>
+                <td style="text-align: center;"><span class="task-count-badge" style="padding:2px 7px;font-size:11.5px;">3</span></td>
+                <td>
+                  <div class="split-progress-wrap">
+                    <div class="compact-donut-box" style="background: conic-gradient(#10b981 0% 67%, #0284c7 67% 100%);">
+                      <div class="compact-donut-inner">67%</div>
+                    </div>
+                    <span style="font-size:11px;color:var(--text-muted);">완료 2 · 진행 1</span>
+                  </div>
+                </td>
+              </tr>
+
+              <tr>
+                <td>
+                  <div class="compact-profile-cell">
+                    <div class="compact-avatar" style="background: #10b981;">정</div>
+                    <div class="compact-name-block">
+                      <span class="compact-name">정하나</span>
+                      <span class="compact-sub">영업마케팅팀</span>
+                    </div>
+                  </div>
+                </td>
+                <td style="text-align: center;"><span class="task-count-badge" style="padding:2px 7px;font-size:11.5px;">2</span></td>
+                <td>
+                  <div class="split-progress-wrap">
+                    <div class="compact-donut-box" style="background: conic-gradient(#0284c7 0% 100%);">
+                      <div class="compact-donut-inner">50%</div>
+                    </div>
+                    <span style="font-size:11px;color:var(--text-muted);">진행 2</span>
+                  </div>
+                </td>
+              </tr>
+
+              <tr>
+                <td>
+                  <div class="compact-profile-cell">
+                    <div class="compact-avatar" style="background: #c24a2c;">이</div>
+                    <div class="compact-name-block">
+                      <span class="compact-name">이도현</span>
+                      <span class="compact-sub">연구개발팀</span>
+                    </div>
+                  </div>
+                </td>
+                <td style="text-align: center;"><span class="task-count-badge" style="padding:2px 7px;font-size:11.5px;">4</span></td>
+                <td>
+                  <div class="split-progress-wrap">
+                    <div class="compact-donut-box" style="background: conic-gradient(#10b981 0% 50%, #0284c7 50% 100%);">
+                      <div class="compact-donut-inner">75%</div>
+                    </div>
+                    <span style="font-size:11px;color:var(--text-muted);">완료 2 · 진행 2</span>
+                  </div>
+                </td>
+              </tr>
+
+              <tr>
+                <td>
+                  <div class="compact-profile-cell">
+                    <div class="compact-avatar" style="background: #c24a2c;">테</div>
+                    <div class="compact-name-block">
+                      <span class="compact-name">테스트</span>
+                      <span class="compact-sub">연구개발팀</span>
+                    </div>
+                  </div>
+                </td>
+                <td style="text-align: center;"><span class="task-count-badge" style="padding:2px 7px;font-size:11.5px;">1</span></td>
+                <td>
+                  <div class="split-progress-wrap">
+                    <div class="compact-donut-box" style="background: conic-gradient(#f59e0b 0% 100%);">
+                      <div class="compact-donut-inner">0%</div>
+                    </div>
+                    <span style="font-size:11px;color:var(--text-muted);">대기 1</span>
+                  </div>
+                </td>
+              </tr>
+
+              <tr>
+                <td>
+                  <div class="compact-profile-cell">
+                    <div class="compact-avatar" style="background: #c24a2c;">홍</div>
+                    <div class="compact-name-block">
+                      <span class="compact-name">홍길동</span>
+                      <span class="compact-sub">연구개발팀</span>
+                    </div>
+                  </div>
+                </td>
+                <td style="text-align: center;"><span class="task-count-badge" style="padding:2px 7px;font-size:11.5px;">1</span></td>
+                <td>
+                  <div class="split-progress-wrap">
+                    <div class="compact-donut-box" style="background: conic-gradient(#10b981 0% 100%);">
+                      <div class="compact-donut-inner">100%</div>
+                    </div>
+                    <span style="font-size:11px;color:var(--text-muted);">완료 1</span>
+                  </div>
+                </td>
+              </tr>
+
+              <tr>
+                <td>
+                  <div class="compact-profile-cell">
+                    <div class="compact-avatar" style="background: #3b82f6;">윤</div>
+                    <div class="compact-name-block">
+                      <span class="compact-name">윤재호</span>
+                      <span class="compact-sub">품질관리·감사준비팀</span>
+                    </div>
+                  </div>
+                </td>
+                <td style="text-align: center;"><span class="task-count-badge" style="padding:2px 7px;font-size:11.5px;">1</span></td>
+                <td>
+                  <div class="split-progress-wrap">
+                    <div class="compact-donut-box" style="background: conic-gradient(#0284c7 0% 100%);">
+                      <div class="compact-donut-inner">50%</div>
+                    </div>
+                    <span style="font-size:11px;color:var(--text-muted);">진행 1</span>
+                  </div>
+                </td>
+              </tr>
+
+              <tr>
+                <td>
+                  <div class="compact-profile-cell">
+                    <div class="compact-avatar" style="background: #eab308;">김</div>
+                    <div class="compact-name-block">
+                      <span class="compact-name">김민수</span>
+                      <span class="compact-sub">경영기획팀</span>
+                    </div>
+                  </div>
+                </td>
+                <td style="text-align: center;"><span class="task-count-badge" style="padding:2px 7px;font-size:11.5px;">3</span></td>
+                <td>
+                  <div class="split-progress-wrap">
+                    <div class="compact-donut-box" style="background: conic-gradient(#0284c7 0% 67%, #f59e0b 67% 100%);">
+                      <div class="compact-donut-inner">45%</div>
+                    </div>
+                    <span style="font-size:11px;color:var(--text-muted);">진행 2 · 대기 1</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+        </div>
+      </div>
+
+      <!-- ====================================================================
+           6. CONCEPT 6: ULTRA HIGH-DENSITY CHIPS MATRIX (80% SPACE SAVINGS)
+           ==================================================================== -->
+      <div id="concept-dense-chips" class="hidden-panel">
+        <div class="dense-chips-matrix">
+          
+          <div class="dense-chip-item">
+            <div class="chip-avatar" style="background:#64748b;">?</div>
+            <span class="chip-label">미배정</span>
+            <span class="chip-count-badge">9건</span>
+            <div class="chip-ring-mini" style="background: conic-gradient(#10b981 0% 11%, #0284c7 11% 100%);">
+              <div class="chip-ring-mini-inner">56%</div>
+            </div>
+          </div>
+
+          <div class="dense-chip-item">
+            <div class="chip-avatar" style="background:#0284c7;">U</div>
+            <span class="chip-label">Uy</span>
+            <span class="chip-count-badge">6건</span>
+            <div class="chip-ring-mini" style="background: conic-gradient(#0284c7 0% 100%);">
+              <div class="chip-ring-mini-inner">50%</div>
+            </div>
+          </div>
+
+          <div class="dense-chip-item active">
+            <div class="chip-avatar" style="background:#eab308;">u</div>
+            <span class="chip-label">uy (나)</span>
+            <span class="chip-count-badge">4건</span>
+            <div class="chip-ring-mini" style="background: conic-gradient(#0284c7 0% 75%, #f59e0b 75% 100%);">
+              <div class="chip-ring-mini-inner">38%</div>
+            </div>
+          </div>
+
+          <div class="dense-chip-item">
+            <div class="chip-avatar" style="background:#c24a2c;">박</div>
+            <span class="chip-label">박서준</span>
+            <span class="chip-count-badge">2건</span>
+            <div class="chip-ring-mini" style="background: conic-gradient(#0284c7 0% 100%);">
+              <div class="chip-ring-mini-inner">50%</div>
+            </div>
+          </div>
+
+          <div class="dense-chip-item">
+            <div class="chip-avatar" style="background:#c24a2c;">최</div>
+            <span class="chip-label">최유진</span>
+            <span class="chip-count-badge">2건</span>
+            <div class="chip-ring-mini" style="background: conic-gradient(#0284c7 0% 50%, #f59e0b 50% 100%);">
+              <div class="chip-ring-mini-inner">25%</div>
+            </div>
+          </div>
+
+          <div class="dense-chip-item">
+            <div class="chip-avatar" style="background:#8b5cf6;">한</div>
+            <span class="chip-label">한소영</span>
+            <span class="chip-count-badge">2건</span>
+            <div class="chip-ring-mini" style="background: conic-gradient(#0284c7 0% 100%);">
+              <div class="chip-ring-mini-inner">50%</div>
+            </div>
+          </div>
+
+          <div class="dense-chip-item">
+            <div class="chip-avatar" style="background:#10b981;">강</div>
+            <span class="chip-label">강동원</span>
+            <span class="chip-count-badge">3건</span>
+            <div class="chip-ring-mini" style="background: conic-gradient(#10b981 0% 67%, #0284c7 67% 100%);">
+              <div class="chip-ring-mini-inner">67%</div>
+            </div>
+          </div>
+
+          <div class="dense-chip-item">
+            <div class="chip-avatar" style="background:#10b981;">정</div>
+            <span class="chip-label">정하나</span>
+            <span class="chip-count-badge">2건</span>
+            <div class="chip-ring-mini" style="background: conic-gradient(#0284c7 0% 100%);">
+              <div class="chip-ring-mini-inner">50%</div>
+            </div>
+          </div>
+
+          <div class="dense-chip-item">
+            <div class="chip-avatar" style="background:#c24a2c;">이</div>
+            <span class="chip-label">이도현</span>
+            <span class="chip-count-badge">4건</span>
+            <div class="chip-ring-mini" style="background: conic-gradient(#10b981 0% 50%, #0284c7 50% 100%);">
+              <div class="chip-ring-mini-inner">75%</div>
+            </div>
+          </div>
+
+          <div class="dense-chip-item">
+            <div class="chip-avatar" style="background:#c24a2c;">테</div>
+            <span class="chip-label">테스트</span>
+            <span class="chip-count-badge">1건</span>
+            <div class="chip-ring-mini" style="background: conic-gradient(#f59e0b 0% 100%);">
+              <div class="chip-ring-mini-inner">0%</div>
+            </div>
+          </div>
+
+          <div class="dense-chip-item">
+            <div class="chip-avatar" style="background:#c24a2c;">홍</div>
+            <span class="chip-label">홍길동</span>
+            <span class="chip-count-badge">1건</span>
+            <div class="chip-ring-mini" style="background: conic-gradient(#10b981 0% 100%);">
+              <div class="chip-ring-mini-inner">100%</div>
+            </div>
+          </div>
+
+          <div class="dense-chip-item">
+            <div class="chip-avatar" style="background:#3b82f6;">윤</div>
+            <span class="chip-label">윤재호</span>
+            <span class="chip-count-badge">1건</span>
+            <div class="chip-ring-mini" style="background: conic-gradient(#0284c7 0% 100%);">
+              <div class="chip-ring-mini-inner">50%</div>
+            </div>
+          </div>
+
+          <div class="dense-chip-item">
+            <div class="chip-avatar" style="background:#eab308;">김</div>
+            <span class="chip-label">김민수</span>
+            <span class="chip-count-badge">3건</span>
+            <div class="chip-ring-mini" style="background: conic-gradient(#0284c7 0% 67%, #f59e0b 67% 100%);">
+              <div class="chip-ring-mini-inner">45%</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div id="concept-donut-pro" class="hidden-panel">
         <table class="donut-pro-table">
           <thead>
             <tr>
@@ -1265,6 +1876,14 @@
 
   <script>
     const descriptions = {
+      'concept-split-col': {
+        title: '⚡ Mẫu 5: Bảng Chia 2 Cột Song Song (Two-Column Split Table) — Tiết kiệm 50% chiều cao',
+        desc: 'Giải pháp hoàn hảo: Thay vì kéo dài 13 dòng xuống dưới, danh sách chia đôi thành 2 cột song song (mỗi bên 6-7 người). Bạn nhìn thấy toàn bộ 13 thành viên trên 1 màn hình duy nhất trong chưa đầy 220px chiều cao, không cần cuộn trang!'
+      },
+      'concept-dense-chips': {
+        title: '🚀 Mẫu 6: Ma Trận Mini-Chips Cao Độ (High-Density Chips Matrix) — Tiết kiệm 80% diện tích',
+        desc: 'Thiết kế siêu tinh gọn: Mỗi thành viên là 1 Mini Chip ngang (Avatar + Tên + Badge số task + Vòng Donut %). Cả 13 thành viên chỉ chiếm vỏn vẹn 2 dòng ngang (~70px chiều cao), nhường trọn vẹn màn hình cho danh sách công việc bên dưới.'
+      },
       'concept-donut-pro': {
         title: '⭕ Mẫu 4: Dạng Tròn Nâng Cấp (Compact Circular Donut) — Tối đa hóa khoảng trống',
         desc: 'Đúng như bạn nhận định: Dạng vòng tròn donut chỉ chiếm 36px bề ngang, giúp giải phóng hoàn toàn không gian hàng để hiển thị đầy đủ: Avatar + Phòng ban, thẻ Danh mục công việc, và các Pill chỉ số chi tiết (Hoàn thành, Đang làm, Chờ xử lý, Cảnh báo trễ hạn) mà không bị chật chội.'
@@ -1287,6 +1906,8 @@
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
       event.target.classList.add('active');
 
+      document.getElementById('concept-split-col').classList.add('hidden-panel');
+      document.getElementById('concept-dense-chips').classList.add('hidden-panel');
       document.getElementById('concept-donut-pro').classList.add('hidden-panel');
       document.getElementById('concept-jira').classList.add('hidden-panel');
       document.getElementById('concept-daou').classList.add('hidden-panel');
