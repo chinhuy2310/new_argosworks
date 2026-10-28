@@ -307,6 +307,40 @@
       text-align: center;
     }
 
+    /* Main Project Standard Department Tags (.org-tag) */
+    .org-tag {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Malgun Gothic", monospace;
+      font-size: 11px;
+      letter-spacing: 0.02em;
+      padding: 2.5px 7px;
+      border-radius: 4px;
+      white-space: nowrap;
+      font-weight: 600;
+      display: inline-block;
+      vertical-align: middle;
+      color: var(--tag-color, var(--text-muted));
+      background: color-mix(in srgb, var(--tag-color, #94a3b8) 16%, var(--surface));
+      line-height: 1.25;
+      box-sizing: border-box;
+      max-width: 100%;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+    .org-tag-none {
+      background: transparent !important;
+      color: var(--text-faint) !important;
+      padding: 0 !important;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .fcr-name-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex-wrap: wrap;
+    }
+
     /* Main Project Standard Donut Styles */
     .assignee-donut-wrap {
       position: relative;
@@ -798,9 +832,9 @@
 
     <!-- Concept Description Banner -->
     <div class="concept-desc-card">
-      <div class="concept-desc-title" id="conceptTitle">⚡ Mẫu 5: Lưới Dòng Co Giãn (Fluid Auto-Fit) — Biểu đồ tròn chuẩn thiết kế dự án chính</div>
+      <div class="concept-desc-title" id="conceptTitle">⚡ Mẫu 5: Lưới Dòng Co Giãn (Fluid Auto-Fit) — Nhãn phòng ban & Biểu đồ tròn chuẩn Main</div>
       <div class="concept-desc-text" id="conceptDesc">
-        Thiết kế lưới 2 cột song song tiết kiệm 50% chiều cao, tự động xếp 1 cột khi màn hình nhỏ (không bị lặp header). Biểu đồ tròn Donut mini (32px, viền 3px), % tiến độ màu linh hoạt và nhãn trạng thái (완료 xanh lá, 진행 cam, 대기 xám) chuẩn 100% theo giao diện dự án chính.
+        Thiết kế lưới 2 cột song song tiết kiệm 50% chiều cao, tự động xếp 1 cột khi màn hình nhỏ (không bị lặp header). Nhãn phòng ban (.org-tag) màu riêng theo từng khối và Biểu đồ tròn Donut mini (32px, viền 3px) chuẩn 100% theo giao diện dự án chính.
       </div>
     </div>
 
@@ -822,7 +856,7 @@
            4. COMPACT CIRCULAR DONUT PRO (MAXIMIZED HORIZONTAL SPACE)
            ==================================================================== -->
       
-            <!-- ====================================================================
+                  <!-- ====================================================================
            5. CONCEPT 5: UNIFIED FLUID COMPACT LIST (ZERO REPEATED HEADERS!)
            ==================================================================== -->
       <div id="concept-split-col">
@@ -832,8 +866,11 @@
             <div class="fcr-left">
               <div class="fcr-avatar" style="background:#64748b;">?</div>
               <div class="fcr-meta">
-                <span class="fcr-name">미배정 (Chưa gán)</span>
-                <span class="fcr-sub" style="color:var(--overdue-color);">⚠️ 1건 지연 (Trễ hạn)</span>
+                <div class="fcr-name-row">
+                  <span class="fcr-name">미배정 (Chưa gán)</span>
+                  <span class="org-tag org-tag-none">-</span>
+                  <span style="font-size:11px;color:var(--overdue-color);font-weight:600;">⚠️ 1건 지연 (Trễ hạn)</span>
+                </div>
               </div>
             </div>
             <div class="fcr-right">
@@ -854,10 +891,12 @@
 
           <div class="fluid-compact-row">
             <div class="fcr-left">
-              <div class="fcr-avatar" style="background:#0284c7;">U</div>
+              <div class="fcr-avatar" style="background:var(--dept-color-1, #ff8a63);">U</div>
               <div class="fcr-meta">
-                <span class="fcr-name">Uy</span>
-                <span class="fcr-sub">개발팀 (Dev)</span>
+                <div class="fcr-name-row">
+                  <span class="fcr-name">Uy</span>
+                  <span class="org-tag" style="--tag-color: var(--dept-color-1, #ff8a63);">연구개발팀 (R&D)</span>
+                </div>
               </div>
             </div>
             <div class="fcr-right">
@@ -876,10 +915,12 @@
 
           <div class="fluid-compact-row">
             <div class="fcr-left">
-              <div class="fcr-avatar" style="background:#eab308;">u</div>
+              <div class="fcr-avatar" style="background:var(--dept-color-4, #e3c468);">u</div>
               <div class="fcr-meta">
-                <span class="fcr-name">uy (나)</span>
-                <span class="fcr-sub">경영기획팀 (Management)</span>
+                <div class="fcr-name-row">
+                  <span class="fcr-name">uy (나)</span>
+                  <span class="org-tag" style="--tag-color: var(--dept-color-4, #e3c468);">경영기획팀 (Management)</span>
+                </div>
               </div>
             </div>
             <div class="fcr-right">
@@ -900,10 +941,12 @@
 
           <div class="fluid-compact-row">
             <div class="fcr-left">
-              <div class="fcr-avatar" style="background:#c24a2c;">박</div>
+              <div class="fcr-avatar" style="background:var(--dept-color-1, #ff8a63);">박</div>
               <div class="fcr-meta">
-                <span class="fcr-name">박서준</span>
-                <span class="fcr-sub">연구개발팀 (R&D)</span>
+                <div class="fcr-name-row">
+                  <span class="fcr-name">박서준</span>
+                  <span class="org-tag" style="--tag-color: var(--dept-color-1, #ff8a63);">연구개발팀 (R&D)</span>
+                </div>
               </div>
             </div>
             <div class="fcr-right">
@@ -922,10 +965,12 @@
 
           <div class="fluid-compact-row">
             <div class="fcr-left">
-              <div class="fcr-avatar" style="background:#c24a2c;">최</div>
+              <div class="fcr-avatar" style="background:var(--dept-color-1, #ff8a63);">최</div>
               <div class="fcr-meta">
-                <span class="fcr-name">최유진</span>
-                <span class="fcr-sub">연구개발팀 (R&D)</span>
+                <div class="fcr-name-row">
+                  <span class="fcr-name">최유진</span>
+                  <span class="org-tag" style="--tag-color: var(--dept-color-1, #ff8a63);">연구개발팀 (R&D)</span>
+                </div>
               </div>
             </div>
             <div class="fcr-right">
@@ -946,10 +991,12 @@
 
           <div class="fluid-compact-row">
             <div class="fcr-left">
-              <div class="fcr-avatar" style="background:#8b5cf6;">한</div>
+              <div class="fcr-avatar" style="background:var(--dept-color-3, #b6a6f2);">한</div>
               <div class="fcr-meta">
-                <span class="fcr-name">한소영</span>
-                <span class="fcr-sub">인사총무팀 (HR)</span>
+                <div class="fcr-name-row">
+                  <span class="fcr-name">한소영</span>
+                  <span class="org-tag" style="--tag-color: var(--dept-color-3, #b6a6f2);">인사총무팀 (HR)</span>
+                </div>
               </div>
             </div>
             <div class="fcr-right">
@@ -968,10 +1015,12 @@
 
           <div class="fluid-compact-row">
             <div class="fcr-left">
-              <div class="fcr-avatar" style="background:#10b981;">강</div>
+              <div class="fcr-avatar" style="background:var(--dept-color-5, #8fb4d1);">강</div>
               <div class="fcr-meta">
-                <span class="fcr-name">강동원</span>
-                <span class="fcr-sub">영업마케팅팀 (Sales)</span>
+                <div class="fcr-name-row">
+                  <span class="fcr-name">강동원</span>
+                  <span class="org-tag" style="--tag-color: var(--dept-color-5, #8fb4d1);">영업마케팅팀 (Sales)</span>
+                </div>
               </div>
             </div>
             <div class="fcr-right">
@@ -992,10 +1041,12 @@
 
           <div class="fluid-compact-row">
             <div class="fcr-left">
-              <div class="fcr-avatar" style="background:#10b981;">정</div>
+              <div class="fcr-avatar" style="background:var(--dept-color-5, #8fb4d1);">정</div>
               <div class="fcr-meta">
-                <span class="fcr-name">정하나</span>
-                <span class="fcr-sub">영업마케팅팀 (Sales)</span>
+                <div class="fcr-name-row">
+                  <span class="fcr-name">정하나</span>
+                  <span class="org-tag" style="--tag-color: var(--dept-color-5, #8fb4d1);">영업마케팅팀 (Sales)</span>
+                </div>
               </div>
             </div>
             <div class="fcr-right">
@@ -1014,10 +1065,12 @@
 
           <div class="fluid-compact-row">
             <div class="fcr-left">
-              <div class="fcr-avatar" style="background:#c24a2c;">이</div>
+              <div class="fcr-avatar" style="background:var(--dept-color-1, #ff8a63);">이</div>
               <div class="fcr-meta">
-                <span class="fcr-name">이도현</span>
-                <span class="fcr-sub">연구개발팀 (R&D)</span>
+                <div class="fcr-name-row">
+                  <span class="fcr-name">이도현</span>
+                  <span class="org-tag" style="--tag-color: var(--dept-color-1, #ff8a63);">연구개발팀 (R&D)</span>
+                </div>
               </div>
             </div>
             <div class="fcr-right">
@@ -1038,10 +1091,12 @@
 
           <div class="fluid-compact-row">
             <div class="fcr-left">
-              <div class="fcr-avatar" style="background:#c24a2c;">테</div>
+              <div class="fcr-avatar" style="background:var(--dept-color-1, #ff8a63);">테</div>
               <div class="fcr-meta">
-                <span class="fcr-name">테스트</span>
-                <span class="fcr-sub">연구개발팀 (R&D)</span>
+                <div class="fcr-name-row">
+                  <span class="fcr-name">테스트</span>
+                  <span class="org-tag" style="--tag-color: var(--dept-color-1, #ff8a63);">연구개발팀 (R&D)</span>
+                </div>
               </div>
             </div>
             <div class="fcr-right">
@@ -1060,10 +1115,12 @@
 
           <div class="fluid-compact-row">
             <div class="fcr-left">
-              <div class="fcr-avatar" style="background:#c24a2c;">홍</div>
+              <div class="fcr-avatar" style="background:var(--dept-color-1, #ff8a63);">홍</div>
               <div class="fcr-meta">
-                <span class="fcr-name">홍길동</span>
-                <span class="fcr-sub">연구개발팀 (R&D)</span>
+                <div class="fcr-name-row">
+                  <span class="fcr-name">홍길동</span>
+                  <span class="org-tag" style="--tag-color: var(--dept-color-1, #ff8a63);">연구개발팀 (R&D)</span>
+                </div>
               </div>
             </div>
             <div class="fcr-right">
@@ -1082,10 +1139,12 @@
 
           <div class="fluid-compact-row">
             <div class="fcr-left">
-              <div class="fcr-avatar" style="background:#3b82f6;">윤</div>
+              <div class="fcr-avatar" style="background:var(--dept-color-2, #38bdf8);">윤</div>
               <div class="fcr-meta">
-                <span class="fcr-name">윤재호</span>
-                <span class="fcr-sub">품질관리·감사준비팀</span>
+                <div class="fcr-name-row">
+                  <span class="fcr-name">윤재호</span>
+                  <span class="org-tag" style="--tag-color: var(--dept-color-2, #38bdf8);">품질관리·감사준법팀</span>
+                </div>
               </div>
             </div>
             <div class="fcr-right">
@@ -1104,10 +1163,12 @@
 
           <div class="fluid-compact-row">
             <div class="fcr-left">
-              <div class="fcr-avatar" style="background:#eab308;">김</div>
+              <div class="fcr-avatar" style="background:var(--dept-color-4, #e3c468);">김</div>
               <div class="fcr-meta">
-                <span class="fcr-name">김민수</span>
-                <span class="fcr-sub">경영기획팀 (Management)</span>
+                <div class="fcr-name-row">
+                  <span class="fcr-name">김민수</span>
+                  <span class="org-tag" style="--tag-color: var(--dept-color-4, #e3c468);">경영기획팀 (Management)</span>
+                </div>
               </div>
             </div>
             <div class="fcr-right">
@@ -1946,8 +2007,8 @@
   <script>
     const descriptions = {
       'concept-split-col': {
-        title: '⚡ Mẫu 5: Lưới Dòng Co Giãn (Fluid Auto-Fit) — Biểu đồ tròn chuẩn thiết kế dự án chính',
-        desc: 'Thiết kế lưới 2 cột song song tiết kiệm 50% chiều cao, tự động xếp 1 cột khi màn hình nhỏ (không bị lặp header). Biểu đồ tròn Donut mini (32px, viền 3px), % tiến độ màu linh hoạt và nhãn trạng thái (완료 xanh lá, 진행 cam, 대기 xám) chuẩn 100% theo giao diện dự án chính.'
+        title: '⚡ Mẫu 5: Lưới Dòng Co Giãn (Fluid Auto-Fit) — Nhãn phòng ban & Biểu đồ tròn chuẩn Main',
+        desc: 'Thiết kế lưới 2 cột song song tiết kiệm 50% chiều cao, tự động xếp 1 cột khi màn hình nhỏ (không bị lặp header). Nhãn phòng ban (.org-tag) màu riêng theo từng khối và Biểu đồ tròn Donut mini (32px, viền 3px) chuẩn 100% theo giao diện dự án chính.'
       },
       'concept-dense-chips': {
         title: '🚀 Mẫu 6: Ma Trận Mini-Chips Cao Độ (High-Density Chips Matrix) — Tiết kiệm 80% diện tích',
