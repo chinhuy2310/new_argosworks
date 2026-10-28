@@ -148,33 +148,46 @@ async function loadSettings() {
 }
 
 function updateStatusPills(status, stats) {
+  if (status) window.__lastSystemStatus = status;
+  if (stats) window.__lastSystemStats = stats;
+  status = status || window.__lastSystemStatus || {};
+  stats = stats || window.__lastSystemStats;
+
+  var isEn = (window.i18n && window.i18n.getLang && window.i18n.getLang() === "en");
+  var tDisabled = (window.i18n && window.i18n.t) ? window.i18n.t("settings.status_disabled") : (isEn ? "Disabled" : "비활성화");
+  var tOnline = (window.i18n && window.i18n.t) ? window.i18n.t("settings.status_online") : (isEn ? "Online" : "온라인");
+  var tNoKey = (window.i18n && window.i18n.t) ? window.i18n.t("settings.status_no_key") : (isEn ? "No Key Set" : "키 미설정");
+  var tKeyReq = (window.i18n && window.i18n.t) ? window.i18n.t("settings.status_key_required") : (isEn ? "Key Required" : "키 필요");
+  var tKeyUnit = (window.i18n && window.i18n.t) ? window.i18n.t("settings.unit_keys") : (isEn ? "keys" : "개 키");
+  var tVectorUnit = (window.i18n && window.i18n.t) ? window.i18n.t("settings.unit_vectors") : (isEn ? "items" : "건");
+
   // AI Pill & Badge
   var dotAi = document.getElementById("dotAi");
   var valAi = document.getElementById("valAi");
   var badgeAi = document.getElementById("badgeAiStatus");
   if (status.ai) {
     var keyCount = status.ai.key_count || (status.ai.has_key ? 1 : 0);
-    var keySuffix = keyCount > 1 ? " (" + keyCount + "개 키)" : "";
+    var keySuffix = keyCount > 1 ? (" (" + keyCount + " " + tKeyUnit + ")") : "";
     var fbInfo = "";
     if (status.ai.fallback && status.ai.fallback.enabled && status.ai.fallback.has_key) {
-      fbInfo = " [보조: " + (status.ai.fallback.provider || "대체") + "]";
+      fbInfo = isEn ? (" [Fallback: " + (status.ai.fallback.provider || "Fallback") + "]") : (" [보조: " + (status.ai.fallback.provider || "대체") + "]");
     }
 
     if (!status.ai.enabled) {
       if (dotAi) dotAi.className = "status-dot";
-      if (valAi) valAi.textContent = "비활성화";
-      if (badgeAi) { badgeAi.className = "card-badge"; badgeAi.textContent = "비활성화"; }
+      if (valAi) valAi.textContent = tDisabled;
+      if (badgeAi) { badgeAi.className = "card-badge"; badgeAi.textContent = tDisabled; }
     } else if (status.ai.has_key) {
       if (dotAi) dotAi.className = "status-dot active";
-      if (valAi) valAi.textContent = (status.ai.provider || "AI") + " (" + (status.ai.model || "온라인") + ")" + keySuffix + fbInfo;
+      if (valAi) valAi.textContent = (status.ai.provider || "AI") + " (" + (status.ai.model || tOnline) + ")" + keySuffix + fbInfo;
       if (badgeAi) {
         badgeAi.className = "card-badge connected";
-        badgeAi.textContent = keyCount > 1 ? "온라인 (" + keyCount + "개 키)" : "온라인";
+        badgeAi.textContent = keyCount > 1 ? (tOnline + " (" + keyCount + " " + tKeyUnit + ")") : tOnline;
       }
     } else {
       if (dotAi) dotAi.className = "status-dot error";
-      if (valAi) valAi.textContent = "키 미설정";
-      if (badgeAi) { badgeAi.className = "card-badge disconnected"; badgeAi.textContent = "키 필요"; }
+      if (valAi) valAi.textContent = tNoKey;
+      if (badgeAi) { badgeAi.className = "card-badge disconnected"; badgeAi.textContent = tKeyReq; }
     }
   }
 
@@ -184,23 +197,23 @@ function updateStatusPills(status, stats) {
   var badgeVoyage = document.getElementById("badgeVoyageStatus");
   if (status.voyage) {
     var keyCount = status.voyage.key_count || (status.voyage.has_key ? 1 : 0);
-    var keySuffix = keyCount > 1 ? " (" + keyCount + "개 키 로테이션)" : "";
-    var provTitle = (status.voyage.provider || "voyage").toUpperCase();
+    var keySuffix = keyCount > 1 ? (" (" + keyCount + " " + tKeyUnit + ")") : "";
     if (!status.voyage.enabled) {
       if (dotVoyage) dotVoyage.className = "status-dot";
-      if (valVoyage) valVoyage.textContent = "비활성화";
-      if (badgeVoyage) { badgeVoyage.className = "card-badge"; badgeVoyage.textContent = "비활성화"; }
+      if (valVoyage) valVoyage.textContent = tDisabled;
+      if (badgeVoyage) { badgeVoyage.className = "card-badge"; badgeVoyage.textContent = tDisabled; }
     } else if (status.voyage.has_key) {
       if (dotVoyage) dotVoyage.className = "status-dot active";
-      if (valVoyage) valVoyage.textContent = "AI 벡터 임베딩 (" + (status.voyage.model || "온라인") + ")" + keySuffix;
+      var embTitle = isEn ? "AI Vector Embedding" : "AI 벡터 임베딩";
+      if (valVoyage) valVoyage.textContent = embTitle + " (" + (status.voyage.model || tOnline) + ")" + keySuffix;
       if (badgeVoyage) {
         badgeVoyage.className = "card-badge connected";
-        badgeVoyage.textContent = keyCount > 1 ? "연결됨 (" + keyCount + "개 키)" : "연결됨";
+        badgeVoyage.textContent = keyCount > 1 ? (tOnline + " (" + keyCount + " " + tKeyUnit + ")") : tOnline;
       }
     } else {
       if (dotVoyage) dotVoyage.className = "status-dot warning";
-      if (valVoyage) valVoyage.textContent = "키 미설정 (키워드 검색 대체)";
-      if (badgeVoyage) { badgeVoyage.className = "card-badge disconnected"; badgeVoyage.textContent = "키 필요"; }
+      if (valVoyage) valVoyage.textContent = isEn ? "No Key Set (Keyword Search Fallback)" : "키 미설정 (키워드 검색 대체)";
+      if (badgeVoyage) { badgeVoyage.className = "card-badge disconnected"; badgeVoyage.textContent = tKeyReq; }
     }
   }
 
@@ -212,18 +225,18 @@ function updateStatusPills(status, stats) {
   if (status.jira) {
     if (!status.jira.enabled) {
       if (dotJira) dotJira.className = "status-dot";
-      if (valJira) valJira.textContent = "비활성화";
-      if (badgeJira) { badgeJira.className = "card-badge"; badgeJira.textContent = "비활성화"; }
+      if (valJira) valJira.textContent = tDisabled;
+      if (badgeJira) { badgeJira.className = "card-badge"; badgeJira.textContent = tDisabled; }
       if (pillJira) pillJira.style.display = "none";
     } else if (status.jira.has_key) {
       if (dotJira) dotJira.className = "status-dot active";
-      if (valJira) valJira.textContent = "Cloud REST API 연동";
-      if (badgeJira) { badgeJira.className = "card-badge connected"; badgeJira.textContent = "연동 준비 완료"; }
+      if (valJira) valJira.textContent = isEn ? "Cloud REST API Linked" : "Cloud REST API 연동";
+      if (badgeJira) { badgeJira.className = "card-badge connected"; badgeJira.textContent = isEn ? "Connected" : "연동 준비 완료"; }
       if (pillJira) pillJira.style.display = "";
     } else {
       if (dotJira) dotJira.className = "status-dot error";
-      if (valJira) valJira.textContent = "토큰/이메일 필요";
-      if (badgeJira) { badgeJira.className = "card-badge disconnected"; badgeJira.textContent = "인증 필요"; }
+      if (valJira) valJira.textContent = isEn ? "Token/Email Required" : "토큰/이메일 필요";
+      if (badgeJira) { badgeJira.className = "card-badge disconnected"; badgeJira.textContent = isEn ? "Auth Required" : "인증 필요"; }
       if (pillJira) pillJira.style.display = "";
     }
   } else if (pillJira) {
@@ -235,10 +248,10 @@ function updateStatusPills(status, stats) {
   var valVectors = document.getElementById("valVectors");
   var voyageVectorCountBadge = document.getElementById("voyageVectorCountBadge");
   if (stats && typeof stats.total_vectors !== "undefined") {
-    var countStr = (stats.total_vectors || 0).toLocaleString() + "건";
+    var countStr = (stats.total_vectors || 0).toLocaleString() + (isEn ? " items" : "건");
     if (dotVectors) dotVectors.className = (stats.total_vectors > 0) ? "status-dot active" : "status-dot";
     if (valVectors) valVectors.textContent = countStr;
-    if (voyageVectorCountBadge) voyageVectorCountBadge.textContent = "현재 " + countStr + " 색인됨";
+    if (voyageVectorCountBadge) voyageVectorCountBadge.textContent = isEn ? ("Currently " + countStr + " indexed") : ("현재 " + countStr + " 색인됨");
   }
   if (typeof updateSettingsSubtabsScrollArrows === "function") {
     setTimeout(updateSettingsSubtabsScrollArrows, 80);
@@ -2779,3 +2792,9 @@ if (document.readyState === "loading") {
 window.loadLicenseStatus = loadLicenseStatus;
 window.activateLicense = activateLicense;
 window.initLicenseUI = initLicenseUI;
+
+window.addEventListener("langchange", function(){
+  if(typeof updateStatusPills === "function" && window.__lastSystemStatus) {
+    updateStatusPills(window.__lastSystemStatus, window.__lastSystemStats);
+  }
+});

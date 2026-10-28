@@ -681,6 +681,24 @@
             if(typeof showToast === "function" && data.title){
               showToast("🔔 " + data.title);
             }
+            // Tức thì làm mới tab Lịch nếu thông báo liên quan đến phê duyệt, tạo hoặc đổi lịch
+            var nTag = (data.tag || "").toLowerCase();
+            var nType = (data.notif_type || data.type || "").toLowerCase();
+            var nTitle = (data.title || "").toLowerCase();
+            if(nTag.indexOf("결재") !== -1 || nTag.indexOf("일정") !== -1 || nTag.indexOf("휴가") !== -1 ||
+               nType.indexOf("schedule") !== -1 || nTitle.indexOf("일정") !== -1 || nTitle.indexOf("휴가") !== -1){
+              if(typeof window.loadSchedule === "function"){
+                window.loadSchedule(true);
+              }
+            }
+          }
+        } catch(err){}
+      });
+
+      evtSource.addEventListener("schedule_changed", function(e){
+        try {
+          if(typeof window.loadSchedule === "function"){
+            window.loadSchedule(true);
           }
         } catch(err){}
       });

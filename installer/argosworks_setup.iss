@@ -7,7 +7,6 @@
 #define MyAppName "ARGOS WORKS Server"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "ARGOS WORKS"
-#define MyAppURL "https://github.com/chinhuy2310/new_argosworks"
 #define MyAppExeName "ArgosWorks.exe"
 
 [Setup]
@@ -16,9 +15,6 @@ AppId={{E6F7A8B9-1C2D-4E5F-8A9B-0C1D2E3F4A5B}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-AppPublisherURL={#MyAppURL}
-AppSupportURL={#MyAppURL}
-AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\ArgosWorks
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes

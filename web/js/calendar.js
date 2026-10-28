@@ -1,4 +1,27 @@
 // calendar.js
+// ── Cross-Tab Realtime Synchronization Channel ──
+var schedSyncChannel = null;
+if (typeof BroadcastChannel !== "undefined") {
+  try {
+    schedSyncChannel = new BroadcastChannel("argos_schedule_sync");
+    schedSyncChannel.onmessage = function(msg) {
+      if (msg && msg.data && msg.data.type === "schedule_updated") {
+        if (typeof loadSchedule === "function") {
+          loadSchedule(true);
+        }
+      }
+    };
+  } catch(e) {}
+}
+
+function notifyScheduleChanged() {
+  if (schedSyncChannel) {
+    try {
+      schedSyncChannel.postMessage({ type: "schedule_updated", timestamp: Date.now() });
+    } catch(e) {}
+  }
+}
+
 var SCHED_TYPE_COLORS = {
   "업무": "#2563eb", "연차": "#3e6fa5", "반차": "#2c8f8a", "병가": "#a6383a",
   "출장": "#6e5cb6", "재택": "#3e8e5a", "회의": "#9c7a22", "기타": "#71807c"
@@ -54,6 +77,7 @@ var schedWeekGrid = document.getElementById("schedWeekGrid");
 var schedWeekHeaderRow = document.getElementById("schedWeekHeaderRow");
 var schedAgendaList = document.getElementById("schedAgendaList");
 var btnSchedOpenCreateModal = document.getElementById("btnSchedOpenCreateModal");
+var btnSchedOpenCreateModalSide = document.getElementById("btnSchedOpenCreateModalSide");
 var btnToggleMembersSidebar = document.getElementById("btnToggleMembersSidebar");
 var schedMembersSidebar = document.getElementById("schedMembersSidebar");
 var btnToggleOngoingJira = document.getElementById("btnToggleOngoingJira");
@@ -79,11 +103,83 @@ var schedEventModalCard = document.getElementById("schedEventModalCard");
 var schedModalTitle = document.getElementById("schedModalTitle");
 var schedModalCloseBtn = document.getElementById("schedModalCloseBtn");
 
-// Left Sidebar (팀원 목록)
+// Left Sidebar (DaouOffice-style Hierarchical Calendar Filters)
 var schedMembersSide = document.querySelector(".schedule-members-side");
 var schedMembersList = document.getElementById("schedMembersList");
 var schedMembersSearch = document.getElementById("schedMembersSearch");
 var schedMembersToggleAll = document.getElementById("schedMembersToggleAll");
+
+// Filter Groups & Controls
+var schedCompanyMasterCb = document.getElementById("schedCompanyMasterCb");
+var schedCompanyTypeList = document.getElementById("schedCompanyTypeList");
+var schedCompanyCount = document.getElementById("schedCompanyCount");
+
+var schedTasksMasterCb = document.getElementById("schedTasksMasterCb");
+var schedLocalCardsCb = document.getElementById("schedLocalCardsCb");
+var schedJiraCardsCb = document.getElementById("schedJiraCardsCb");
+var schedTasksCount = document.getElementById("schedTasksCount");
+var schedLocalCardsCount = document.getElementById("schedLocalCardsCount");
+var schedJiraCardsCount = document.getElementById("schedJiraCardsCount");
+var schedJiraItemWrap = document.getElementById("schedJiraItemWrap");
+
+var schedQuickOnlyMe = document.getElementById("schedQuickOnlyMe");
+var schedQuickAll = document.getElementById("schedQuickAll");
+
+var SCHED_COMPANY_TYPES = {
+  "연차": { name: "연차", color: "#3e6fa5", label: "연차 휴가", i18nKey: "sched.type_annual" },
+  "반차": { name: "반차", color: "#2c8f8a", label: "반차 (오전/오후)", i18nKey: "sched.type_half" },
+  "병가": { name: "병가", color: "#a6383a", label: "병가", i18nKey: "sched.type_sick" },
+  "출장": { name: "출장", color: "#6e5cb6", label: "출장", i18nKey: "sched.type_trip" },
+  "재택": { name: "재택", color: "#3e8e5a", label: "재택근무", i18nKey: "sched.type_remote" },
+  "회의": { name: "회의", color: "#9c7a22", label: "회의", i18nKey: "sched.type_meeting" },
+  "기타": { name: "기타", color: "#71807c", label: "기타/행사", i18nKey: "sched.type_other" }
+};
+
+var EN_MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+var EN_MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function isCurrentLangEn(){
+  return (window.i18n && window.i18n.getLang && window.i18n.getLang() === "en");
+}
+
+function normalizeCompanyType(rawType){
+  var t = (rawType || "").trim();
+  if(!t) return "기타";
+  if(t.indexOf("연차") !== -1 || t.indexOf("휴가") !== -1 || t.indexOf("경조사") !== -1) return "연차";
+  if(t.indexOf("반차") !== -1) return "반차";
+  if(t.indexOf("병가") !== -1) return "병가";
+  if(t.indexOf("출장") !== -1) return "출장";
+  if(t.indexOf("재택") !== -1) return "재택";
+  if(t.indexOf("회의") !== -1) return "회의";
+  if(t.indexOf("업무") !== -1) return "업무";
+  return SCHED_COMPANY_TYPES[t] ? t : "기타";
+}
+
+function getCompanyTypeName(t){
+  var norm = normalizeCompanyType(t);
+  var meta = SCHED_COMPANY_TYPES[norm] || SCHED_COMPANY_TYPES[t];
+  if(!meta) return t;
+  if(meta.i18nKey && window.i18n && window.i18n.t){
+    return window.i18n.t(meta.i18nKey);
+  }
+  return meta.name;
+}
+
+var isCompanyGroupEnabled = localStorage.getItem("jarvis_cal_company_enabled") !== "false";
+var savedCompanyTypes = null;
+try { savedCompanyTypes = JSON.parse(localStorage.getItem("jarvis_cal_company_types")); } catch(e){}
+var selectedCompanyTypes = new Set(
+  Array.isArray(savedCompanyTypes) && savedCompanyTypes.length > 0
+    ? savedCompanyTypes
+    : Object.keys(SCHED_COMPANY_TYPES)
+);
+
+var isTasksGroupEnabled = localStorage.getItem("jarvis_cal_tasks_enabled") !== "false";
+var isLocalCardsEnabled = localStorage.getItem("jarvis_cal_local_cards_enabled") !== "false";
+var isJiraCardsEnabled = localStorage.getItem("jarvis_cal_jira_cards_enabled") !== "false";
+
+var soloMemberKey = null;
+var prevSelectedMemberKeys = null;
 
 // Side / Modal form elements
 var schedForm = document.getElementById("schedForm");
@@ -118,13 +214,13 @@ var myUserKey = "";
 // ── View Mode: 'month' | 'week' | 'agenda' ──
 var currentViewMode = localStorage.getItem("jarvis_cal_view_mode") || "month";
 
-// ── Weekend Display Preference (Choivis-style: Default hidden, toggleable) ──
-var isWeekendVisible = localStorage.getItem("jarvis_cal_show_weekend") === "true";
+// ── Weekend Display Preference (DaouOffice-style: Default visible 7 days, toggleable) ──
+var isWeekendVisible = localStorage.getItem("jarvis_cal_show_weekend_v2") !== "false";
 if(schedShowWeekend){
   schedShowWeekend.checked = isWeekendVisible;
   schedShowWeekend.addEventListener("change", function(e){
     isWeekendVisible = e.target.checked;
-    localStorage.setItem("jarvis_cal_show_weekend", isWeekendVisible ? "true" : "false");
+    localStorage.setItem("jarvis_cal_show_weekend_v2", isWeekendVisible ? "true" : "false");
     refreshCurrentView();
   });
 }
@@ -146,7 +242,27 @@ if(schedShowJira){
   });
 }
 
-// ── Sidebar Collapsed Preference (Left Member Sidebar) ──
+// ── Sidebar Collapsed Preference (Left Member Sidebar) & LNB Menu Coordination ──
+function syncScheduleSidebarWithMainMenu(isSchedSidebarOpen){
+  var viewSched = document.getElementById("viewSchedule");
+  if(viewSched && viewSched.hidden) return; // Only apply when Schedule view is visible
+
+  if(isSchedSidebarOpen){
+    // When Schedule filter card is open, collapse main LNB to 56px icon rail to widen workspace
+    if(!document.body.classList.contains("sidebar-collapsed")){
+      document.body.setAttribute("data-auto-collapsed-sched", "1");
+      document.body.classList.add("sidebar-collapsed");
+    }
+  } else {
+    // When Schedule filter card is closed, restore main LNB if it was auto-collapsed
+    if(document.body.getAttribute("data-auto-collapsed-sched") === "1"){
+      document.body.removeAttribute("data-auto-collapsed-sched");
+      document.body.classList.remove("sidebar-collapsed");
+    }
+  }
+}
+window.syncScheduleSidebarWithMainMenu = syncScheduleSidebarWithMainMenu;
+
 var isSidebarCollapsed = localStorage.getItem("jarvis_cal_sidebar_collapsed") === "true";
 if(schedMembersSidebar && isSidebarCollapsed){
   schedMembersSidebar.classList.add("is-collapsed");
@@ -156,6 +272,8 @@ if(btnToggleMembersSidebar){
     if(!schedMembersSidebar) return;
     var collapsed = schedMembersSidebar.classList.toggle("is-collapsed");
     localStorage.setItem("jarvis_cal_sidebar_collapsed", collapsed ? "true" : "false");
+    // Action of opening -> collapse main menu; action of closing -> restore main menu
+    syncScheduleSidebarWithMainMenu(!collapsed);
   });
 }
 var schedMembersCloseBtn = document.getElementById("schedMembersCloseBtn");
@@ -164,18 +282,20 @@ if(schedMembersCloseBtn){
     if(!schedMembersSidebar) return;
     schedMembersSidebar.classList.add("is-collapsed");
     localStorage.setItem("jarvis_cal_sidebar_collapsed", "true");
+    syncScheduleSidebarWithMainMenu(false);
   });
 }
 document.addEventListener("click", function(e){
   if(window.innerWidth <= 992 && schedMembersSidebar && !schedMembersSidebar.classList.contains("is-collapsed")){
     if(!schedMembersSidebar.contains(e.target) && (!btnToggleMembersSidebar || !btnToggleMembersSidebar.contains(e.target))){
       schedMembersSidebar.classList.add("is-collapsed");
+      syncScheduleSidebarWithMainMenu(false);
     }
   }
 });
 
 // ── Right Task Panel Preference & Event Handlers ──
-var isTaskPanelCollapsed = localStorage.getItem("jarvis_cal_tasks_collapsed") === "true";
+var isTaskPanelCollapsed = localStorage.getItem("jarvis_cal_tasks_collapsed_v2") !== "false";
 if(schedTaskDrawer){
   if(isTaskPanelCollapsed){
     schedTaskDrawer.classList.add("is-collapsed");
@@ -190,7 +310,7 @@ if(btnToggleTaskDrawer){
     if(!schedTaskDrawer) return;
     var collapsed = schedTaskDrawer.classList.toggle("is-collapsed");
     btnToggleTaskDrawer.classList.toggle("active", !collapsed);
-    localStorage.setItem("jarvis_cal_tasks_collapsed", collapsed ? "true" : "false");
+    localStorage.setItem("jarvis_cal_tasks_collapsed_v2", collapsed ? "true" : "false");
   });
 }
 if(btnSchedTaskClose){
@@ -198,7 +318,7 @@ if(btnSchedTaskClose){
     if(!schedTaskDrawer) return;
     schedTaskDrawer.classList.add("is-collapsed");
     if(btnToggleTaskDrawer) btnToggleTaskDrawer.classList.remove("active");
-    localStorage.setItem("jarvis_cal_tasks_collapsed", "true");
+    localStorage.setItem("jarvis_cal_tasks_collapsed_v2", "true");
   });
 }
 document.addEventListener("click", function(e){
@@ -253,7 +373,7 @@ function apiSchedulePost(path, body){
   });
 }
 
-function loadSchedule(){
+function loadSchedule(silent){
   if(!loggedInUser){
     schedEvents = [];
     schedJiraOngoingItems = [];
@@ -275,22 +395,41 @@ function loadSchedule(){
       allSchedMembers = res.members;
 
       // Initialize selectedMemberKeys: load from localStorage if exists, else select all
-      var saved = null;
-      try { saved = JSON.parse(localStorage.getItem("jarvis_cal_selected_members")); } catch(e){}
+      // Khôi phục đồng bộ toàn bộ bộ lọc đã lưu (Company, Tasks, Members)
+      var savedComp = localStorage.getItem("jarvis_cal_company_enabled");
+      if(savedComp !== null) isCompanyGroupEnabled = (savedComp !== "false");
+      var savedCompTypes = null;
+      try { savedCompTypes = JSON.parse(localStorage.getItem("jarvis_cal_company_types")); } catch(e){}
+      if(Array.isArray(savedCompTypes) && savedCompTypes.length > 0){
+        selectedCompanyTypes = new Set(savedCompTypes);
+      }
+      var savedTasks = localStorage.getItem("jarvis_cal_tasks_enabled");
+      if(savedTasks !== null) isTasksGroupEnabled = (savedTasks !== "false");
+      var savedLoc = localStorage.getItem("jarvis_cal_local_cards_enabled");
+      if(savedLoc !== null) isLocalCardsEnabled = (savedLoc !== "false");
+      var savedJira = localStorage.getItem("jarvis_cal_jira_cards_enabled");
+      if(savedJira !== null) isJiraCardsEnabled = (savedJira !== "false");
+
       var validMemberKeys = new Set(allSchedMembers.map(function(m){ return m.key; }));
-      if(Array.isArray(saved) && saved.length > 0){
-        var validSaved = saved.filter(function(k){ return validMemberKeys.has(k); });
-        if(validSaved.length > 0){
-          selectedMemberKeys = new Set(validSaved);
-          if(saved.length >= allSchedMembers.length - 1){
-            allSchedMembers.forEach(function(m){ selectedMemberKeys.add(m.key); });
-          }
-          if(myUserKey) selectedMemberKeys.add(myUserKey);
+      if(silent && selectedMemberKeys && selectedMemberKeys.size > 0){
+        var retained = new Set();
+        selectedMemberKeys.forEach(function(k){
+          if(validMemberKeys.has(k)) retained.add(k);
+        });
+        if(retained.size > 0) selectedMemberKeys = retained;
+      } else {
+        var saved = null;
+        try { saved = JSON.parse(localStorage.getItem("jarvis_cal_selected_members")); } catch(e){}
+        var quickMode = localStorage.getItem("jarvis_cal_quick_mode") || "all";
+
+        if(quickMode === "only_me" && myUserKey){
+          selectedMemberKeys = new Set([myUserKey]);
+        } else if(quickMode === "custom" && Array.isArray(saved) && saved.length > 0){
+          var validSaved = saved.filter(function(k){ return validMemberKeys.has(k); });
+          selectedMemberKeys = (validSaved.length > 0) ? new Set(validSaved) : new Set(allSchedMembers.map(function(m){ return m.key; }));
         } else {
           selectedMemberKeys = new Set(allSchedMembers.map(function(m){ return m.key; }));
         }
-      } else {
-        selectedMemberKeys = new Set(allSchedMembers.map(function(m){ return m.key; }));
       }
     }
 
@@ -298,7 +437,10 @@ function loadSchedule(){
     if (btnSchedOpenCreateModal) {
       btnSchedOpenCreateModal.style.display = isViewer ? "none" : "";
     }
-    renderMembersList();
+    if (btnSchedOpenCreateModalSide) {
+      btnSchedOpenCreateModalSide.style.display = isViewer ? "none" : "";
+    }
+    updateAllCalendarFilters();
     refreshCurrentView();
     renderLocalTaskDrawer();
     populateCardSelectOptions();
@@ -335,18 +477,20 @@ function renderLocalTaskDrawer(){
   var totalCount = unscheduled.length;
   if(schedTaskCount) schedTaskCount.textContent = totalCount;
 
+  var isEn = isCurrentLangEn();
   if(!schedTaskCardsList) return;
   if(!loggedInUser){
-    schedTaskCardsList.innerHTML = '<div class="empty-state" style="padding:16px 8px;font-size:12px;">로그인 후 업무 카드가 표시됩니다.</div>';
-    if(schedTaskBadgeCount) schedTaskBadgeCount.textContent = "0건";
+    schedTaskCardsList.innerHTML = '<div class="empty-state" style="padding:16px 8px;font-size:12px;">' +
+      (isEn ? 'Log in to view task cards.' : '로그인 후 업무 카드가 표시됩니다.') + '</div>';
+    if(schedTaskBadgeCount) schedTaskBadgeCount.textContent = isEn ? "0 items" : "0건";
     return;
   }
   if(!totalCount){
     schedTaskCardsList.innerHTML = '<div class="empty-state" style="padding:28px 12px;font-size:12.5px;text-align:center;color:var(--ink-faint);line-height:1.6;">' +
-      '<strong style="color:var(--ink);display:block;margin-bottom:2px;">미배정 업무가 없습니다.</strong>' +
-      '<span style="font-size:11.5px;">모든 업무 카드가 달력에 배정되었습니다.</span>' +
+      '<strong style="color:var(--ink);display:block;margin-bottom:2px;">' + (isEn ? 'No unassigned tasks.' : '미배정 업무가 없습니다.') + '</strong>' +
+      '<span style="font-size:11.5px;">' + (isEn ? 'All task cards are scheduled on the calendar.' : '모든 업무 카드가 달력에 배정되었습니다.') + '</span>' +
     '</div>';
-    if(schedTaskBadgeCount) schedTaskBadgeCount.textContent = "0건";
+    if(schedTaskBadgeCount) schedTaskBadgeCount.textContent = isEn ? "0 items" : "0건";
     return;
   }
 
@@ -363,10 +507,11 @@ function renderLocalTaskDrawer(){
     return true;
   });
 
-  if(schedTaskBadgeCount) schedTaskBadgeCount.textContent = filtered.length + "건";
+  if(schedTaskBadgeCount) schedTaskBadgeCount.textContent = filtered.length + (isEn ? " items" : "건");
 
   if(!filtered.length){
-    schedTaskCardsList.innerHTML = '<div class="empty-state" style="padding:16px 8px;font-size:12px;">검색 조건에 맞는 미배정 업무가 없습니다.</div>';
+    schedTaskCardsList.innerHTML = '<div class="empty-state" style="padding:16px 8px;font-size:12px;">' +
+      (isEn ? 'No unassigned tasks match your search.' : '검색 조건에 맞는 미배정 업무가 없습니다.') + '</div>';
     return;
   }
 
@@ -398,7 +543,7 @@ function renderLocalTaskDrawer(){
       ) : '') +
       '<div class="stc-footer">' +
         '<span class="stc-user">' + (submitter ? '👤 ' + submitter : '') + '</span>' +
-        '<button type="button" class="stc-assign-btn" data-task-id="' + code + '" data-task-title="' + title + '" data-task-date="' + escapeHtml(planDateText) + '" title="' + (planDateText ? '기존 계획일정으로 달력에 배치 또는 수정' : '날짜 직접 지정') + '">배정</button>' +
+        '<button type="button" class="stc-assign-btn" data-task-id="' + code + '" data-task-title="' + title + '" data-task-date="' + escapeHtml(planDateText) + '" title="' + (planDateText ? (isEn ? 'Place or edit with planned date' : '기존 계획일정으로 달력에 배치 또는 수정') : (isEn ? 'Assign date' : '날짜 직접 지정')) + '">' + (isEn ? 'Assign' : '배정') + '</button>' +
       '</div>' +
     '</div>';
   }).join("");
@@ -546,51 +691,168 @@ if(btnToggleOngoingJira){
   });
 }
 
-// ── Filter events by selected members & date ──
-function eventsOnDate(dateStr){
-  return schedEvents.filter(function(ev){
-    // Filter out Jira events if toggled off or Jira disabled
-    if((!isCalendarJiraActive() || !isJiraVisible) && ev.source === "jira"){
+// ── Event Classification & Visibility Logic (DaouOffice Grouping) ──
+function isTaskCardEvent(ev){
+  if(!ev) return false;
+  if(ev.source === "local" || ev.source === "jira") return true;
+  if(ev.cardCode || ev.recordId) return true;
+  if(ev.type === "업무") return true;
+  return false;
+}
+
+function isCompanyEvent(ev){
+  if(!ev) return false;
+  if(isTaskCardEvent(ev)) return false;
+  return true;
+}
+
+function isEventVisible(ev){
+  if(!ev) return false;
+
+  // 1. Task Card Events (업무 카드 및 Jira)
+  if(isTaskCardEvent(ev)){
+    if(!isTasksGroupEnabled) return false;
+
+    if(ev.source === "jira"){
+      if(!isJiraCardsEnabled) return false;
+    } else {
+      if(!isLocalCardsEnabled) return false;
+    }
+  }
+
+  // 2. Company & Attendance Events (연차, 반차, 병가, 출장, 재택, 회의, 기타)
+  if(isCompanyEvent(ev)){
+    if(!isCompanyGroupEnabled) return false;
+    var rawT = ev.type || "기타";
+    var t = normalizeCompanyType(rawT);
+    if(!selectedCompanyTypes.has(t)) return false;
+  }
+
+  // 3. Rejected events: Chiển thị cho chính người tạo và Manager/Admin, ẩn với đồng nghiệp khác
+  if(ev.approval_status === "rejected"){
+    var isOwner = (myUserKey && ev.ownerKey === myUserKey) || (loggedInUser && ev.ownerName === loggedInUser.name);
+    var isMgr = loggedInUser && (loggedInUser.isAdmin || loggedInUser.is_admin || loggedInUser.role === "admin" || loggedInUser.role === "manager");
+    if(!isOwner && !isMgr) return false;
+  }
+
+  // 4. Member Filter (팀원 선택 필터)
+  if(allSchedMembers.length > 0){
+    // Thẻ 업무 카드 chưa phân công người (미지정/미배정) luôn hiển thị nếu nhóm 업무 카드 đang bật
+    var isUnassignedTask = isTaskCardEvent(ev) && (!ev.ownerName || ev.ownerName === "미지정" || ev.ownerName === "미배정");
+    if(isUnassignedTask){
+      return isLocalCardsEnabled && isTasksGroupEnabled;
+    }
+
+    // Nếu người dùng chọn TẤT CẢ thành viên: hiển thị toàn bộ
+    if(selectedMemberKeys.size >= allSchedMembers.length){
+      return true;
+    }
+
+    // Nếu người dùng bỏ chọn tất cả thành viên: ẩn các lịch có người
+    if(selectedMemberKeys.size === 0){
       return false;
     }
-    // Check if owner or any participant is selected in member list
-    if(selectedMemberKeys.size > 0){
-      var isOwnerSelected = false;
-      if(ev.ownerKey && selectedMemberKeys.has(ev.ownerKey)){
-        isOwnerSelected = true;
-      } else if(ev.ownerName){
-        var oName = ev.ownerName.trim().toLowerCase();
-        isOwnerSelected = Array.from(selectedMemberKeys).some(function(k){
-          return k.toLowerCase().indexOf(oName) !== -1;
-        });
-      }
 
-      var isParticipantSelected = false;
-      if(ev.participants && Array.isArray(ev.participants)){
-        isParticipantSelected = ev.participants.some(function(p){
-          if(p.key && selectedMemberKeys.has(p.key)) return true;
-          if(p.name){
-            var pName = p.name.trim().toLowerCase();
-            return Array.from(selectedMemberKeys).some(function(k){
-              return k.toLowerCase().indexOf(pName) !== -1;
-            });
-          }
-          return false;
-        });
-      }
-      if(!isOwnerSelected && !isParticipantSelected){
-        return false;
-      }
+    var ownerKey = ev.ownerKey || (ev.ownerName ? (ev.ownerName + "|" + (ev.ownerOrg || "")) : "");
+    var oName = (ev.ownerName || "").trim().toLowerCase();
+
+    var isOwnerSelected = false;
+    if(ownerKey && selectedMemberKeys.has(ownerKey)){
+      isOwnerSelected = true;
+    } else if(oName){
+      isOwnerSelected = Array.from(selectedMemberKeys).some(function(k){
+        var kName = k.split("|")[0].trim().toLowerCase();
+        return kName === oName;
+      });
     }
+
+    var isParticipantSelected = false;
+    if(Array.isArray(ev.participants) && ev.participants.length > 0){
+      isParticipantSelected = ev.participants.some(function(p){
+        if(p.key && selectedMemberKeys.has(p.key)) return true;
+        if(p.name){
+          var pName = p.name.trim().toLowerCase();
+          return Array.from(selectedMemberKeys).some(function(k){
+            var kName = k.split("|")[0].trim().toLowerCase();
+            return kName === pName;
+          });
+        }
+        return false;
+      });
+    }
+
+    var hasPerson = !!(ownerKey || oName || (Array.isArray(ev.participants) && ev.participants.length > 0));
+    if(hasPerson && !isOwnerSelected && !isParticipantSelected){
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// ── Filter events on specific date ──
+function eventsOnDate(dateStr){
+  return schedEvents.filter(function(ev){
+    if(!isEventVisible(ev)) return false;
     return ev.startDate <= dateStr && dateStr <= ev.endDate;
   });
 }
 
-// ── Render Team Members Sidebar List (좌측 팀원 목록) ──
+// ── Render 1. Company & Attendance Filter Group ──
+function renderCompanyTypeList(){
+  var ymPrefix = schedViewYear + "-" + pad2(schedViewMonth);
+  var monthStart = ymPrefix + "-01";
+  var lastDayNum = new Date(schedViewYear, schedViewMonth, 0).getDate();
+  var monthEnd = ymPrefix + "-" + pad2(lastDayNum);
+
+  var totalCompanyCount = 0;
+  schedEvents.forEach(function(ev){
+    if(!isCompanyEvent(ev)) return;
+    var s = ev.startDate || "";
+    var e = ev.endDate || s;
+    if(s && e && s <= monthEnd && e >= monthStart){
+      totalCompanyCount++;
+    }
+  });
+
+  if(schedCompanyCount) schedCompanyCount.textContent = totalCompanyCount;
+  if(schedCompanyMasterCb){
+    schedCompanyMasterCb.checked = isCompanyGroupEnabled;
+    schedCompanyMasterCb.indeterminate = false;
+  }
+}
+
+// ── Render 2. Task Cards & Jira Filter Group ──
+function renderTaskFilterGroup(){
+  var ymPrefix = schedViewYear + "-" + pad2(schedViewMonth);
+  var monthStart = ymPrefix + "-01";
+  var lastDayNum = new Date(schedViewYear, schedViewMonth, 0).getDate();
+  var monthEnd = ymPrefix + "-" + pad2(lastDayNum);
+
+  var totalTasks = 0;
+  schedEvents.forEach(function(ev){
+    if(!isTaskCardEvent(ev)) return;
+    var s = ev.startDate || "";
+    var e = ev.endDate || s;
+    if(s && e && s <= monthEnd && e >= monthStart){
+      totalTasks++;
+    }
+  });
+
+  if(schedTasksCount) schedTasksCount.textContent = totalTasks;
+  if(schedTasksMasterCb){
+    schedTasksMasterCb.checked = isTasksGroupEnabled;
+    schedTasksMasterCb.indeterminate = false;
+  }
+}
+
+// ── Render 3. Team Members Sidebar List (좌측 팀원 목록) ──
 function renderMembersList(){
   if(!schedMembersList) return;
-  if(!loggedInUser || !allSchedMembers.length){
-    schedMembersList.innerHTML = '<div class="empty-state" style="padding:16px 4px;font-size:12px;">로그인 후 팀원 목록이 표시됩니다.</div>';
+  if(!loggedInUser || !allSchedMembers || !allSchedMembers.length){
+    schedMembersList.innerHTML = '<div class="empty-state" style="padding:16px 4px;font-size:12px;">' +
+      (window.i18n && window.i18n.t ? window.i18n.t("sched.login_required") : "로그인 후 팀원 목록이 표시됩니다.") +
+      '</div>';
     return;
   }
 
@@ -603,11 +865,10 @@ function renderMembersList(){
   var monthEnd = ymPrefix + "-" + pad2(lastDayNum);
 
   var counts = {};
-  schedEvents.forEach(function(ev){
+  (schedEvents || []).forEach(function(ev){
     if((!isCalendarJiraActive() || !isJiraVisible) && ev.source === "jira") return;
     var s = ev.startDate || "";
     var e = ev.endDate || s;
-    // Check if event overlaps this month: (s <= monthEnd && e >= monthStart)
     if(s && e && s <= monthEnd && e >= monthStart){
       var keysToCredit = new Set();
       if(ev.ownerKey) keysToCredit.add(ev.ownerKey);
@@ -627,43 +888,177 @@ function renderMembersList(){
 
   allSchedMembers.forEach(function(m){
     var nameMatch = m.name.toLowerCase().indexOf(filterText) !== -1;
-    var orgMatch = orgLabel(m.org).toLowerCase().indexOf(filterText) !== -1;
+    var orgName = (typeof orgLabel === "function") ? orgLabel(m.org) : (m.org || "");
+    var orgMatch = orgName.toLowerCase().indexOf(filterText) !== -1;
     if(filterText && !nameMatch && !orgMatch) return;
 
     renderedCount++;
     var isChecked = selectedMemberKeys.has(m.key);
     var isMe = m.key === myUserKey;
-    var initial = m.name.charAt(0);
+    var isSolo = soloMemberKey === m.key;
+    var initial = m.name ? m.name.charAt(0) : "?";
     var color = memberColor(m.key);
     var count = counts[m.key] || 0;
 
-    html += '<label class="sched-member-item' + (isMe ? ' is-me' : '') + '" data-key="' + escapeHtml(m.key) + '">';
+    html += '<label class="sched-member-item' + (isMe ? ' is-me' : '') + (isSolo ? ' is-solo' : '') + '" data-key="' + escapeHtml(m.key) + '">';
     html += '<input type="checkbox" class="sched-member-cb" data-key="' + escapeHtml(m.key) + '" ' + (isChecked ? 'checked' : '') + '>';
-    html += '<div class="sched-member-avatar" style="background:' + color + '">' + escapeHtml(initial) + '</div>';
-    html += '<div class="sched-member-info">';
-    html += '<span class="sched-member-name">' + escapeHtml(m.name) + (isMe ? ' <span style="font-size:11px;color:var(--accent-2);font-weight:700;">(나)</span>' : '') + '</span>';
-    html += '<span class="sched-member-org">' + escapeHtml(orgLabel(m.org)) + '</span>';
-    html += '</div>';
+    html += '<span class="sched-member-name">' + escapeHtml(m.name);
+    if(isMe){
+      html += ' <span style="font-size:11px;color:var(--accent-2, #0ea5e9);font-weight:700;">(나)</span>';
+    }
+    if(orgName){
+      html += ' <span class="sched-member-org-badge">' + escapeHtml(orgName) + '</span>';
+    }
+    html += '</span>';
+    html += '<button type="button" class="sched-member-solo-btn" data-key="' + escapeHtml(m.key) + '" title="이 팀원 일정만 보기">단독</button>';
     if(count > 0){
       html += '<span class="sched-member-count" title="이번 달 일정 ' + count + '건">' + count + '</span>';
     }
+    html += '<span class="sched-color-dot" style="background:' + color + ';" title="' + escapeHtml(m.name) + '"></span>';
     html += '</label>';
   });
 
   if(!renderedCount){
-    html = '<div class="empty-state" style="padding:14px 4px;font-size:12px;">검색 결과가 없습니다.</div>';
+    html = '<div class="empty-state" style="padding:14px 4px;font-size:12px;">' +
+      (window.i18n && window.i18n.t ? window.i18n.t("sched.search_no_results") : "검색 결과가 없습니다.") +
+      '</div>';
   }
   schedMembersList.innerHTML = html;
+
+  if(schedMyCalDefaultCb && myUserKey){
+    schedMyCalDefaultCb.checked = selectedMemberKeys.has(myUserKey);
+  }
 
   // Update Toggle All Button text
   if(schedMembersToggleAll){
     var allSelected = allSchedMembers.length > 0 && selectedMemberKeys.size === allSchedMembers.length;
-    schedMembersToggleAll.textContent = allSelected ? "전체 해제" : "전체 선택";
+    var isEn = (typeof isCurrentLangEn === "function") ? isCurrentLangEn() : false;
+    schedMembersToggleAll.textContent = allSelected ? (isEn ? "Deselect All" : "전체 해제") : (isEn ? "Select All" : "전체 선택");
   }
 }
 
-// ── Event Handlers for Members Sidebar ──
+function updateQuickFilterUi(){
+  var quickMode = localStorage.getItem("jarvis_cal_quick_mode") || "all";
+  if(schedQuickOnlyMe){
+    schedQuickOnlyMe.classList.toggle("active", quickMode === "only_me");
+  }
+  if(schedQuickAll){
+    schedQuickAll.classList.toggle("active", quickMode === "all");
+  }
+}
+
+function updateAllCalendarFilters(){
+  renderCompanyTypeList();
+  renderTaskFilterGroup();
+  renderMembersList();
+  updateQuickFilterUi();
+}
+
+// ── Solo Member View Handler ──
+function toggleSoloMember(memberKey){
+  if(soloMemberKey === memberKey){
+    // Restore previous selection
+    if(prevSelectedMemberKeys && prevSelectedMemberKeys.size > 0){
+      selectedMemberKeys = new Set(prevSelectedMemberKeys);
+    } else {
+      selectedMemberKeys = new Set(allSchedMembers.map(function(m){ return m.key; }));
+    }
+    soloMemberKey = null;
+    prevSelectedMemberKeys = null;
+  } else {
+    // Isolate this member
+    prevSelectedMemberKeys = new Set(selectedMemberKeys);
+    selectedMemberKeys = new Set([memberKey]);
+    soloMemberKey = memberKey;
+  }
+  try{
+    localStorage.setItem("jarvis_cal_selected_members", JSON.stringify(Array.from(selectedMemberKeys)));
+  }catch(err){}
+  updateAllCalendarFilters();
+  refreshCurrentView();
+}
+
+// ── Event Handlers for Sidebar Filters ──
+if(schedCompanyMasterCb){
+  schedCompanyMasterCb.addEventListener("change", function(e){
+    isCompanyGroupEnabled = e.target.checked;
+    localStorage.setItem("jarvis_cal_company_enabled", isCompanyGroupEnabled ? "true" : "false");
+    if(isCompanyGroupEnabled){
+      selectedCompanyTypes = new Set(Object.keys(SCHED_COMPANY_TYPES));
+    } else {
+      selectedCompanyTypes.clear();
+    }
+    try{
+      localStorage.setItem("jarvis_cal_company_types", JSON.stringify(Array.from(selectedCompanyTypes)));
+    }catch(err){}
+    renderCompanyTypeList();
+    updateQuickFilterUi();
+    refreshCurrentView();
+  });
+}
+
+if(schedTasksMasterCb){
+  schedTasksMasterCb.addEventListener("change", function(e){
+    isTasksGroupEnabled = e.target.checked;
+    localStorage.setItem("jarvis_cal_tasks_enabled", isTasksGroupEnabled ? "true" : "false");
+    isLocalCardsEnabled = isTasksGroupEnabled;
+    isJiraCardsEnabled = isTasksGroupEnabled;
+    renderTaskFilterGroup();
+    updateQuickFilterUi();
+    refreshCurrentView();
+  });
+}
+
+if(schedQuickOnlyMe){
+  schedQuickOnlyMe.addEventListener("click", function(){
+    if(!myUserKey) return;
+    soloMemberKey = myUserKey;
+    selectedMemberKeys = new Set([myUserKey]);
+    localStorage.setItem("jarvis_cal_quick_mode", "only_me");
+    try{
+      localStorage.setItem("jarvis_cal_selected_members", JSON.stringify(Array.from(selectedMemberKeys)));
+    }catch(err){}
+    updateAllCalendarFilters();
+    refreshCurrentView();
+  });
+}
+
+if(schedQuickAll){
+  schedQuickAll.addEventListener("click", function(){
+    soloMemberKey = null;
+    prevSelectedMemberKeys = null;
+    selectedMemberKeys = new Set(allSchedMembers.map(function(m){ return m.key; }));
+    isCompanyGroupEnabled = true;
+    selectedCompanyTypes = new Set(Object.keys(SCHED_COMPANY_TYPES));
+    isTasksGroupEnabled = true;
+    isLocalCardsEnabled = true;
+    isJiraCardsEnabled = true;
+    localStorage.setItem("jarvis_cal_quick_mode", "all");
+    localStorage.setItem("jarvis_cal_company_enabled", "true");
+    localStorage.setItem("jarvis_cal_tasks_enabled", "true");
+    localStorage.setItem("jarvis_cal_local_cards_enabled", "true");
+    localStorage.setItem("jarvis_cal_jira_cards_enabled", "true");
+    try{
+      localStorage.setItem("jarvis_cal_company_types", JSON.stringify(Array.from(selectedCompanyTypes)));
+      localStorage.setItem("jarvis_cal_selected_members", JSON.stringify(Array.from(selectedMemberKeys)));
+    }catch(err){}
+    updateAllCalendarFilters();
+    refreshCurrentView();
+  });
+}
+
 if(schedMembersList){
+  schedMembersList.addEventListener("click", function(e){
+    var soloBtn = e.target.closest(".sched-member-solo-btn");
+    if(soloBtn){
+      e.preventDefault();
+      e.stopPropagation();
+      var key = soloBtn.getAttribute("data-key");
+      if(key) toggleSoloMember(key);
+      return;
+    }
+  });
+
   schedMembersList.addEventListener("change", function(e){
     var cb = e.target.closest(".sched-member-cb");
     if(!cb) return;
@@ -673,11 +1068,22 @@ if(schedMembersList){
     } else {
       selectedMemberKeys.delete(key);
     }
+    soloMemberKey = null;
+    if(allSchedMembers.length > 0){
+      if(selectedMemberKeys.size === allSchedMembers.length){
+        localStorage.setItem("jarvis_cal_quick_mode", "all");
+      } else if(selectedMemberKeys.size === 1 && myUserKey && selectedMemberKeys.has(myUserKey)){
+        localStorage.setItem("jarvis_cal_quick_mode", "only_me");
+      } else {
+        localStorage.setItem("jarvis_cal_quick_mode", "custom");
+      }
+    }
     try{
       localStorage.setItem("jarvis_cal_selected_members", JSON.stringify(Array.from(selectedMemberKeys)));
     } catch(err){}
     renderMembersList();
-    renderSchedule();
+    updateQuickFilterUi();
+    refreshCurrentView();
   });
 }
 
@@ -687,16 +1093,26 @@ if(schedMembersToggleAll){
     var allSelected = selectedMemberKeys.size === allSchedMembers.length;
     if(allSelected){
       selectedMemberKeys.clear();
-      // Keep self selected if logged in
       if(myUserKey) selectedMemberKeys.add(myUserKey);
     } else {
       selectedMemberKeys = new Set(allSchedMembers.map(function(m){ return m.key; }));
+    }
+    soloMemberKey = null;
+    if(allSchedMembers.length > 0){
+      if(selectedMemberKeys.size === allSchedMembers.length){
+        localStorage.setItem("jarvis_cal_quick_mode", "all");
+      } else if(selectedMemberKeys.size === 1 && myUserKey && selectedMemberKeys.has(myUserKey)){
+        localStorage.setItem("jarvis_cal_quick_mode", "only_me");
+      } else {
+        localStorage.setItem("jarvis_cal_quick_mode", "custom");
+      }
     }
     try{
       localStorage.setItem("jarvis_cal_selected_members", JSON.stringify(Array.from(selectedMemberKeys)));
     } catch(err){}
     renderMembersList();
-    renderSchedule();
+    updateQuickFilterUi();
+    refreshCurrentView();
   });
 }
 
@@ -705,6 +1121,34 @@ if(schedMembersSearch){
     renderMembersList();
   });
 }
+
+// ── Group Fold/Unfold Click Handler ──
+document.addEventListener("click", function(e){
+  var btn = e.target.closest(".sched-group-fold-btn");
+  if(!btn) return;
+  var targetId = btn.getAttribute("data-target");
+  var target = document.getElementById(targetId);
+  if(!target) return;
+  var isFolded = target.classList.toggle("is-folded");
+  btn.textContent = isFolded ? "▸" : "▾";
+  try{
+    localStorage.setItem("jarvis_cal_fold_" + targetId, isFolded ? "true" : "false");
+  }catch(err){}
+});
+
+// Restore folded states for groups on load
+setTimeout(function(){
+  ["schedCompanyTypeList", "schedTasksSubList", "schedMembersBodyWrap"].forEach(function(targetId){
+    var el = document.getElementById(targetId);
+    var btn = document.querySelector('.sched-group-fold-btn[data-target="' + targetId + '"]');
+    if(!el || !btn) return;
+    var isFolded = localStorage.getItem("jarvis_cal_fold_" + targetId) === "true";
+    if(isFolded){
+      el.classList.add("is-folded");
+      btn.textContent = "▸";
+    }
+  });
+}, 0);
 
 function renderSelectedParticipantsForm(isReadOnly){
   if(!schedSelectedParticipants) return;
@@ -890,7 +1334,7 @@ function startNewEventForm(dateStr){
     adjustMemoHeight();
   }
   if(schedFormError) schedFormError.textContent = "";
-  if(schedSaveBtn) schedSaveBtn.textContent = "추가";
+  if(schedSaveBtn) schedSaveBtn.textContent = isCurrentLangEn() ? "Add" : "추가";
   setScheduleFormReadonly(false);
   if(schedDeleteBtn) schedDeleteBtn.hidden = true;
   if(schedCancelEditBtn) schedCancelEditBtn.hidden = true;
@@ -986,7 +1430,7 @@ function startEditEventForm(ev){
       schedFormError.textContent = "";
     }
   }
-  if(schedSaveBtn) schedSaveBtn.textContent = "저장";
+  if(schedSaveBtn) schedSaveBtn.textContent = isCurrentLangEn() ? "Save" : "저장";
   if(schedDeleteBtn) schedDeleteBtn.hidden = isReadOnly;
   if(schedCancelEditBtn) schedCancelEditBtn.hidden = false;
 
@@ -1002,14 +1446,20 @@ function startEditEventForm(ev){
       if(btnApprove){
         btnApprove.onclick = function(){
           if(!confirm("이 휴가/일정 신청을 승인하시겠습니까?")) return;
+          ev.approval_status = "approved";
+          refreshCurrentView();
+          closeSchedEventModal();
           apiSchedulePost("/api/schedule/approve", { id: ev.id, action: "approve" }).then(function(res){
             if(res.data && res.data.ok){
               if(typeof showToast === "function") showToast("✓ 일정이 승인되었습니다.");
-              closeSchedEventModal();
-              loadSchedule();
+              notifyScheduleChanged();
+              loadSchedule(true);
             } else {
               alert((res.data && res.data.error) || "승인 처리 중 오류 발생");
+              loadSchedule(true);
             }
+          }).catch(function(){
+            loadSchedule(true);
           });
         };
       }
@@ -1017,14 +1467,21 @@ function startEditEventForm(ev){
         btnReject.onclick = function(){
           var reason = prompt("반려 사유를 입력해주세요 (선택):", "");
           if(reason === null) return;
+          ev.approval_status = "rejected";
+          ev.reject_reason = reason;
+          refreshCurrentView();
+          closeSchedEventModal();
           apiSchedulePost("/api/schedule/approve", { id: ev.id, action: "reject", reason: reason }).then(function(res){
             if(res.data && res.data.ok){
               if(typeof showToast === "function") showToast("✕ 일정이 반려되었습니다.");
-              closeSchedEventModal();
-              loadSchedule();
+              notifyScheduleChanged();
+              loadSchedule(true);
             } else {
               alert((res.data && res.data.error) || "반려 처리 중 오류 발생");
+              loadSchedule(true);
             }
+          }).catch(function(){
+            loadSchedule(true);
           });
         };
       }
@@ -1038,7 +1495,6 @@ function startEditEventForm(ev){
 function allocateWeekSlots(weekCells, maxVisibleSlots){
   if(!maxVisibleSlots) maxVisibleSlots = 4;
   var weekDates = weekCells.map(function(c){ return c.dateStr; });
-  var weekDatesSet = new Set(weekDates);
 
   // Collect all unique events across this week's cells
   var eventMap = new Map();
@@ -1050,44 +1506,30 @@ function allocateWeekSlots(weekCells, maxVisibleSlots){
   });
 
   var allWeekEvents = Array.from(eventMap.values());
-  // Sort priority:
-  // 1. Internal personal events (연차, 출장, etc. where source !== 'jira') ALWAYS get top slots!
-  // 2. Multi-day events next so they get consistent top slots across the week
-  // 3. Earlier start date, then ID
-  allWeekEvents.sort(function(a, b){
-    var aIsInternal = (a.source !== 'jira');
-    var bIsInternal = (b.source !== 'jira');
-    if(aIsInternal !== bIsInternal) return aIsInternal ? -1 : 1;
 
-    var aSpan = (a.startDate !== a.endDate);
-    var bSpan = (b.startDate !== b.endDate);
-    if(aSpan !== bSpan) return bSpan ? 1 : -1;
+  // Split into multi-day spanning events and single-day events
+  var multiDayEvents = [];
+  var singleDayEvents = [];
+
+  allWeekEvents.forEach(function(ev){
+    var isSpan = (ev.startDate !== ev.endDate);
+    if(isSpan) multiDayEvents.push(ev);
+    else singleDayEvents.push(ev);
+  });
+
+  // Sort multi-day events: longer span first, then earlier start, then ID
+  multiDayEvents.sort(function(a, b){
+    var aSpan = Math.abs(new Date(a.endDate) - new Date(a.startDate));
+    var bSpan = Math.abs(new Date(b.endDate) - new Date(b.startDate));
+    if(aSpan !== bSpan) return bSpan - aSpan;
     if(a.startDate !== b.startDate) return a.startDate < b.startDate ? -1 : 1;
     return String(a.id).localeCompare(String(b.id));
   });
 
-  // Track occupancy per vertical slot index: slotOccupancy[slotIdx] = Set of active dateStrings
-  var slotOccupancy = [];
-  var eventSlotMap = new Map();
-
-  allWeekEvents.forEach(function(ev){
-    var activeDates = [];
-    weekDates.forEach(function(dStr){
-      if(ev.startDate <= dStr && dStr <= ev.endDate) activeDates.push(dStr);
-    });
-
-    var slotIdx = 0;
-    while(true){
-      if(!slotOccupancy[slotIdx]){
-        slotOccupancy[slotIdx] = new Set();
-        break;
-      }
-      var hasConflict = activeDates.some(function(d){ return slotOccupancy[slotIdx].has(d); });
-      if(!hasConflict) break;
-      slotIdx++;
-    }
-    activeDates.forEach(function(d){ slotOccupancy[slotIdx].add(d); });
-    eventSlotMap.set(String(ev.id), slotIdx);
+  // Sort single-day events: earlier start, then ID
+  singleDayEvents.sort(function(a, b){
+    if(a.startDate !== b.startDate) return a.startDate < b.startDate ? -1 : 1;
+    return String(a.id).localeCompare(String(b.id));
   });
 
   // Initialize slotItems map and overflowCount for each weekCell
@@ -1096,11 +1538,8 @@ function allocateWeekSlots(weekCells, maxVisibleSlots){
     c.overflowCount = 0;
   });
 
-  // Assign continuous span to the first column in the week, and spacers to subsequent columns
-  allWeekEvents.forEach(function(ev){
-    var slotIdx = eventSlotMap.get(String(ev.id));
-    if(slotIdx === undefined) slotIdx = 0;
-
+  // 1. Allocate Multi-day events first (horizontal continuity across columns)
+  multiDayEvents.forEach(function(ev){
     var firstCol = -1;
     var lastCol = -1;
     for(var i = 0; i < weekCells.length; i++){
@@ -1113,16 +1552,26 @@ function allocateWeekSlots(weekCells, maxVisibleSlots){
     if(firstCol === -1) return;
 
     var spanCols = lastCol - firstCol + 1;
-    var isSingleDay = (ev.startDate === ev.endDate);
     var continuesFromPrev = (ev.startDate < weekCells[firstCol].dateStr);
     var continuesToNext = (ev.endDate > weekCells[lastCol].dateStr);
 
-    var spanType = 'single';
-    if(!isSingleDay){
-      if(continuesFromPrev && continuesToNext) spanType = 'through';
-      else if(continuesFromPrev) spanType = 'from-prev';
-      else if(continuesToNext) spanType = 'to-next';
-      else spanType = 'range';
+    var spanType = 'range';
+    if(continuesFromPrev && continuesToNext) spanType = 'through';
+    else if(continuesFromPrev) spanType = 'from-prev';
+    else if(continuesToNext) spanType = 'to-next';
+
+    // Find lowest slot free in ALL columns [firstCol..lastCol]
+    var slotIdx = 0;
+    while(true){
+      var free = true;
+      for(var k = firstCol; k <= lastCol; k++){
+        if(weekCells[k].slotItems.has(slotIdx)){
+          free = false;
+          break;
+        }
+      }
+      if(free) break;
+      slotIdx++;
     }
 
     if(slotIdx < maxVisibleSlots){
@@ -1148,7 +1597,38 @@ function allocateWeekSlots(weekCells, maxVisibleSlots){
     }
   });
 
-  // Build sequential slots array (0..maxSlot) for each cell
+  // 2. Allocate Single-day events per day cell (fill lowest available slots)
+  weekCells.forEach(function(c){
+    var daySingles = singleDayEvents.filter(function(ev){
+      return ev.startDate === c.dateStr;
+    });
+
+    daySingles.forEach(function(ev){
+      var slotIdx = 0;
+      while(c.slotItems.has(slotIdx)){
+        slotIdx++;
+      }
+      if(slotIdx < maxVisibleSlots){
+        c.slotItems.set(slotIdx, {
+          type: 'event',
+          event: ev,
+          spanCols: 1,
+          spanType: 'single'
+        });
+      } else {
+        c.overflowCount++;
+      }
+    });
+  });
+
+  // 3. Guarantee: If a day cell has total events <= maxVisibleSlots, it MUST NOT show false overflow!
+  weekCells.forEach(function(c){
+    if(c.events.length <= maxVisibleSlots && c.overflowCount > 0){
+      c.overflowCount = 0;
+    }
+  });
+
+  // 4. Build sequential slots array (0..maxSlot) for each cell
   weekCells.forEach(function(c){
     var maxSlot = -1;
     c.slotItems.forEach(function(val, s){
@@ -1180,6 +1660,9 @@ function renderCellHtml(c, showOwnerPrefix){
   var html = '<td class="' + cellClass + '" data-date="' + c.dateStr + '">';
   html += '<div class="cal-day-header">';
   html += '<span class="cal-date-num">' + c.dateNum + '</span>';
+  var isEnCell = isCurrentLangEn();
+  var addEventTitle = isEnCell ? ("Add event on " + c.dateStr) : (c.dateStr + "에 새 일정 추가");
+  html += '<span class="cal-day-add-btn" data-date="' + escapeHtml(c.dateStr) + '" title="' + addEventTitle + '">＋</span>';
   if(c.events.length > 0){
     html += '<span class="cal-day-count" data-date="' + escapeHtml(c.dateStr) + '" title="총 ' + c.events.length + '건 (클릭하여 전체 일정 보기)" style="cursor:pointer;">' + c.events.length + '</span>';
   }
@@ -1260,27 +1743,32 @@ function renderCellHtml(c, showOwnerPrefix){
       participantNames = " (참석자: " + ev.participants.map(function(p){ return p.name; }).join(", ") + ")";
     }
 
-    var chipClass = "cal-chip schedule-chip cal-span-" + spanType;
+        var chipClass = "cal-chip schedule-chip cal-span-" + spanType;
     var widthStyle = "";
     if(spanCols > 1){
       var extraPx = (spanCols - 1) * 13;
       widthStyle = "width: calc(" + (spanCols * 100) + "% + " + extraPx + "px); z-index: 5;";
     }
 
-    var styleAttr = "";
+    var styleAttr = widthStyle ? ('style="' + widthStyle + '"') : '';
+
+    if(ev.approval_status === "rejected"){
+      chipClass += " is-rejected";
+    }
     if(isJira){
       var themeIdx = getTaskThemeIndex(jiraKey || ev.title);
       chipClass += " chip-theme-" + themeIdx;
-      if(widthStyle) styleAttr = 'style="' + widthStyle + '"';
     } else {
-      var eventType = ev.type || "기타";
+      var eventType = normalizeCompanyType(ev.type || "기타");
       chipClass += " chip-type-" + eventType;
-      if(widthStyle) styleAttr = 'style="' + widthStyle + '"';
     }
 
     var rangeText = ev.startDate + (ev.endDate !== ev.startDate ? (" ~ " + ev.endDate) : "");
     var localKey = (!isJira && ev.cardCode) ? ev.cardCode : "";
     var tooltip = (jiraKey || localKey ? (jiraKey || localKey) + ": " : "") + (ev.ownerName ? ev.ownerName + " - " : "") + ev.title + participantNames + " (" + rangeText + ")";
+    if(ev.approval_status === "rejected"){
+      tooltip += " [반려" + (ev.reject_reason ? ": " + ev.reject_reason : "") + "]";
+    }
 
     var keyHtml = "";
     if(jiraKey){
@@ -1294,15 +1782,14 @@ function renderCellHtml(c, showOwnerPrefix){
     } else if(ev.approval_status === "rejected"){
       approvalBadge = ' <span style="font-size:10px;font-weight:700;background:#fee2e2;color:#b91c1c;padding:1px 5px;border-radius:4px;border:1px solid #fca5a5;">반려</span>';
     }
-    var displayTitle = ownerPrefix + escapeHtml(ev.title) + approvalBadge;
+
+    var displayTitle = (keyHtml ? keyHtml + " " : "") + (multiTagsHtml ? multiTagsHtml + " " : "") + ownerPrefix + escapeHtml(ev.title) + approvalBadge;
     var canDrag = (ev.source === "local" || !!ev.cardCode || ev.ownerKey === myUserKey);
 
     html += '<div class="' + chipClass + '" draggable="' + (canDrag ? 'true' : 'false') + '" data-event-id="' + escapeHtml(String(ev.id)) + '" ' + styleAttr + ' title="' + escapeHtml(tooltip) + '">';
     if(canDrag && (spanType === 'single' || spanType === 'range' || spanType === 'to-next')){
       html += '<div class="cal-resizer cal-resizer-left" data-edge="start" title="시작일 변경 (마우스로 드래그)"></div>';
     }
-    if(keyHtml) html += keyHtml;
-    if(multiTagsHtml) html += multiTagsHtml;
     html += '<span class="cal-chip-title">' + displayTitle + '</span>';
     if(canDrag && (spanType === 'single' || spanType === 'range' || spanType === 'from-prev')){
       html += '<div class="cal-resizer cal-resizer-right" data-edge="end" title="종료일 변경 (마우스로 드래그)"></div>';
@@ -1311,7 +1798,8 @@ function renderCellHtml(c, showOwnerPrefix){
   });
 
   if(c.overflowCount > 0){
-    html += '<div class="cal-more-link" data-date="' + escapeHtml(c.dateStr) + '" title="+' + c.overflowCount + '개 더보기 (클릭하여 전체 일정 보기)">+' + c.overflowCount + '개 더보기</div>';
+    var moreText = isEnCell ? ("+" + c.overflowCount + " more") : ("+" + c.overflowCount + "개 더보기");
+    html += '<div class="cal-more-link" data-date="' + escapeHtml(c.dateStr) + '" title="' + moreText + '">' + moreText + '</div>';
   }
   html += '</div></td>';
   return html;
@@ -1338,12 +1826,13 @@ function openSchedEventModal(dateStr, ev){
     if(typeof showToast === "function") showToast("조회 전용(Viewer) 계정은 새 일정을 추가할 수 없습니다.");
     return;
   }
+  var isEn = isCurrentLangEn();
   if(ev){
     startEditEventForm(ev);
-    if(schedModalTitle) schedModalTitle.textContent = "일정 상세 / 수정";
+    if(schedModalTitle) schedModalTitle.textContent = isEn ? "Event Details / Edit" : "일정 상세 / 수정";
   } else {
     startNewEventForm(dateStr || schedSelectedDate || todayStr());
-    if(schedModalTitle) schedModalTitle.textContent = "새 일정 추가";
+    if(schedModalTitle) schedModalTitle.textContent = isEn ? "Add New Event" : "새 일정 추가";
   }
   if(schedEventModalBackdrop){
     schedEventModalBackdrop.hidden = false;
@@ -1403,7 +1892,12 @@ function renderSchedule(){
   if(schedLoginNotice) schedLoginNotice.hidden = loggedIn;
   renderJiraOngoing();
 
-  if(schedMonthLabel) schedMonthLabel.textContent = schedViewYear + "년 " + schedViewMonth + "월";
+  var isEn = isCurrentLangEn();
+  if(schedMonthLabel){
+    schedMonthLabel.textContent = isEn
+      ? (EN_MONTH_NAMES[schedViewMonth - 1] + " " + schedViewYear)
+      : (schedViewYear + "년 " + schedViewMonth + "월");
+  }
 
   var today = todayStr();
   var html = "";
@@ -1412,13 +1906,19 @@ function renderSchedule(){
   if(isWeekendVisible){
     // 7-Day Calendar (일 ~ 토)
     if(schedWeekdays){
-      schedWeekdays.innerHTML = '<th class="sun">일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th class="sat">토</th>';
+      schedWeekdays.innerHTML = isEn
+        ? '<th class="sun">Sun</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th class="sat">Sat</th>'
+        : '<th class="sun">일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th class="sat">토</th>';
     }
 
     var startWeekday = new Date(schedViewYear, schedViewMonth - 1, 1).getDay();
     var gridStart = new Date(schedViewYear, schedViewMonth - 1, 1 - startWeekday);
 
-    for(var row = 0; row < 6; row++){
+    // Calculate actual number of weeks needed for this month (5 or 6, never unnecessary extra empty weeks)
+    var daysInMonth = new Date(schedViewYear, schedViewMonth, 0).getDate();
+    var numWeeks = Math.ceil((startWeekday + daysInMonth) / 7);
+
+    for(var row = 0; row < numWeeks; row++){
       var weekCells = [];
       for(var col = 0; col < 7; col++){
         var dayIdx = row * 7 + col;
@@ -1443,7 +1943,9 @@ function renderSchedule(){
   } else {
     // 5-Day Workweek (월 ~ 금, 주말 숨김)
     if(schedWeekdays){
-      schedWeekdays.innerHTML = '<th>월</th><th>화</th><th>수</th><th>목</th><th>금</th>';
+      schedWeekdays.innerHTML = isEn
+        ? '<th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th>'
+        : '<th>월</th><th>화</th><th>수</th><th>목</th><th>금</th>';
     }
 
     var firstOfMonth = new Date(schedViewYear, schedViewMonth - 1, 1);
@@ -1488,7 +1990,11 @@ function renderSchedule(){
 
   var legendHtml = "";
   Object.keys(SCHED_TYPE_COLORS).forEach(function(t){
-    legendHtml += '<span><span class="sl-dot" style="background:' + SCHED_TYPE_COLORS[t] + '"></span>' + t + '</span>';
+    var isCompany = Object.prototype.hasOwnProperty.call(SCHED_COMPANY_TYPES, t);
+    var isChecked = isCompany ? (isCompanyGroupEnabled && selectedCompanyTypes.has(t)) : isTasksGroupEnabled;
+    legendHtml += '<span class="sched-legend-pill" data-type="' + escapeHtml(t) + '" style="cursor:pointer; display:inline-flex; align-items:center; gap:5px; padding:2px 6px; border-radius:4px; transition:opacity 0.15s; opacity:' + (isChecked ? '1' : '0.4') + ';" title="' + escapeHtml(t) + ' 필터 토글">' +
+      '<span class="sl-dot" style="background:' + SCHED_TYPE_COLORS[t] + '"></span>' + escapeHtml(t) +
+    '</span>';
   });
   if(schedLegend) schedLegend.innerHTML = legendHtml;
 
@@ -1530,16 +2036,19 @@ function renderWeekView(){
 
   var firstD = weekDates[0].dateStr;
   var lastD = weekDates[weekDates.length - 1].dateStr;
+  var isEn = isCurrentLangEn();
   if(schedMonthLabel){
     var y1 = firstD.substring(0, 4);
     var m1 = parseInt(firstD.substring(5, 7), 10);
     var d1 = parseInt(firstD.substring(8, 10), 10);
     var m2 = parseInt(lastD.substring(5, 7), 10);
     var d2 = parseInt(lastD.substring(8, 10), 10);
-    schedMonthLabel.textContent = y1 + "년 " + m1 + "월 " + d1 + "일 ~ " + (m1 !== m2 ? (m2 + "월 ") : "") + d2 + "일";
+    schedMonthLabel.textContent = isEn
+      ? (EN_MONTH_ABBR[m1 - 1] + " " + d1 + " - " + (m1 !== m2 ? (EN_MONTH_ABBR[m2 - 1] + " ") : "") + d2 + ", " + y1)
+      : (y1 + "년 " + m1 + "월 " + d1 + "일 ~ " + (m1 !== m2 ? (m2 + "월 ") : "") + d2 + "일");
   }
 
-  var dayNames = ["일", "월", "화", "수", "목", "금", "토"];
+  var dayNames = isEn ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] : ["일", "월", "화", "수", "목", "금", "토"];
   var today = todayStr();
 
   // Render Header
@@ -1610,11 +2119,11 @@ function renderWeekView(){
 
         var widthStyle = "";
         if(spanCols > 1){
-          var extraPx = (spanCols - 1) * 13;
+          var extraPx = (spanCols - 1) * 1;
           widthStyle = "width: calc(" + (spanCols * 100) + "% + " + extraPx + "px); z-index: 5;";
         }
-
         var styleAttr = widthStyle ? ('style="' + widthStyle + '"') : '';
+
         var range = ev.startDate === ev.endDate ? ev.startDate : (ev.startDate + " ~ " + ev.endDate);
         var ownerTag = ev.ownerName ? ('<span style="font-weight:700;">' + escapeHtml(ev.ownerName) + '</span>') : "";
         var canDrag = (ev.source === "local" || !!ev.cardCode || ev.ownerKey === myUserKey);
@@ -1656,24 +2165,23 @@ function renderWeekView(){
 function renderAgendaView(){
   if(!schedAgendaList) return;
   var ymPrefix = schedViewYear + "-" + pad2(schedViewMonth);
-  if(schedMonthLabel) schedMonthLabel.textContent = schedViewYear + "년 " + schedViewMonth + "월 일정 목록";
+  var isEn = isCurrentLangEn();
+  if(schedMonthLabel){
+    schedMonthLabel.textContent = isEn
+      ? (EN_MONTH_NAMES[schedViewMonth - 1] + " " + schedViewYear + " Events")
+      : (schedViewYear + "년 " + schedViewMonth + "월 일정 목록");
+  }
 
   var monthStart = ymPrefix + "-01";
   var lastDayNum = new Date(schedViewYear, schedViewMonth, 0).getDate();
   var monthEnd = ymPrefix + "-" + pad2(lastDayNum);
 
   var matchingEvents = schedEvents.filter(function(ev){
-    if((!isCalendarJiraActive() || !isJiraVisible) && ev.source === "jira") return false;
+    if(!isEventVisible(ev)) return false;
     var s = ev.startDate || "";
     var e = ev.endDate || s;
     if(!s || !e) return false;
     if(s > monthEnd || e < monthStart) return false;
-
-    if(selectedMemberKeys.size > 0){
-      var isOwner = ev.ownerKey && selectedMemberKeys.has(ev.ownerKey);
-      var isPart = ev.participants && ev.participants.some(function(p){ return p.key && selectedMemberKeys.has(p.key); });
-      if(!isOwner && !isPart) return false;
-    }
     return true;
   });
 
@@ -1809,11 +2317,13 @@ function openDayEventsModal(dateStr){
     return (a.title || "").localeCompare(b.title || "");
   });
 
-  if(titleEl) titleEl.textContent = dateStr + " 전체 일정";
-  if(countEl) countEl.textContent = evs.length + "건";
+  var isEn = isCurrentLangEn();
+  if(titleEl) titleEl.textContent = dateStr + (isEn ? " All Events" : " 전체 일정");
+  if(countEl) countEl.textContent = evs.length + (isEn ? " items" : "건");
 
   if(!evs.length){
-    listEl.innerHTML = '<div class="empty-state" style="padding:24px 8px;font-size:13px;text-align:center;color:var(--ink-faint);">해당 일자의 일정이 없습니다.</div>';
+    listEl.innerHTML = '<div class="empty-state" style="padding:24px 8px;font-size:13px;text-align:center;color:var(--ink-faint);">' +
+      (isEn ? 'No events scheduled for this day.' : '해당 일자의 일정이 없습니다.') + '</div>';
   } else {
     var html = "";
     evs.forEach(function(ev){
@@ -1917,6 +2427,7 @@ function assignTaskToDate(taskId, targetDate, endDate){
     if(typeof showToast === "function"){
       showToast("💼 업무 카드 [" + code + "] 일정이 " + rangeNotice + "로 배정되었습니다." + jiraNotice);
     }
+    notifyScheduleChanged();
     loadSchedule();
   }).catch(function(err){
     if(typeof showToast === "function") showToast("서버 통신 중 오류가 발생했습니다.");
@@ -1974,6 +2485,7 @@ function unassignTask(taskId){
     }
     var code = res.data.cardCode || taskId;
     showUnassignUndoToast(code, taskId);
+    notifyScheduleChanged();
     loadSchedule();
   }).catch(function(err){
     if(typeof showToast === "function") showToast("서버 통신 중 오류가 발생했습니다.");
@@ -2023,6 +2535,7 @@ function showScheduleTask(taskId){
     if(typeof showToast === "function"){
       showToast("📅 업무 카드 [" + code + "] 일정이 달력에 활성화되었습니다.");
     }
+    notifyScheduleChanged();
     loadSchedule();
   }).catch(function(err){
     if(typeof showToast === "function") showToast("서버 통신 중 오류가 발생했습니다.");
@@ -2062,15 +2575,28 @@ function rescheduleCalendarEvent(eventId, targetDate){
     participants: ev.participants || []
   };
 
+  var oldStart = ev.startDate;
+  var oldEnd = ev.endDate;
+  ev.startDate = newStart;
+  ev.endDate = newEnd;
+  refreshCurrentView();
+
   apiSchedulePost("/api/schedule/update", body).then(function(res){
     if(res.status === 401){ handleAuthExpired(); return; }
     if(!res.data.ok){
+      ev.startDate = oldStart;
+      ev.endDate = oldEnd;
+      refreshCurrentView();
       if(typeof showToast === "function") showToast(res.data.error || "일정 변경에 실패했습니다.");
       return;
     }
     if(typeof showToast === "function") showToast("일정을 " + newStart + "로 이동했습니다.");
-    loadSchedule();
+    notifyScheduleChanged();
+    loadSchedule(true);
   }).catch(function(){
+    ev.startDate = oldStart;
+    ev.endDate = oldEnd;
+    refreshCurrentView();
     if(typeof showToast === "function") showToast("서버 통신 중 오류가 발생했습니다.");
   });
 }
@@ -2100,9 +2626,18 @@ function resizeCalendarEvent(eventId, newStart, newEnd){
     memo: ev.memo || "",
     participants: ev.participants || []
   };
+  var oldStart = ev.startDate;
+  var oldEnd = ev.endDate;
+  ev.startDate = newStart;
+  ev.endDate = newEnd;
+  refreshCurrentView();
+
   apiSchedulePost("/api/schedule/update", body).then(function(res){
     if(res.status === 401){ handleAuthExpired(); return; }
     if(!res.data.ok){
+      ev.startDate = oldStart;
+      ev.endDate = oldEnd;
+      refreshCurrentView();
       if(typeof showToast === "function") showToast(res.data.error || "일정 기간 변경에 실패했습니다.");
       return;
     }
@@ -2110,8 +2645,12 @@ function resizeCalendarEvent(eventId, newStart, newEnd){
       var rangeStr = newStart === newEnd ? newStart : (newStart + " ~ " + newEnd);
       showToast("일정 기간을 " + rangeStr + "로 변경했습니다.");
     }
-    loadSchedule();
+    notifyScheduleChanged();
+    loadSchedule(true);
   }).catch(function(){
+    ev.startDate = oldStart;
+    ev.endDate = oldEnd;
+    refreshCurrentView();
     if(typeof showToast === "function") showToast("서버 통신 중 오류가 발생했습니다.");
   });
 }
@@ -2374,6 +2913,14 @@ if(schedGrid){
       return;
     }
 
+    var addBtn = e.target.closest(".cal-day-add-btn");
+    if(addBtn){
+      e.stopPropagation();
+      var addDate = addBtn.getAttribute("data-date");
+      if(addDate) openSchedEventModal(addDate);
+      return;
+    }
+
     var dayCount = e.target.closest(".cal-day-count");
     if(dayCount){
       e.stopPropagation();
@@ -2392,7 +2939,12 @@ if(schedGrid){
 
     var cell = e.target.closest(".schedule-day");
     if(!cell) return;
-    schedSelectedDate = cell.getAttribute("data-date");
+    var clickedDate = cell.getAttribute("data-date");
+    if(schedSelectedDate === clickedDate){
+      openSchedEventModal(clickedDate);
+      return;
+    }
+    schedSelectedDate = clickedDate;
     renderSchedule();
   });
 
@@ -2565,6 +3117,12 @@ if(btnSchedOpenCreateModal){
     openSchedEventModal(schedSelectedDate || todayStr());
   });
 }
+if(btnSchedOpenCreateModalSide){
+  btnSchedOpenCreateModalSide.addEventListener("click", function(){
+    openSchedEventModal(schedSelectedDate || todayStr());
+  });
+}
+
 if(schedModalCloseBtn){
   schedModalCloseBtn.addEventListener("click", closeSchedEventModal);
 }
@@ -2632,7 +3190,7 @@ if(schedPrevBtn){
       if(schedViewMonth < 1){ schedViewMonth = 12; schedViewYear -= 1; }
     }
     refreshCurrentView();
-    renderMembersList();
+    updateAllCalendarFilters();
   });
 }
 if(schedNextBtn){
@@ -2648,7 +3206,7 @@ if(schedNextBtn){
       if(schedViewMonth > 12){ schedViewMonth = 1; schedViewYear += 1; }
     }
     refreshCurrentView();
-    renderMembersList();
+    updateAllCalendarFilters();
   });
 }
 if(schedTodayBtn){
@@ -2658,7 +3216,41 @@ if(schedTodayBtn){
     schedViewMonth = now.getMonth() + 1;
     schedSelectedDate = todayStr();
     refreshCurrentView();
-    renderMembersList();
+    updateAllCalendarFilters();
+  });
+}
+
+// ── Interactive Legend Filter Toggle ──
+if(schedLegend){
+  schedLegend.addEventListener("click", function(e){
+    var pill = e.target.closest(".sched-legend-pill");
+    if(!pill) return;
+    var type = pill.getAttribute("data-type");
+    if(!type) return;
+    if(type === "업무"){
+      isTasksGroupEnabled = !isTasksGroupEnabled;
+      localStorage.setItem("jarvis_cal_tasks_enabled", isTasksGroupEnabled ? "true" : "false");
+    } else if(Object.prototype.hasOwnProperty.call(SCHED_COMPANY_TYPES, type)){
+      if(!isCompanyGroupEnabled){
+        isCompanyGroupEnabled = true;
+        localStorage.setItem("jarvis_cal_company_enabled", "true");
+        selectedCompanyTypes = new Set([type]);
+      } else {
+        if(selectedCompanyTypes.has(type)){
+          selectedCompanyTypes.delete(type);
+          if(selectedCompanyTypes.size === 0){
+            selectedCompanyTypes = new Set(Object.keys(SCHED_COMPANY_TYPES));
+          }
+        } else {
+          selectedCompanyTypes.add(type);
+        }
+      }
+      try{
+        localStorage.setItem("jarvis_cal_company_types", JSON.stringify(Array.from(selectedCompanyTypes)));
+      }catch(err){}
+    }
+    updateAllCalendarFilters();
+    refreshCurrentView();
   });
 }
 
@@ -2708,6 +3300,7 @@ if(schedForm){
         schedViewMonth = parseInt(sParts[1], 10);
       }
       schedSelectedDate = startDate;
+      notifyScheduleChanged();
       loadSchedule();
     }).catch(function(){
       schedSaveBtn.disabled = false;
@@ -2730,6 +3323,7 @@ if(schedDeleteBtn){
       }
       showToast("일정을 삭제했습니다.");
       closeSchedEventModal();
+      notifyScheduleChanged();
       loadSchedule();
     }).catch(function(){
       schedFormError.textContent = "서버에 연결할 수 없습니다.";
@@ -2935,3 +3529,79 @@ switchScheduleView(currentViewMode);
 })();
 
 
+
+// Re-render calendar UI dynamically whenever user toggles language (KO / EN)
+window.addEventListener("langchange", function(){
+  renderCompanyTypeList();
+  renderTaskFilterGroup();
+  renderMembersList();
+  renderLocalTaskDrawer();
+  refreshCurrentView();
+});
+
+// ── Keyboard Shortcut: 'C' to Quick-Create Event ──
+document.addEventListener("keydown", function(e){
+  if((e.key === "c" || e.key === "C") && !e.ctrlKey && !e.altKey && !e.metaKey){
+    var activeEl = document.activeElement;
+    if(activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.tagName === "SELECT" || activeEl.isContentEditable)) return;
+    var viewSched = document.getElementById("viewSchedule");
+    if(viewSched && !viewSched.hidden){
+      e.preventDefault();
+      openSchedEventModal(schedSelectedDate || todayStr());
+    }
+  }
+});
+
+// ── Global Exports for Realtime Synchronization (SSE & Cross-Tab) ──
+window.loadSchedule = loadSchedule;
+window.notifyScheduleChanged = notifyScheduleChanged;
+
+var btnSchedSidebarSettings = document.getElementById("btnSchedSidebarSettings");
+if(btnSchedSidebarSettings){
+  btnSchedSidebarSettings.addEventListener("click", function(){
+    var settingsTab = document.getElementById("tabBtnSettings");
+    if(settingsTab) settingsTab.click();
+  });
+}
+
+
+var schedSubCompanyCb = document.getElementById("schedSubCompanyCb");
+var schedSubLeaveCb = document.getElementById("schedSubLeaveCb");
+var schedMyCalDefaultCb = document.getElementById("schedMyCalDefaultCb");
+
+if(schedSubCompanyCb){
+  schedSubCompanyCb.addEventListener("change", function(e){
+    var companyTypes = ["회의", "출장", "기타"];
+    if(e.target.checked){
+      companyTypes.forEach(function(t){ selectedCompanyTypes.add(t); });
+    } else {
+      companyTypes.forEach(function(t){ selectedCompanyTypes.delete(t); });
+    }
+    refreshCurrentView();
+  });
+}
+
+if(schedSubLeaveCb){
+  schedSubLeaveCb.addEventListener("change", function(e){
+    var leaveTypes = ["연차", "반차", "병가", "재택"];
+    if(e.target.checked){
+      leaveTypes.forEach(function(t){ selectedCompanyTypes.add(t); });
+    } else {
+      leaveTypes.forEach(function(t){ selectedCompanyTypes.delete(t); });
+    }
+    refreshCurrentView();
+  });
+}
+
+if(schedMyCalDefaultCb){
+  schedMyCalDefaultCb.addEventListener("change", function(e){
+    if(!myUserKey) return;
+    if(e.target.checked){
+      selectedMemberKeys.add(myUserKey);
+    } else {
+      selectedMemberKeys.delete(myUserKey);
+    }
+    renderMembersList();
+    refreshCurrentView();
+  });
+}

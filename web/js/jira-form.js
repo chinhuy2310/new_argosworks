@@ -195,10 +195,11 @@ function populateParentKeySelect(deptId, targetKeyToSelect){
     });
   }
 
+  var isEn = (window.i18n && window.i18n.getLang && window.i18n.getLang() === "en");
   optionsForSelect.unshift({
     value: "",
-    text: "없음 / 선택 안 함 (독립 상위 작업)",
-    search: "없음 none 선택 안 함 독립 상위 작업"
+    text: isEn ? "None / Standalone task" : "없음 / 선택 안 함 (독립 상위 작업)",
+    search: isEn ? "none standalone independent" : "없음 none 선택 안 함 독립 상위 작업"
   });
 
   if(window.parentTomSelect){
@@ -624,13 +625,19 @@ function formatCustomDateDisplay(inputEl, displayEl, defaultPlaceholder){
   var textEl = displayEl.querySelector(".custom-date-text");
   if(!textEl) return;
   var val = (inputEl.value || "").trim();
+  var isEn = (window.i18n && window.i18n.getLang && window.i18n.getLang() === "en");
   if(!val){
-    textEl.textContent = defaultPlaceholder || "연도-월-일 선택 (YYYY-MM-DD)";
+    textEl.textContent = defaultPlaceholder || (isEn ? "Select Date (YYYY-MM-DD)" : "연도-월-일 선택 (YYYY-MM-DD)");
     textEl.classList.add("placeholder");
   } else {
     var parts = val.split("-");
     if(parts.length === 3){
-      textEl.textContent = parts[0] + "년 " + parseInt(parts[1], 10) + "월 " + parseInt(parts[2], 10) + "일 (" + val + ")";
+      if(isEn){
+        var EN_M = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        textEl.textContent = EN_M[parseInt(parts[1], 10) - 1] + " " + parseInt(parts[2], 10) + ", " + parts[0] + " (" + val + ")";
+      } else {
+        textEl.textContent = parts[0] + "년 " + parseInt(parts[1], 10) + "월 " + parseInt(parts[2], 10) + "일 (" + val + ")";
+      }
     } else {
       textEl.textContent = val;
     }
@@ -639,11 +646,13 @@ function formatCustomDateDisplay(inputEl, displayEl, defaultPlaceholder){
 }
 
 function updateStartDateDisplay(){
-  formatCustomDateDisplay(startDateInput, startDateDisplay, "시작일 선택 (YYYY-MM-DD)");
+  var isEn = (window.i18n && window.i18n.getLang && window.i18n.getLang() === "en");
+  formatCustomDateDisplay(startDateInput, startDateDisplay, isEn ? "Select Start Date (YYYY-MM-DD)" : "시작일 선택 (YYYY-MM-DD)");
 }
 
 function updateDueDateDisplay(){
-  formatCustomDateDisplay(dueDateInput, dueDateDisplay, "마감일 선택 (YYYY-MM-DD)");
+  var isEn = (window.i18n && window.i18n.getLang && window.i18n.getLang() === "en");
+  formatCustomDateDisplay(dueDateInput, dueDateDisplay, isEn ? "Select Due Date (YYYY-MM-DD)" : "마감일 선택 (YYYY-MM-DD)");
 }
 
 if(startDateInput){
@@ -859,3 +868,10 @@ if(form){
     }
   });
 }
+
+window.addEventListener("langchange", function(){
+  updateStartDateDisplay();
+  updateDueDateDisplay();
+  if(typeof populateParticipantsSelect === "function") populateParticipantsSelect();
+  if(typeof populateParentIssueSelect === "function") populateParentIssueSelect();
+});

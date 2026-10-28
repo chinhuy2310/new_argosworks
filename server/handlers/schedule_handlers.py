@@ -16,6 +16,20 @@ def _audit(session, ip, action, target_id, details=None):
         pass
 
 
+def _broadcast_schedule_change(action="changed", event_id=""):
+    try:
+        from services.notification_service import broadcast_notification_event
+        broadcast_notification_event("schedule_changed", {
+            "recipient_email": "",
+            "recipient_name": "",
+            "action": action,
+            "id": str(event_id),
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception:
+        pass
+
+
 def _require_schedule_write(handler, session, ip, action_name):
     """
     Chặn viewer (read-only tuyệt đối) và chặn khi license hết hạn.
@@ -119,6 +133,37 @@ def handle_schedule_create(handler, raw_body, ip):
     _audit(session, ip, "SCHEDULE_CREATE", event["id"],
            {"type": ev_type, "startDate": start_date, "endDate": end_date})
 
+    # Gửi thông báo đến Manager phòng ban và Admin khi có yêu cầu phê duyệt nghỉ/công tác
+    if initial_status == "pending":
+        try:
+            from services.notification_service import add_notification
+            from db import query
+            u_dept = (session.get("org") or session.get("dept_id") or "").strip().lower()
+            u_name = (session.get("name") or "").strip()
+            recipients = query(
+                """SELECT name, email, role, is_admin FROM users
+                   WHERE (disabled = 0 OR disabled IS NULL)
+                     AND (status = 'active' OR status IS NULL)
+                     AND ((LOWER(dept_id) = ? AND role = 'manager') OR role = 'admin' OR is_admin = 1)
+                     AND name != ?""",
+                (u_dept, u_name)
+            )
+            range_str = f"{start_date} ~ {end_date}" if start_date != end_date else start_date
+            for mgr in (recipients or []):
+                add_notification(
+                    recipient_email=mgr.get("email") or "",
+                    recipient_name=mgr.get("name") or "",
+                    sender_name=u_name,
+                    notif_type="schedule_request",
+                    title="휴가/일정 결재 요청",
+                    content=f"[{u_name}]님이 {ev_type} ({range_str}) 승인을 요청하였습니다.",
+                    link_id=str(event["id"]),
+                    tag="결재 요청",
+                    tag_type="warning"
+                )
+        except Exception:
+            pass
+
     # Log to JARVIS activity store
     try:
         from services.activity_store import append_activity
@@ -140,6 +185,7 @@ def handle_schedule_create(handler, raw_body, ip):
     except Exception:
         pass
 
+    _broadcast_schedule_change("create", event["id"])
     handler._send_json(200, {"ok": True, "event": event})
 
 # ---- /api/schedule/update (POST) — 본인 일정만 수정 가능 ----
@@ -222,6 +268,7 @@ def handle_schedule_update(handler, raw_body, ip):
         write_schedule(events)
     access_log(ip, "schedule_update", 200, str(event_id))
     _audit(session, ip, "SCHEDULE_UPDATE", event_id)
+    _broadcast_schedule_change("update", event_id)
     handler._send_json(200, {"ok": True, "event": target})
 
 # ---- /api/schedule/delete (POST) — 본인 일정만 삭제 가능 ----
@@ -258,6 +305,7 @@ def handle_schedule_delete(handler, raw_body, ip):
         write_schedule(events)
     access_log(ip, "schedule_delete", 200, str(event_id))
     _audit(session, ip, "SCHEDULE_DELETE", event_id)
+    _broadcast_schedule_change("delete", event_id)
     handler._send_json(200, {"ok": True})
 
 # ---- /api/schedule/approve (POST) — 휴가/일정 승인 또는 반려 (Manager/Admin 전용) ----
@@ -348,5 +396,6 @@ def handle_schedule_approve(handler, raw_body, ip):
     access_log(ip, f"schedule_{action}", 200, f"id={event_id} status={new_status}")
     _audit(session, ip, "SCHEDULE_" + action.upper(), event_id,
            {"status": new_status, "reason": reason})
+    _broadcast_schedule_change(action, event_id)
     handler._send_json(200, {"ok": True, "event": target})
 

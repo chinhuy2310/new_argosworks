@@ -599,8 +599,8 @@ function renderHomePortalSection(){
         '<h3 class="portal-card-title">👋 시작하기 (Login)</h3>' +
       '</div>' +
       '<div class="portal-card-body" style="display:flex; flex-direction:column; justify-content:space-between; flex:1;">' +
-        '<p style="font-size:12px; color:var(--ink-soft); line-height:1.45; margin:0 0 8px 0;">부서별 업무 현황 확인, 내 할 일 관리, AI 어시스턴트 대화를 이용하세요.</p>' +
-        '<button type="button" class="portal-guest-btn" id="portalGuestLoginBtn" onclick="window.location.href=\'/login\'" style="width:100%; justify-content:center; padding:6px 12px; font-size:12.5px; cursor:pointer;">🔐 지금 로그인하기</button>' +
+        '<p style="font-size:13px; color:var(--ink-soft, #475569); line-height:1.5; margin:0 0 10px 0;">부서별 업무 현황 확인, 내 할 일 관리, AI 어시스턴트 대화를 이용하세요.</p>' +
+        '<button type="button" class="portal-guest-btn" id="portalGuestLoginBtn" onclick="window.location.href=\'/login\'" style="width:100%; justify-content:center; padding:7px 14px; font-size:13px; font-weight:600; cursor:pointer;">🔐 지금 로그인하기</button>' +
       '</div>' +
     '</div>';
 
@@ -609,8 +609,8 @@ function renderHomePortalSection(){
         '<h3 class="portal-card-title">🔍 부품 & 기술 카탈로그 (PIM)</h3>' +
       '</div>' +
       '<div class="portal-card-body" style="display:flex; flex-direction:column; justify-content:space-between; flex:1;">' +
-        '<p style="font-size:12px; color:var(--ink-soft); line-height:1.45; margin:0 0 8px 0;">로그인 없이도 부품 규격서, 데이터시트, 카탈로그 PDF를 검색할 수 있습니다.</p>' +
-        '<button type="button" class="portal-guest-btn btn-secondary" style="width:100%; justify-content:center; padding:6px 12px; font-size:12.5px;" onclick="showTab(\'pim\')">카탈로그 바로가기 →</button>' +
+        '<p style="font-size:13px; color:var(--ink-soft, #475569); line-height:1.5; margin:0 0 10px 0;">로그인 없이도 부품 규격서, 데이터시트, 카탈로그 PDF를 검색할 수 있습니다.</p>' +
+        '<button type="button" class="portal-guest-btn btn-secondary" style="width:100%; justify-content:center; padding:7px 14px; font-size:13px; font-weight:600;" onclick="showTab(\'pim\')">카탈로그 바로가기 →</button>' +
       '</div>' +
     '</div>';
 
@@ -619,8 +619,8 @@ function renderHomePortalSection(){
         '<h3 class="portal-card-title">📋 업무 보드 미리보기</h3>' +
       '</div>' +
       '<div class="portal-card-body" style="display:flex; flex-direction:column; justify-content:space-between; flex:1;">' +
-        '<p style="font-size:12px; color:var(--ink-soft); line-height:1.45; margin:0 0 8px 0;">조직의 공개 업무 진행 상황과 프로젝트 일정을 한눈에 파악하세요.</p>' +
-        '<button type="button" class="portal-guest-btn btn-secondary" style="width:100%; justify-content:center; padding:6px 12px; font-size:12.5px;" onclick="showTab(\'dash\')">업무 보드 열기 →</button>' +
+        '<p style="font-size:13px; color:var(--ink-soft, #475569); line-height:1.5; margin:0 0 10px 0;">조직의 공개 업무 진행 상황과 프로젝트 일정을 한눈에 파악하세요.</p>' +
+        '<button type="button" class="portal-guest-btn btn-secondary" style="width:100%; justify-content:center; padding:7px 14px; font-size:13px; font-weight:600;" onclick="showTab(\'dash\')">업무 보드 열기 →</button>' +
       '</div>' +
     '</div>';
 

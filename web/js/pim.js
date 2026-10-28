@@ -214,11 +214,21 @@ function renderPimList(){
   if(!items.length){
     pimList.innerHTML = "";
     if(pimEmpty) pimEmpty.hidden = false;
-    if(pimListLabel) pimListLabel.textContent = "사내 관리 제품 (0개)";
+    var isEn = (window.i18n && window.i18n.getLang && window.i18n.getLang() === "en");
+    if(pimListLabel) {
+      pimListLabel.textContent = (window.i18n && window.i18n.t)
+        ? window.i18n.t("pim.list_label", { count: 0 })
+        : (isEn ? "Managed Products (0 items)" : "사내 관리 제품 (0개)");
+    }
     return;
   }
   if(pimEmpty) pimEmpty.hidden = true;
-  if(pimListLabel) pimListLabel.textContent = "사내 관리 제품 (" + items.length + "개)";
+  var isEn = (window.i18n && window.i18n.getLang && window.i18n.getLang() === "en");
+  if(pimListLabel) {
+    pimListLabel.textContent = (window.i18n && window.i18n.t)
+      ? window.i18n.t("pim.list_label", { count: items.length })
+      : (isEn ? ("Managed Products (" + items.length + " items)") : ("사내 관리 제품 (" + items.length + "개)"));
+  }
   if(pimNewBtn) {
     var canMod = (typeof canModifyPimUser === "function") && canModifyPimUser();
     pimNewBtn.style.display = canMod ? "" : "none";
@@ -1122,3 +1132,7 @@ window.triggerLiveSync = triggerLiveSync;
 window.setPimMode = setPimMode;
 window.initPimTab = initPimTab;
 
+
+window.addEventListener("langchange", function(){
+  if(typeof renderPimList === "function") renderPimList();
+});

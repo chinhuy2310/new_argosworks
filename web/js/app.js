@@ -67,10 +67,27 @@ function showTab(which, updateHash){
   if(el.dash) el.dash.hidden = which !== "dash";
   if(el.form) el.form.hidden = which !== "form";
   if(el.schedule) el.schedule.hidden = which !== "schedule";
+  document.body.classList.toggle("view-schedule-active", which === "schedule");
   if(el.pim) el.pim.hidden = which !== "pim";
   if(el.chat) el.chat.hidden = which !== "chat";
   if(el.history) el.history.hidden = which !== "history";
   if(el.settings) el.settings.hidden = which !== "settings";
+
+  // Main LNB sidebar: DO NOT collapse automatically on Schedule tab.
+  // Only collapse when the Schedule filter card is open / being opened.
+  if(which === "schedule"){
+    var schedSide = document.getElementById("schedMembersSidebar");
+    var isSchedSideOpen = schedSide && !schedSide.classList.contains("is-collapsed");
+    if(isSchedSideOpen){
+      if(!document.body.classList.contains("sidebar-collapsed")){
+        document.body.setAttribute("data-auto-collapsed-sched", "1");
+        document.body.classList.add("sidebar-collapsed");
+      }
+    }
+  } else if(document.body.getAttribute("data-auto-collapsed-sched") === "1"){
+    document.body.removeAttribute("data-auto-collapsed-sched");
+    document.body.classList.remove("sidebar-collapsed");
+  }
 
   // Close canvas whenever switching tabs
   if(typeof window.closeCanvas === "function"){
@@ -204,6 +221,13 @@ window.addEventListener("hashchange", function(){
 });
 
 // ---- 초기 로딩 ----
+// 동기적으로 저장된 로그인 사용자 정보를 최우선 복원하여 탭 전환 시 미로그인 플래시 및 데이터 누락 방지
+try {
+  var earlySavedUser = sessionStorage.getItem("argosUser") || localStorage.getItem("argosUser") || sessionStorage.getItem("jarvisUser") || localStorage.getItem("jarvisUser") || sessionStorage.getItem("batonUser") || localStorage.getItem("batonUser");
+  if(earlySavedUser && typeof applyLogin === "function"){
+    applyLogin(JSON.parse(earlySavedUser));
+  }
+} catch(e){}
 try {
   if (typeof isViewerUser === "function" && isViewerUser()) {
     if (el.tabForm) el.tabForm.hidden = true;
@@ -286,6 +310,7 @@ function initDaouSidebarAndTheme(){
         document.body.classList.toggle("sidebar-mobile-open");
       } else {
         document.body.classList.toggle("sidebar-collapsed");
+        document.body.removeAttribute("data-auto-collapsed-sched");
       }
       setTimeout(function(){
         if(typeof window.resizeHomeInteractiveBg === "function") window.resizeHomeInteractiveBg();

@@ -861,6 +861,19 @@ def handle_get_schedule(handler, parsed, ip):
     })
 
 
+def _broadcast_schedule_task_changed(task_id):
+    try:
+        from services.notification_service import broadcast_notification_event
+        broadcast_notification_event("schedule_changed", {
+            "recipient_email": "",
+            "recipient_name": "",
+            "action": "task_changed",
+            "id": str(task_id)
+        })
+    except Exception:
+        pass
+
+
 def handle_assign_schedule_task(handler, raw_body, ip):
     """POST /api/schedule/assign-task — 카드를 특정 날짜로 드래그 앤 드롭하여 일정 배정"""
     session = handler._get_session_or_401()
@@ -904,6 +917,7 @@ def handle_assign_schedule_task(handler, raw_body, ip):
             handler._send_json(404, {"ok": False, "error": f"해당 업무 카드 [{task_id}]를 찾을 수 없습니다."})
             return
         access_log(ip, "show_schedule_task", 200, f"{task_id}")
+        _broadcast_schedule_task_changed(task_id)
         handler._send_json(200, {
             "ok": True,
             "taskId": task_id,
@@ -919,6 +933,7 @@ def handle_assign_schedule_task(handler, raw_body, ip):
             handler._send_json(404, {"ok": False, "error": f"해당 업무 카드 [{task_id}]를 찾을 수 없습니다."})
             return
         access_log(ip, "unassign_schedule_task", 200, f"{task_id}")
+        _broadcast_schedule_task_changed(task_id)
         _audit(session, ip, "RECORD_SCHEDULE_UNASSIGN", "record", task_id,
                {"wipeDates": bool(payload.get("wipeDates"))})
         handler._send_json(200, {
@@ -956,6 +971,7 @@ def handle_assign_schedule_task(handler, raw_body, ip):
             pass
 
     access_log(ip, "assign_schedule_task", 200, f"{task_id} -> {saved_date}")
+    _broadcast_schedule_task_changed(task_id)
     _audit(session, ip, "RECORD_SCHEDULE_ASSIGN", "record", task_id,
            {"date": saved_date, "endDate": end_date or saved_date})
     handler._send_json(200, {
@@ -1004,6 +1020,7 @@ def handle_unassign_schedule_task(handler, raw_body, ip):
         return
 
     access_log(ip, "unassign_schedule_task", 200, f"{task_id}")
+    _broadcast_schedule_task_changed(task_id)
     _audit(session, ip, "RECORD_SCHEDULE_UNASSIGN", "record", task_id,
            {"wipeDates": wipe_dates})
     handler._send_json(200, {
