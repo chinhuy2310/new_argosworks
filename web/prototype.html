@@ -292,7 +292,7 @@
     .fcr-right {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
       flex-shrink: 0;
     }
     .fcr-count-badge {
@@ -306,38 +306,68 @@
       min-width: 38px;
       text-align: center;
     }
-    .fcr-donut-wrap {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .fcr-donut {
-      width: 30px;
-      height: 30px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+
+    /* Main Project Standard Donut Styles */
+    .assignee-donut-wrap {
+      position: relative;
+      width: 32px;
+      height: 32px;
       flex-shrink: 0;
-    }
-    .fcr-donut-hole {
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      background: var(--surface-elevated);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 9.5px;
-      font-weight: 800;
-      color: var(--text-main);
     }
-    .fcr-status-text {
+    .assignee-donut-pie {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+    }
+    .assignee-donut-hole {
+      position: relative;
+      z-index: 1;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+    }
+    .assignee-donut-num {
+      font-size: 8.5px;
+      font-weight: 700;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: -0.01em;
+      line-height: 1;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .assignee-progress-breakdown {
+      display: flex;
+      align-items: center;
+      gap: 3px;
       font-size: 11.5px;
-      color: var(--text-muted);
+      color: var(--text-faint);
       white-space: nowrap;
     }
-
+    .assignee-progress-breakdown .pg-item {
+      display: inline-flex;
+      align-items: center;
+    }
+    .assignee-progress-breakdown .pg-item.pg-done { color: #10b981; font-weight: 600; }
+    .assignee-progress-breakdown .pg-item.pg-review { color: #3b82f6; font-weight: 600; }
+    .assignee-progress-breakdown .pg-item.pg-inprog { color: #f59e0b; font-weight: 600; }
+    .assignee-progress-breakdown .pg-item.pg-todo { color: var(--text-faint); }
+    .assignee-progress-breakdown .pg-dot {
+      color: var(--border);
+      margin: 0 1px;
+    }
 
     /* ==========================================================================
        CONCEPT 6: ULTRA HIGH-DENSITY CHIPS MATRIX
@@ -768,9 +798,9 @@
 
     <!-- Concept Description Banner -->
     <div class="concept-desc-card">
-      <div class="concept-desc-title" id="conceptTitle">⚡ Mẫu 5: Bảng Chia 2 Cột Song Song (Two-Column Split Table) — Tiết kiệm 50% chiều cao</div>
+      <div class="concept-desc-title" id="conceptTitle">⚡ Mẫu 5: Lưới Dòng Co Giãn (Fluid Auto-Fit) — Biểu đồ tròn chuẩn thiết kế dự án chính</div>
       <div class="concept-desc-text" id="conceptDesc">
-        Giải pháp hoàn hảo: Thay vì kéo dài 13 dòng xuống dưới, danh sách chia đôi thành 2 cột song song (mỗi bên 6-7 người). Bạn nhìn thấy toàn bộ 13 thành viên trên 1 màn hình duy nhất trong chưa đầy 220px chiều cao, không cần cuộn trang!
+        Thiết kế lưới 2 cột song song tiết kiệm 50% chiều cao, tự động xếp 1 cột khi màn hình nhỏ (không bị lặp header). Biểu đồ tròn Donut mini (32px, viền 3px), % tiến độ màu linh hoạt và nhãn trạng thái (완료 xanh lá, 진행 cam, 대기 xám) chuẩn 100% theo giao diện dự án chính.
       </div>
     </div>
 
@@ -792,7 +822,7 @@
            4. COMPACT CIRCULAR DONUT PRO (MAXIMIZED HORIZONTAL SPACE)
            ==================================================================== -->
       
-      <!-- ====================================================================
+            <!-- ====================================================================
            5. CONCEPT 5: UNIFIED FLUID COMPACT LIST (ZERO REPEATED HEADERS!)
            ==================================================================== -->
       <div id="concept-split-col">
@@ -808,11 +838,16 @@
             </div>
             <div class="fcr-right">
               <span class="fcr-count-badge">9건</span>
-              <div class="fcr-donut-wrap">
-                <div class="fcr-donut" style="background: conic-gradient(#10b981 0% 11%, #0284c7 11% 100%);">
-                  <div class="fcr-donut-hole">56%</div>
+              <div class="assignee-donut-wrap">
+                <div class="assignee-donut-pie" style="background: conic-gradient(#10b981 0% 11.1%, #f59e0b 11.1% 100%);"></div>
+                <div class="assignee-donut-hole">
+                  <span class="assignee-donut-num" style="color: #3b82f6;">56%</span>
                 </div>
-                <span class="fcr-status-text">완료 1 · 진행 8</span>
+              </div>
+              <div class="assignee-progress-breakdown">
+                <span class="pg-item pg-done">완료 1</span>
+                <span class="pg-dot">·</span>
+                <span class="pg-item pg-inprog">진행 8</span>
               </div>
             </div>
           </div>
@@ -827,11 +862,14 @@
             </div>
             <div class="fcr-right">
               <span class="fcr-count-badge">6건</span>
-              <div class="fcr-donut-wrap">
-                <div class="fcr-donut" style="background: conic-gradient(#0284c7 0% 100%);">
-                  <div class="fcr-donut-hole">50%</div>
+              <div class="assignee-donut-wrap">
+                <div class="assignee-donut-pie" style="background: conic-gradient(#f59e0b 0% 100%);"></div>
+                <div class="assignee-donut-hole">
+                  <span class="assignee-donut-num" style="color: #3b82f6;">50%</span>
                 </div>
-                <span class="fcr-status-text">진행 6</span>
+              </div>
+              <div class="assignee-progress-breakdown">
+                <span class="pg-item pg-inprog">진행 6</span>
               </div>
             </div>
           </div>
@@ -846,11 +884,16 @@
             </div>
             <div class="fcr-right">
               <span class="fcr-count-badge">4건</span>
-              <div class="fcr-donut-wrap">
-                <div class="fcr-donut" style="background: conic-gradient(#0284c7 0% 75%, #f59e0b 75% 100%);">
-                  <div class="fcr-donut-hole">38%</div>
+              <div class="assignee-donut-wrap">
+                <div class="assignee-donut-pie" style="background: conic-gradient(#f59e0b 0% 75%, var(--border, #94a3b8) 75% 100%);"></div>
+                <div class="assignee-donut-hole">
+                  <span class="assignee-donut-num" style="color: #f59e0b;">38%</span>
                 </div>
-                <span class="fcr-status-text">진행 3 · 대기 1</span>
+              </div>
+              <div class="assignee-progress-breakdown">
+                <span class="pg-item pg-inprog">진행 3</span>
+                <span class="pg-dot">·</span>
+                <span class="pg-item pg-todo">대기 1</span>
               </div>
             </div>
           </div>
@@ -865,11 +908,14 @@
             </div>
             <div class="fcr-right">
               <span class="fcr-count-badge">2건</span>
-              <div class="fcr-donut-wrap">
-                <div class="fcr-donut" style="background: conic-gradient(#0284c7 0% 100%);">
-                  <div class="fcr-donut-hole">50%</div>
+              <div class="assignee-donut-wrap">
+                <div class="assignee-donut-pie" style="background: conic-gradient(#f59e0b 0% 100%);"></div>
+                <div class="assignee-donut-hole">
+                  <span class="assignee-donut-num" style="color: #3b82f6;">50%</span>
                 </div>
-                <span class="fcr-status-text">진행 2</span>
+              </div>
+              <div class="assignee-progress-breakdown">
+                <span class="pg-item pg-inprog">진행 2</span>
               </div>
             </div>
           </div>
@@ -884,11 +930,16 @@
             </div>
             <div class="fcr-right">
               <span class="fcr-count-badge">2건</span>
-              <div class="fcr-donut-wrap">
-                <div class="fcr-donut" style="background: conic-gradient(#0284c7 0% 50%, #f59e0b 50% 100%);">
-                  <div class="fcr-donut-hole">25%</div>
+              <div class="assignee-donut-wrap">
+                <div class="assignee-donut-pie" style="background: conic-gradient(#f59e0b 0% 50%, var(--border, #94a3b8) 50% 100%);"></div>
+                <div class="assignee-donut-hole">
+                  <span class="assignee-donut-num" style="color: #f59e0b;">25%</span>
                 </div>
-                <span class="fcr-status-text">진행 1 · 대기 1</span>
+              </div>
+              <div class="assignee-progress-breakdown">
+                <span class="pg-item pg-inprog">진행 1</span>
+                <span class="pg-dot">·</span>
+                <span class="pg-item pg-todo">대기 1</span>
               </div>
             </div>
           </div>
@@ -903,11 +954,14 @@
             </div>
             <div class="fcr-right">
               <span class="fcr-count-badge">2건</span>
-              <div class="fcr-donut-wrap">
-                <div class="fcr-donut" style="background: conic-gradient(#0284c7 0% 100%);">
-                  <div class="fcr-donut-hole">50%</div>
+              <div class="assignee-donut-wrap">
+                <div class="assignee-donut-pie" style="background: conic-gradient(#f59e0b 0% 100%);"></div>
+                <div class="assignee-donut-hole">
+                  <span class="assignee-donut-num" style="color: #3b82f6;">50%</span>
                 </div>
-                <span class="fcr-status-text">진행 2</span>
+              </div>
+              <div class="assignee-progress-breakdown">
+                <span class="pg-item pg-inprog">진행 2</span>
               </div>
             </div>
           </div>
@@ -922,11 +976,16 @@
             </div>
             <div class="fcr-right">
               <span class="fcr-count-badge">3건</span>
-              <div class="fcr-donut-wrap">
-                <div class="fcr-donut" style="background: conic-gradient(#10b981 0% 67%, #0284c7 67% 100%);">
-                  <div class="fcr-donut-hole">67%</div>
+              <div class="assignee-donut-wrap">
+                <div class="assignee-donut-pie" style="background: conic-gradient(#10b981 0% 66.7%, #f59e0b 66.7% 100%);"></div>
+                <div class="assignee-donut-hole">
+                  <span class="assignee-donut-num" style="color: #10b981;">83%</span>
                 </div>
-                <span class="fcr-status-text">완료 2 · 진행 1</span>
+              </div>
+              <div class="assignee-progress-breakdown">
+                <span class="pg-item pg-done">완료 2</span>
+                <span class="pg-dot">·</span>
+                <span class="pg-item pg-inprog">진행 1</span>
               </div>
             </div>
           </div>
@@ -941,11 +1000,14 @@
             </div>
             <div class="fcr-right">
               <span class="fcr-count-badge">2건</span>
-              <div class="fcr-donut-wrap">
-                <div class="fcr-donut" style="background: conic-gradient(#0284c7 0% 100%);">
-                  <div class="fcr-donut-hole">50%</div>
+              <div class="assignee-donut-wrap">
+                <div class="assignee-donut-pie" style="background: conic-gradient(#f59e0b 0% 100%);"></div>
+                <div class="assignee-donut-hole">
+                  <span class="assignee-donut-num" style="color: #3b82f6;">50%</span>
                 </div>
-                <span class="fcr-status-text">진행 2</span>
+              </div>
+              <div class="assignee-progress-breakdown">
+                <span class="pg-item pg-inprog">진행 2</span>
               </div>
             </div>
           </div>
@@ -960,11 +1022,16 @@
             </div>
             <div class="fcr-right">
               <span class="fcr-count-badge">4건</span>
-              <div class="fcr-donut-wrap">
-                <div class="fcr-donut" style="background: conic-gradient(#10b981 0% 50%, #0284c7 50% 100%);">
-                  <div class="fcr-donut-hole">75%</div>
+              <div class="assignee-donut-wrap">
+                <div class="assignee-donut-pie" style="background: conic-gradient(#10b981 0% 50%, #f59e0b 50% 100%);"></div>
+                <div class="assignee-donut-hole">
+                  <span class="assignee-donut-num" style="color: #3b82f6;">75%</span>
                 </div>
-                <span class="fcr-status-text">완료 2 · 진행 2</span>
+              </div>
+              <div class="assignee-progress-breakdown">
+                <span class="pg-item pg-done">완료 2</span>
+                <span class="pg-dot">·</span>
+                <span class="pg-item pg-inprog">진행 2</span>
               </div>
             </div>
           </div>
@@ -979,11 +1046,14 @@
             </div>
             <div class="fcr-right">
               <span class="fcr-count-badge">1건</span>
-              <div class="fcr-donut-wrap">
-                <div class="fcr-donut" style="background: conic-gradient(#f59e0b 0% 100%);">
-                  <div class="fcr-donut-hole">0%</div>
+              <div class="assignee-donut-wrap">
+                <div class="assignee-donut-pie" style="background: var(--border, #94a3b8);"></div>
+                <div class="assignee-donut-hole">
+                  <span class="assignee-donut-num" style="color: var(--text-faint);">0%</span>
                 </div>
-                <span class="fcr-status-text">대기 1</span>
+              </div>
+              <div class="assignee-progress-breakdown">
+                <span class="pg-item pg-todo">대기 1</span>
               </div>
             </div>
           </div>
@@ -998,11 +1068,14 @@
             </div>
             <div class="fcr-right">
               <span class="fcr-count-badge">1건</span>
-              <div class="fcr-donut-wrap">
-                <div class="fcr-donut" style="background: conic-gradient(#10b981 0% 100%);">
-                  <div class="fcr-donut-hole">100%</div>
+              <div class="assignee-donut-wrap">
+                <div class="assignee-donut-pie" style="background: conic-gradient(#10b981 0% 100%);"></div>
+                <div class="assignee-donut-hole">
+                  <span class="assignee-donut-num" style="color: #10b981;">100%</span>
                 </div>
-                <span class="fcr-status-text">완료 1</span>
+              </div>
+              <div class="assignee-progress-breakdown">
+                <span class="pg-item pg-done">완료 1</span>
               </div>
             </div>
           </div>
@@ -1017,11 +1090,14 @@
             </div>
             <div class="fcr-right">
               <span class="fcr-count-badge">1건</span>
-              <div class="fcr-donut-wrap">
-                <div class="fcr-donut" style="background: conic-gradient(#0284c7 0% 100%);">
-                  <div class="fcr-donut-hole">50%</div>
+              <div class="assignee-donut-wrap">
+                <div class="assignee-donut-pie" style="background: conic-gradient(#f59e0b 0% 100%);"></div>
+                <div class="assignee-donut-hole">
+                  <span class="assignee-donut-num" style="color: #3b82f6;">50%</span>
                 </div>
-                <span class="fcr-status-text">진행 1</span>
+              </div>
+              <div class="assignee-progress-breakdown">
+                <span class="pg-item pg-inprog">진행 1</span>
               </div>
             </div>
           </div>
@@ -1036,11 +1112,16 @@
             </div>
             <div class="fcr-right">
               <span class="fcr-count-badge">3건</span>
-              <div class="fcr-donut-wrap">
-                <div class="fcr-donut" style="background: conic-gradient(#0284c7 0% 67%, #f59e0b 67% 100%);">
-                  <div class="fcr-donut-hole">45%</div>
+              <div class="assignee-donut-wrap">
+                <div class="assignee-donut-pie" style="background: conic-gradient(#f59e0b 0% 66.7%, var(--border, #94a3b8) 66.7% 100%);"></div>
+                <div class="assignee-donut-hole">
+                  <span class="assignee-donut-num" style="color: #f59e0b;">33%</span>
                 </div>
-                <span class="fcr-status-text">진행 2 · 대기 1</span>
+              </div>
+              <div class="assignee-progress-breakdown">
+                <span class="pg-item pg-inprog">진행 2</span>
+                <span class="pg-dot">·</span>
+                <span class="pg-item pg-todo">대기 1</span>
               </div>
             </div>
           </div>
@@ -1865,8 +1946,8 @@
   <script>
     const descriptions = {
       'concept-split-col': {
-        title: '⚡ Mẫu 5: Lưới Dòng Co Giãn Thông Minh (Fluid Auto-Fit Rows) — Không bao giờ lặp header!',
-        desc: 'Đã xử lý triệt để lỗi lặp header: Mỗi thành viên là 1 dòng thẻ độc lập tự co giãn (Auto-fit). Khi màn hình rộng, tự động chia 2 cột song song (tiết kiệm 50% chiều cao). Khi thu hẹp màn hình, tự động xếp 1 cột trơn tru mượt mà, giữ trọn vẹn Donut tròn % và trạng thái mà KHÔNG bị lặp header ở giữa!'
+        title: '⚡ Mẫu 5: Lưới Dòng Co Giãn (Fluid Auto-Fit) — Biểu đồ tròn chuẩn thiết kế dự án chính',
+        desc: 'Thiết kế lưới 2 cột song song tiết kiệm 50% chiều cao, tự động xếp 1 cột khi màn hình nhỏ (không bị lặp header). Biểu đồ tròn Donut mini (32px, viền 3px), % tiến độ màu linh hoạt và nhãn trạng thái (완료 xanh lá, 진행 cam, 대기 xám) chuẩn 100% theo giao diện dự án chính.'
       },
       'concept-dense-chips': {
         title: '🚀 Mẫu 6: Ma Trận Mini-Chips Cao Độ (High-Density Chips Matrix) — Tiết kiệm 80% diện tích',
