@@ -2261,7 +2261,7 @@ def handle_push_record_jira(handler, raw_body, ip):
             indent = "  " * idx
             prefix = "└── " if idx > 0 else "■ "
             steps.append(f"{indent}{prefix}[{code}] {t}{is_cur}")
-        breadcrumb_text = "🌳 [업무 계층 경로 (ARGOS WORK Hierarchy)]\n" + "\n".join(steps)
+        breadcrumb_text = "[업무 계층 경로 (ARGOS WORK Hierarchy)]\n" + "\n".join(steps)
 
     # 3. 최인접 상위 Jira 키 찾기
     closest_jira_parent = None

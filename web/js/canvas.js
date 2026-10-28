@@ -1116,8 +1116,11 @@
 
     var header = document.createElement("div");
     header.className = "canvas-confirm-modal-header";
+    var iconHtml = (options.icon && options.icon !== "")
+      ? ('<span class="canvas-confirm-modal-icon">' + options.icon + '</span>')
+      : (options.icon === "" ? "" : '<span class="canvas-confirm-modal-icon">⚠️</span>');
     header.innerHTML = (
-      '<span class="canvas-confirm-modal-icon">' + (options.icon || '⚠️') + '</span>' +
+      iconHtml +
       '<h3 class="canvas-confirm-modal-title">' + escapeHtml(options.title || '확인') + '</h3>'
     );
 
@@ -1310,7 +1313,7 @@
       if(chain.length > 1){
         treeHtml = (
           '<div style="margin:8px 0 10px; padding:10px 12px; background:var(--bg-subtle, #f8fafc); border:1px solid var(--border-light, #e2e8f0); border-radius:8px; font-size:12px; max-height:160px; overflow-y:auto;">' +
-            '<div style="font-weight:700; color:var(--text-muted); margin-bottom:6px; font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">🌳 업무 계층 구조 (' + depth + '단계)</div>' +
+            '<div style="font-weight:700; color:var(--text-muted); margin-bottom:6px; font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">업무 계층 구조 (' + depth + '단계)</div>' +
             chain.map(function(node, idx){
               var indent = idx * 14;
               var isCur = Boolean(node.isCurrent);
@@ -1335,7 +1338,7 @@
       // Case A: Has unpushed parents in hierarchy
       if(hasUnpushedParents){
         showCanvasConfirmDialog({
-          icon: "🌳",
+          icon: "",
           title: "Jira 계층 연동 및 발행 안내",
           bodyHtml: (
             '<div style="display:flex; flex-direction:column; gap:8px;">' +
