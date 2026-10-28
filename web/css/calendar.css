@@ -1,27 +1,27 @@
 /* ==========================================================================
-   CALENDAR TAB DUAL-THEME STYLING (LIGHT & DARK MODE COMPATIBLE)
+   CALENDAR TAB DUAL-THEME STYLING (SOOTHING MUTED BLUE PALETTE)
    ========================================================================== */
 
-/* 1. Base / Light Mode Variables */
+/* 1. Base / Light Mode Variables - Soothing Slate/Denim Blue (#3e6fa5) */
 #viewSchedule {
-  --sched-btn-bg: #eff6ff;
-  --sched-btn-border: #bfdbfe;
-  --sched-btn-text: #1d4ed8;
-  --sched-btn-hover-bg: #2563eb;
+  --sched-btn-bg: #f0f5fa;
+  --sched-btn-border: #cbdbe8;
+  --sched-btn-text: #325d8c;
+  --sched-btn-hover-bg: #3e6fa5;
   --sched-btn-hover-text: #ffffff;
 }
 
-/* 2. Dark Mode Variables */
+/* 2. Dark Mode Variables - Soft Muted Blue */
 [data-theme="dark"] #viewSchedule,
 :root:not([data-theme="light"]) #viewSchedule {
-  --sched-btn-bg: rgba(59, 130, 246, 0.14);
-  --sched-btn-border: rgba(59, 130, 246, 0.32);
-  --sched-btn-text: #93c5fd;
-  --sched-btn-hover-bg: rgba(59, 130, 246, 0.28);
+  --sched-btn-bg: rgba(62, 111, 165, 0.18);
+  --sched-btn-border: rgba(62, 111, 165, 0.38);
+  --sched-btn-text: #9bbcdb;
+  --sched-btn-hover-bg: rgba(62, 111, 165, 0.32);
   --sched-btn-hover-text: #ffffff;
 }
 
-/* 3. Checkbox Styling: Light Mode (Crisp, High-Contrast White + Royal Blue) */
+/* 3. Checkbox Styling: Light Mode (Soothing Denim Blue, 0% Glare) */
 #viewSchedule input[type="checkbox"],
 .schedule-layout-modern input[type="checkbox"] {
   appearance: none;
@@ -49,8 +49,8 @@
 
 #viewSchedule input[type="checkbox"]:checked,
 .schedule-layout-modern input[type="checkbox"]:checked {
-  background: #2563eb;
-  border-color: #2563eb;
+  background: #3e6fa5;
+  border-color: #3e6fa5;
 }
 
 #viewSchedule input[type="checkbox"]:checked::after,
@@ -65,7 +65,7 @@
   margin-top: -2px;
 }
 
-/* 4. Checkbox Styling: Dark Mode (Anti-Glare Dark Navy + Soft Pastel Blue Tick) */
+/* 4. Checkbox Styling: Dark Mode (Calm Navy + Soft Blue Tick) */
 [data-theme="dark"] #viewSchedule input[type="checkbox"],
 :root:not([data-theme="light"]) #viewSchedule input[type="checkbox"],
 [data-theme="dark"] .schedule-layout-modern input[type="checkbox"],
@@ -86,15 +86,15 @@
 :root:not([data-theme="light"]) #viewSchedule input[type="checkbox"]:checked,
 [data-theme="dark"] .schedule-layout-modern input[type="checkbox"]:checked,
 :root:not([data-theme="light"]) .schedule-layout-modern input[type="checkbox"]:checked {
-  background: #1e3a5f;
-  border-color: #3b82f6;
+  background: #22364a;
+  border-color: #3e6fa5;
 }
 
 [data-theme="dark"] #viewSchedule input[type="checkbox"]:checked::after,
 :root:not([data-theme="light"]) #viewSchedule input[type="checkbox"]:checked::after,
 [data-theme="dark"] .schedule-layout-modern input[type="checkbox"]:checked::after,
 :root:not([data-theme="light"]) .schedule-layout-modern input[type="checkbox"]:checked::after {
-  border-color: #93c5fd;
+  border-color: #9bbcdb;
 }
 
 /* ==========================================================================
@@ -770,35 +770,35 @@
   gap: 5px;
   height: 28px;
   padding: 0 12px;
-  background: #2563eb;
+  background: #3e6fa5;
   color: #ffffff !important;
-  border: 1px solid #1d4ed8;
+  border: 1px solid #325d8c;
   border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap !important;
   flex-shrink: 0 !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
   transition: all 0.15s ease;
 }
 .btn-sched-create-primary:hover {
-  background: #1d4ed8;
+  background: #325d8c;
   transform: translateY(-1px);
 }
 
 [data-theme="dark"] .btn-sched-create-primary,
 :root:not([data-theme="light"]) .btn-sched-create-primary {
-  background: rgba(59, 130, 246, 0.14);
-  color: #93c5fd !important;
-  border: 1px solid rgba(59, 130, 246, 0.35);
+  background: rgba(62, 111, 165, 0.2);
+  color: #9bbcdb !important;
+  border: 1px solid rgba(62, 111, 165, 0.42);
   box-shadow: none;
 }
 [data-theme="dark"] .btn-sched-create-primary:hover,
 :root:not([data-theme="light"]) .btn-sched-create-primary:hover {
-  background: rgba(59, 130, 246, 0.25);
+  background: rgba(62, 111, 165, 0.32);
   color: #ffffff !important;
-  border-color: rgba(59, 130, 246, 0.55);
+  border-color: rgba(62, 111, 165, 0.6);
 }
 .btn-sched-create-icon {
   font-size: 13px;
