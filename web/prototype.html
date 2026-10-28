@@ -201,6 +201,81 @@
       font-weight: 700;
     }
 
+    
+    /* ==========================================================================
+       CONCEPT 4: COMPACT CIRCULAR DONUT PRO (MAXIMIZED HORIZONTAL SPACE)
+       ========================================================================== */
+    .donut-pro-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+    .donut-pro-table th {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-faint);
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .donut-pro-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+      font-size: 13px;
+    }
+    .donut-pro-table tr:hover td {
+      background: var(--surface-elevated);
+      cursor: pointer;
+    }
+
+    .donut-pro-cell {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .radial-donut-box {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      flex-shrink: 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .radial-donut-inner {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10.5px;
+      font-weight: 800;
+      color: var(--text-main);
+    }
+    .radial-donut-breakdown {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .mini-stat-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 2.5px 8px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+
     /* ==========================================================================
        CONCEPT 1: JIRA AGILE STACKED VIEW
        ========================================================================== */
@@ -464,9 +539,10 @@
       </div>
 
       <div class="tabs-group">
-        <button class="tab-btn active" onclick="switchConcept('concept-jira')">Mẫu 1: Jira Agile Stacked</button>
+        <button class="tab-btn" onclick="switchConcept('concept-jira')">Mẫu 1: Jira Stacked Bar</button>
         <button class="tab-btn" onclick="switchConcept('concept-daou')">Mẫu 2: DaouOffice Matrix</button>
-        <button class="tab-btn" onclick="switchConcept('concept-cards')">Mẫu 3: Linear Card Grid</button>
+        <button class="tab-btn" onclick="switchConcept('concept-cards')">Mẫu 3: Card Grid</button>
+        <button class="tab-btn active" onclick="switchConcept('concept-donut-pro')">Mẫu 4: Donut Tròn Nâng Cấp ⭐</button>
       </div>
 
       <button class="theme-toggle-btn" onclick="toggleTheme()">
@@ -476,9 +552,9 @@
 
     <!-- Concept Description Banner -->
     <div class="concept-desc-card">
-      <div class="concept-desc-title" id="conceptTitle">📌 Mẫu 1: Jira Cloud Style — Thanh tiến độ đa đoạn (Stacked Bar)</div>
+      <div class="concept-desc-title" id="conceptTitle">⭕ Mẫu 4: Dạng Tròn Nâng Cấp (Compact Circular Donut) — Tối đa hóa khoảng trống</div>
       <div class="concept-desc-text" id="conceptDesc">
-        Tối ưu cho quản lý dự án Agile: Kết hợp Avatar tròn, gom tên và phòng ban vào 1 cột, thanh tiến độ đa màu (Xanh lá: Xong / Xanh dương: Đang làm / Cam: Chờ) giúp so sánh hiệu suất giữa các thành viên chỉ trong 1 giây.
+        Đúng như bạn nhận định: Dạng vòng tròn donut chỉ chiếm 36px bề ngang, giúp giải phóng hoàn toàn không gian hàng để hiển thị đầy đủ: Avatar + Phòng ban, thẻ Danh mục công việc, và các Pill chỉ số chi tiết (Hoàn thành, Đang làm, Chờ xử lý, Cảnh báo trễ hạn) mà không bị chật chội.
       </div>
     </div>
 
@@ -495,7 +571,205 @@
       <!-- ====================================================================
            1. JIRA AGILE STACKED VIEW
            ==================================================================== -->
-      <div id="concept-jira">
+      
+      <!-- ====================================================================
+           4. COMPACT CIRCULAR DONUT PRO (MAXIMIZED HORIZONTAL SPACE)
+           ==================================================================== -->
+      <div id="concept-donut-pro">
+        <table class="donut-pro-table">
+          <thead>
+            <tr>
+              <th style="width: 240px;">담당자 / 소속</th>
+              <th style="width: 100px; text-align: center;">담당 건수</th>
+              <th style="width: 240px;">카테고리</th>
+              <th>진행률 및 상세 현황 (Donut + Multi-Status Pills)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #64748b;">?</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">미배정 (Unassigned)</span>
+                    <span class="user-dept-sub">-</span>
+                  </div>
+                </div>
+              </td>
+              <td style="text-align: center;"><span class="task-count-badge">9 건</span></td>
+              <td>
+                <div class="cats-cell">
+                  <span class="cat-chip">작업</span>
+                  <span class="cat-chip">기타</span>
+                  <span class="cat-chip">하위 작업</span>
+                </div>
+              </td>
+              <td>
+                <div class="donut-pro-cell">
+                  <div class="radial-donut-box" style="background: conic-gradient(#10b981 0% 11%, #0284c7 11% 100%);">
+                    <div class="radial-donut-inner">56%</div>
+                  </div>
+                  <div class="radial-donut-breakdown">
+                    <span class="mini-stat-pill pill-done">✓ 완료 1</span>
+                    <span class="mini-stat-pill pill-inprog">⚡ 진행 8</span>
+                    <span class="mini-stat-pill pill-overdue">⚠️ 지연 1</span>
+                  </div>
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #0284c7;">U</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">Uy</span>
+                    <span class="user-dept-sub">개발팀 (Dev Team)</span>
+                  </div>
+                </div>
+              </td>
+              <td style="text-align: center;"><span class="task-count-badge">6 건</span></td>
+              <td>
+                <div class="cats-cell">
+                  <span class="cat-chip">개발</span>
+                  <span class="cat-chip">기타</span>
+                </div>
+              </td>
+              <td>
+                <div class="donut-pro-cell">
+                  <div class="radial-donut-box" style="background: conic-gradient(#0284c7 0% 100%);">
+                    <div class="radial-donut-inner">50%</div>
+                  </div>
+                  <div class="radial-donut-breakdown">
+                    <span class="mini-stat-pill pill-inprog">⚡ 진행 6</span>
+                  </div>
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #eab308;">u</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">uy (나)</span>
+                    <span class="user-dept-sub">경영기획팀 (Management)</span>
+                  </div>
+                </div>
+              </td>
+              <td style="text-align: center;"><span class="task-count-badge">4 건</span></td>
+              <td>
+                <div class="cats-cell">
+                  <span class="cat-chip">기획</span>
+                  <span class="cat-chip">보안점검</span>
+                  <span class="cat-chip">사업</span>
+                </div>
+              </td>
+              <td>
+                <div class="donut-pro-cell">
+                  <div class="radial-donut-box" style="background: conic-gradient(#0284c7 0% 75%, #f59e0b 75% 100%);">
+                    <div class="radial-donut-inner">38%</div>
+                  </div>
+                  <div class="radial-donut-breakdown">
+                    <span class="mini-stat-pill pill-inprog">⚡ 진행 3</span>
+                    <span class="mini-stat-pill pill-todo">⏱ 대기 1</span>
+                  </div>
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #c24a2c;">박</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">박서준</span>
+                    <span class="user-dept-sub">연구개발팀 (R&D)</span>
+                  </div>
+                </div>
+              </td>
+              <td style="text-align: center;"><span class="task-count-badge">2 건</span></td>
+              <td>
+                <div class="cats-cell">
+                  <span class="cat-chip">프론트엔드</span>
+                  <span class="cat-chip">개발</span>
+                </div>
+              </td>
+              <td>
+                <div class="donut-pro-cell">
+                  <div class="radial-donut-box" style="background: conic-gradient(#0284c7 0% 100%);">
+                    <div class="radial-donut-inner">50%</div>
+                  </div>
+                  <div class="radial-donut-breakdown">
+                    <span class="mini-stat-pill pill-inprog">⚡ 진행 2</span>
+                  </div>
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #c24a2c;">최</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">최유진</span>
+                    <span class="user-dept-sub">연구개발팀 (R&D)</span>
+                  </div>
+                </div>
+              </td>
+              <td style="text-align: center;"><span class="task-count-badge">2 건</span></td>
+              <td>
+                <div class="cats-cell">
+                  <span class="cat-chip">검증</span>
+                  <span class="cat-chip">연구</span>
+                </div>
+              </td>
+              <td>
+                <div class="donut-pro-cell">
+                  <div class="radial-donut-box" style="background: conic-gradient(#0284c7 0% 50%, #f59e0b 50% 100%);">
+                    <div class="radial-donut-inner">25%</div>
+                  </div>
+                  <div class="radial-donut-breakdown">
+                    <span class="mini-stat-pill pill-inprog">⚡ 진행 1</span>
+                    <span class="mini-stat-pill pill-todo">⏱ 대기 1</span>
+                  </div>
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td>
+                <div class="user-profile-cell">
+                  <div class="avatar-circle" style="background: #8b5cf6;">한</div>
+                  <div class="user-name-wrap">
+                    <span class="user-name">한소영</span>
+                    <span class="user-dept-sub">인사총무팀 (HR)</span>
+                  </div>
+                </div>
+              </td>
+              <td style="text-align: center;"><span class="task-count-badge">2 건</span></td>
+              <td>
+                <div class="cats-cell">
+                  <span class="cat-chip">총무</span>
+                  <span class="cat-chip">인사</span>
+                </div>
+              </td>
+              <td>
+                <div class="donut-pro-cell">
+                  <div class="radial-donut-box" style="background: conic-gradient(#0284c7 0% 100%);">
+                    <div class="radial-donut-inner">50%</div>
+                  </div>
+                  <div class="radial-donut-breakdown">
+                    <span class="mini-stat-pill pill-inprog">⚡ 진행 2</span>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div id="concept-jira" class="hidden-panel">
         <table class="jira-table">
           <thead>
             <tr>
@@ -991,6 +1265,10 @@
 
   <script>
     const descriptions = {
+      'concept-donut-pro': {
+        title: '⭕ Mẫu 4: Dạng Tròn Nâng Cấp (Compact Circular Donut) — Tối đa hóa khoảng trống',
+        desc: 'Đúng như bạn nhận định: Dạng vòng tròn donut chỉ chiếm 36px bề ngang, giúp giải phóng hoàn toàn không gian hàng để hiển thị đầy đủ: Avatar + Phòng ban, thẻ Danh mục công việc, và các Pill chỉ số chi tiết (Hoàn thành, Đang làm, Chờ xử lý, Cảnh báo trễ hạn) mà không bị chật chội.'
+      },
       'concept-jira': {
         title: '📌 Mẫu 1: Jira Cloud Style — Thanh tiến độ đa đoạn (Stacked Bar)',
         desc: 'Tối ưu cho quản lý dự án Agile: Kết hợp Avatar tròn, gom tên và phòng ban vào 1 cột, thanh tiến độ đa màu (Xanh lá: Xong / Xanh dương: Đang làm / Cam: Chờ) giúp so sánh hiệu suất giữa các thành viên chỉ trong 1 giây.'
@@ -1009,6 +1287,7 @@
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
       event.target.classList.add('active');
 
+      document.getElementById('concept-donut-pro').classList.add('hidden-panel');
       document.getElementById('concept-jira').classList.add('hidden-panel');
       document.getElementById('concept-daou').classList.add('hidden-panel');
       document.getElementById('concept-cards').classList.add('hidden-panel');
