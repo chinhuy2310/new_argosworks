@@ -75,8 +75,12 @@ def start_embedded_services(app_home: str):
     ]
     pg_bin = next((b for b in candidate_pg_bins if os.path.isfile(os.path.join(b, "postgres.exe"))), None)
 
-    if pg_bin and not os.environ.get("DATABASE_URL"):
+    if pg_bin:
         _PG_BIN_DIR = pg_bin
+        if pg_bin not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = pg_bin + os.pathsep + os.environ.get("PATH", "")
+
+    if pg_bin and not os.environ.get("DATABASE_URL"):
         data_dir = os.path.join(app_home, "data", "postgres")
         log_dir = os.path.join(app_home, "logs")
         os.makedirs(data_dir, exist_ok=True)
