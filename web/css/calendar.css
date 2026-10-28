@@ -1,27 +1,31 @@
 /* ==========================================================================
-   CALENDAR TAB DUAL-THEME STYLING (SOOTHING MUTED BLUE PALETTE)
+   CALENDAR TAB - HOMEPAGE BLUE PALETTE (MATCHING TAB HOME)
    ========================================================================== */
 
-/* 1. Base / Light Mode Variables - Soothing Slate/Denim Blue (#3e6fa5) */
+/* 1. Base / Light Mode Variables (Same as Tab Home: #0284c7 & #e0f2fe) */
 #viewSchedule {
-  --sched-btn-bg: #f0f5fa;
-  --sched-btn-border: #cbdbe8;
-  --sched-btn-text: #325d8c;
-  --sched-btn-hover-bg: #3e6fa5;
+  --tab-schedule: #0284c7;
+  --tab-schedule-soft: #e0f2fe;
+  --sched-btn-bg: #e0f2fe;
+  --sched-btn-border: #bae6fd;
+  --sched-btn-text: #0284c7;
+  --sched-btn-hover-bg: #0284c7;
   --sched-btn-hover-text: #ffffff;
 }
 
-/* 2. Dark Mode Variables - Soft Muted Blue */
+/* 2. Dark Mode Variables (Same as Tab Home Dark: #38bdf8 & #0c2d48) */
 [data-theme="dark"] #viewSchedule,
 :root:not([data-theme="light"]) #viewSchedule {
-  --sched-btn-bg: rgba(62, 111, 165, 0.18);
-  --sched-btn-border: rgba(62, 111, 165, 0.38);
-  --sched-btn-text: #9bbcdb;
-  --sched-btn-hover-bg: rgba(62, 111, 165, 0.32);
+  --tab-schedule: #38bdf8;
+  --tab-schedule-soft: #0c2d48;
+  --sched-btn-bg: rgba(56, 189, 248, 0.12);
+  --sched-btn-border: rgba(56, 189, 248, 0.3);
+  --sched-btn-text: #38bdf8;
+  --sched-btn-hover-bg: rgba(56, 189, 248, 0.24);
   --sched-btn-hover-text: #ffffff;
 }
 
-/* 3. Checkbox Styling: Light Mode (Soothing Denim Blue, 0% Glare) */
+/* 3. Checkbox Styling: Light Mode (Home Tab Sky Blue #0284c7) */
 #viewSchedule input[type="checkbox"],
 .schedule-layout-modern input[type="checkbox"] {
   appearance: none;
@@ -44,13 +48,13 @@
 
 #viewSchedule input[type="checkbox"]:hover,
 .schedule-layout-modern input[type="checkbox"]:hover {
-  border-color: #94a3b8;
+  border-color: #0284c7;
 }
 
 #viewSchedule input[type="checkbox"]:checked,
 .schedule-layout-modern input[type="checkbox"]:checked {
-  background: #3e6fa5;
-  border-color: #3e6fa5;
+  background: #0284c7;
+  border-color: #0284c7;
 }
 
 #viewSchedule input[type="checkbox"]:checked::after,
@@ -65,7 +69,7 @@
   margin-top: -2px;
 }
 
-/* 4. Checkbox Styling: Dark Mode (Calm Navy + Soft Blue Tick) */
+/* 4. Checkbox Styling: Dark Mode (Home Tab Dark: #0c2d48 bg + #38bdf8 tick) */
 [data-theme="dark"] #viewSchedule input[type="checkbox"],
 :root:not([data-theme="light"]) #viewSchedule input[type="checkbox"],
 [data-theme="dark"] .schedule-layout-modern input[type="checkbox"],
@@ -78,7 +82,7 @@
 :root:not([data-theme="light"]) #viewSchedule input[type="checkbox"]:hover,
 [data-theme="dark"] .schedule-layout-modern input[type="checkbox"]:hover,
 :root:not([data-theme="light"]) .schedule-layout-modern input[type="checkbox"]:hover {
-  border-color: #64748b;
+  border-color: #38bdf8;
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -86,15 +90,15 @@
 :root:not([data-theme="light"]) #viewSchedule input[type="checkbox"]:checked,
 [data-theme="dark"] .schedule-layout-modern input[type="checkbox"]:checked,
 :root:not([data-theme="light"]) .schedule-layout-modern input[type="checkbox"]:checked {
-  background: #22364a;
-  border-color: #3e6fa5;
+  background: #0c2d48;
+  border-color: #0284c7;
 }
 
 [data-theme="dark"] #viewSchedule input[type="checkbox"]:checked::after,
 :root:not([data-theme="light"]) #viewSchedule input[type="checkbox"]:checked::after,
 [data-theme="dark"] .schedule-layout-modern input[type="checkbox"]:checked::after,
 :root:not([data-theme="light"]) .schedule-layout-modern input[type="checkbox"]:checked::after {
-  border-color: #9bbcdb;
+  border-color: #38bdf8;
 }
 
 /* ==========================================================================
@@ -770,35 +774,36 @@
   gap: 5px;
   height: 28px;
   padding: 0 12px;
-  background: #3e6fa5;
+  background: linear-gradient(135deg, #0284c7, #0ea5e9);
   color: #ffffff !important;
-  border: 1px solid #325d8c;
+  border: none;
   border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap !important;
   flex-shrink: 0 !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25);
   transition: all 0.15s ease;
 }
 .btn-sched-create-primary:hover {
-  background: #325d8c;
+  background: #0369a1;
   transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(2, 132, 199, 0.35);
 }
 
 [data-theme="dark"] .btn-sched-create-primary,
 :root:not([data-theme="light"]) .btn-sched-create-primary {
-  background: rgba(62, 111, 165, 0.2);
-  color: #9bbcdb !important;
-  border: 1px solid rgba(62, 111, 165, 0.42);
+  background: rgba(56, 189, 248, 0.14);
+  color: #38bdf8 !important;
+  border: 1px solid rgba(56, 189, 248, 0.32);
   box-shadow: none;
 }
 [data-theme="dark"] .btn-sched-create-primary:hover,
 :root:not([data-theme="light"]) .btn-sched-create-primary:hover {
-  background: rgba(62, 111, 165, 0.32);
+  background: rgba(56, 189, 248, 0.25);
   color: #ffffff !important;
-  border-color: rgba(62, 111, 165, 0.6);
+  border-color: rgba(56, 189, 248, 0.5);
 }
 .btn-sched-create-icon {
   font-size: 13px;
