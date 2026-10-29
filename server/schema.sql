@@ -400,6 +400,11 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 );
 CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_ident ON login_attempts(ip, identifier, failed_at);
 
+CREATE TABLE IF NOT EXISTS id_allocator (
+    name TEXT PRIMARY KEY,
+    last_value INTEGER NOT NULL
+);
+
 -- Baseline Department & License Seeds for Clean Environments (Korean Native B2B)
 -- NOTE: The license below is a signed 50-seat EVALUATION license (expires 2027-12-31).
 -- Production deployments must activate a commercial key issued by the vendor

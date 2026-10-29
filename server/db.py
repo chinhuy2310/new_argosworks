@@ -56,6 +56,7 @@ _REPLACE_PK_MAP = {
     "schema_migrations": "version",
     "product_categories": "id",
     "document_embeddings": "doc_id",
+    "id_allocator": "name",
 }
 _RE_STRFTIME_NOW = re.compile(
     r"strftime\s*\(\s*'[^']*'\s*,\s*'now'\s*\)",
@@ -376,6 +377,23 @@ if ENGINE == "sqlite":
                     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users(LOWER(email)) WHERE email != '';")
                     conn.execute("INSERT OR IGNORE INTO schema_migrations (version, name) VALUES (6, 'v2.7_case_insensitive_unique_identities');")
                     logger.info("[db] Migration v6 (case-insensitive unique user indexes) applied.")
+
+            # Migration v7: Persistent multi-worker ID allocator table
+            if 7 not in applied_migrations:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS id_allocator (
+                        name TEXT PRIMARY KEY,
+                        last_value INTEGER NOT NULL
+                    );
+                """)
+                cur_max = conn.execute("SELECT COALESCE(MAX(id), 0) FROM records").fetchone()
+                init_val = cur_max[0] if cur_max else 0
+                conn.execute(
+                    "INSERT OR IGNORE INTO id_allocator (name, last_value) VALUES ('records', ?)",
+                    (init_val,)
+                )
+                conn.execute("INSERT OR IGNORE INTO schema_migrations (version, name) VALUES (7, 'v2.8_id_allocator');")
+                logger.info("[db] Migration v7 (id_allocator table) applied.")
         except sqlite3.Error as e:
             logger.error(f"Database initialization failed: {e}")
             raise
@@ -812,6 +830,22 @@ else:
                         ON CONFLICT (version) DO NOTHING;
                     """)
                     logger.info("[db/postgres] Migration v6 (case-insensitive unique user indexes) applied.")
+
+            # Migration 7: Persistent multi-worker ID allocator table
+            if 7 not in applied_versions:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS id_allocator (
+                        name VARCHAR(64) PRIMARY KEY,
+                        last_value BIGINT NOT NULL
+                    );
+                    INSERT INTO id_allocator (name, last_value)
+                    SELECT 'records', COALESCE(MAX(id), 0) FROM records
+                    ON CONFLICT (name) DO NOTHING;
+                    INSERT INTO schema_migrations (version, name)
+                    VALUES (7, 'v2.8_id_allocator')
+                    ON CONFLICT (version) DO NOTHING;
+                """)
+                logger.info("[db/postgres] Migration v7 (id_allocator table) applied.")
 
             cur.close()
         except psycopg2.Error as e:
