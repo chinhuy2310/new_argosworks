@@ -144,6 +144,7 @@ class TestDirection2ApprovalWorkflow(unittest.TestCase):
         reg_payload = json.dumps({
             "username": "test_applicant1",
             "name": "Applicant One",
+            "org": "dev",
             "password": "Password1234!",
             "email": "applicant1@company.com"
         }).encode("utf-8")
@@ -205,6 +206,7 @@ class TestDirection2ApprovalWorkflow(unittest.TestCase):
         reg_payload = json.dumps({
             "username": "test_applicant2",
             "name": "Applicant Two",
+            "org": "dev",
             "password": "Password1234!",
             "email": "applicant2@company.com"
         }).encode("utf-8")
