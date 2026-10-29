@@ -374,7 +374,6 @@ class ArgosHandler(BaseHTTPRequestHandler):
         allowed_domain = self.headers.get("Host", "localhost")
         self.send_response(204)
         if origin:
-            from middleware_security import get_allowed_cors_origin
             allowed = get_allowed_cors_origin(origin, [allowed_domain])
             if allowed:
                 self.send_header("Access-Control-Allow-Origin", allowed)
@@ -436,7 +435,6 @@ class ArgosHandler(BaseHTTPRequestHandler):
                     self._send_json(404, {"ok": False, "error": "not found"})
                     
             except Exception as e:
-                import traceback
                 log_line("GET 처리 중 오류:\n", traceback.format_exc())
                 self._send_json(500, {"ok": False, "error": "서버 내부 오류가 발생했습니다. (Internal Server Error)"})
         finally:
@@ -526,7 +524,6 @@ class ArgosHandler(BaseHTTPRequestHandler):
                     return
                 # Stream read body with memory capping (prevents thread OOM during concurrent uploads)
                 # Small payloads (<1MB) stay in memory, large payloads spill safely to temporary disk
-                import tempfile
                 raw_body = b""
                 if length > 0:
                     if length <= 1024 * 1024:
@@ -550,7 +547,6 @@ class ArgosHandler(BaseHTTPRequestHandler):
                 else:
                     self._send_json(404, {"ok": False, "error": "not found"})
             except Exception as e:
-                import traceback
                 log_line("POST 처리 중 오류:\n", traceback.format_exc())
                 access_log(ip, "error", 500, f"Exception: {type(e).__name__}")
                 self._send_json(500, {"ok": False, "error": "서버 내부 오류가 발생했습니다. (Internal Server Error)"})

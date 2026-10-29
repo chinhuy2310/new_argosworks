@@ -334,7 +334,7 @@ def handle_account_update_profile(handler, raw_body, ip):
         handler._send_json(400, {"ok": False, "error": "이름은 필수 항목입니다."})
         return
 
-    from db import get_one, execute, transaction
+    from db import execute
     # Prefer the immutable session id: the name/email stored in the session row are
     # denormalised copies, so after an admin rename the old lookup returned 404 and
     # the user could not change their own password until they logged in again.

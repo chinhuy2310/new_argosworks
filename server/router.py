@@ -26,7 +26,7 @@ from services.jira_client import (
     jira_fetch_project_subtask_type, jira_fetch_project_categories, create_jira_issue_link
 )
 import threading
-from config import SPEC_TEMPLATES, PRODUCT_CATEGORIES, ATTACH_DIR
+from config import SPEC_TEMPLATES, PRODUCT_CATEGORIES
 from services.auth import account_key, read_accounts, is_admin_user
 from services.activity_store import get_daily_activities, get_recent_activity_dates
 from services.notification_service import (
