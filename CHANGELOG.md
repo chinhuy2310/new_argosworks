@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Undefined name in router (1.1)
+
+- Added missing `import time` in `server/router.py` to fix `NameError` on `/api/vectors/sync` (`handle_post_vector_sync`) rate limit check.
+
 ### Added — CI linting gate (Phase 0)
 
 - Integrated `ruff` (F821, F811) into CI and `requirements-dev.txt` with configuration in `ruff.toml` to prevent undefined variables and duplicate imports. Cleaned trivial redundant re-imports across `handler.py`, `auth_handlers.py`, and `router.py`.
