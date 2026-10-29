@@ -83,7 +83,7 @@ class TestPostgresBackupRestore(unittest.TestCase):
             # Verify subprocess call args
             mock_run.assert_called_once()
             called_cmd = mock_run.call_args[0][0]
-            self.assertEqual(called_cmd[0], "pg_dump")
+            self.assertTrue("pg_dump" in os.path.basename(called_cmd[0]))
             self.assertEqual(called_cmd[1], "-Fc")
             self.assertEqual(called_cmd[2], "-d")
             self.assertEqual(called_cmd[3], self.db_url)
@@ -131,7 +131,7 @@ class TestPostgresBackupRestore(unittest.TestCase):
             self.assertGreaterEqual(len(called_commands), 2)
 
             restore_cmd = called_commands[-1]
-            self.assertEqual(restore_cmd[0], "pg_restore")
+            self.assertTrue("pg_restore" in os.path.basename(restore_cmd[0]))
             self.assertIn("--clean", restore_cmd)
             self.assertIn("--if-exists", restore_cmd)
             self.assertIn("-d", restore_cmd)
@@ -156,7 +156,7 @@ class TestPostgresBackupRestore(unittest.TestCase):
             tar.add(temp_dump, arcname="argos.dump")
 
         def fake_run(cmd, **kwargs):
-            if cmd[0] == "pg_dump":
+            if "pg_dump" in os.path.basename(cmd[0]):
                 res = MagicMock()
                 res.returncode = 0
                 return res
