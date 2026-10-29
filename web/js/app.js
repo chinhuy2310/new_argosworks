@@ -70,6 +70,7 @@ function showTab(which, updateHash){
   document.body.classList.toggle("view-schedule-active", which === "schedule");
   if(el.pim) el.pim.hidden = which !== "pim";
   if(el.chat) el.chat.hidden = which !== "chat";
+  document.body.classList.toggle("view-chat-active", which === "chat");
   if(el.history) el.history.hidden = which !== "history";
   if(el.settings) el.settings.hidden = which !== "settings";
 

@@ -30,6 +30,7 @@ data/products/
 data/chat_history/
 data/reports/
 data/test_*
+data/Caddyfile*
 
 # Logs & Temporary Files
 logs/

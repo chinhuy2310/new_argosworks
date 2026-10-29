@@ -1372,6 +1372,7 @@ setupDashboardInfiniteScroll();
 
 function renderRecords(highlightId){
   updateAssigneePanelVisibility();
+  updateActiveAssigneeChipUI();
 
   // Đếm tổng số thẻ con toàn cục trong hệ thống cho mỗi thẻ
   var subtaskCountMap = {};
@@ -1412,10 +1413,20 @@ function renderRecords(highlightId){
     dashRenderedCount = Math.min(dashPageSize, visible.length);
     var initialSlice = visible.slice(0, dashRenderedCount);
 
-    el.recordsLabel.textContent = (window.i18n && typeof window.i18n.t === "function") ? window.i18n.t("filter.records_flat_title") : "전체 기록 (플랫 보기)";
-    el.recordsCaption.textContent = visible.length > dashRenderedCount
-      ? ((window.i18n && typeof window.i18n.t === "function") ? window.i18n.t("filter.showing_items_of", {rendered: dashRenderedCount, total: visible.length}) : ("표시 중 " + dashRenderedCount + "건 · 전체 " + visible.length + "건 (스크롤하여 더 보기)"))
-      : ((window.i18n && typeof window.i18n.t === "function") ? window.i18n.t("filter.total_items", {total: visible.length}) : ("전체 " + visible.length + "건"));
+    var isAssigneeFiltered = Boolean(filters.assignee && filters.assignee !== "all");
+    if(isAssigneeFiltered){
+      el.recordsLabel.textContent = (window.i18n && typeof window.i18n.t === "function")
+        ? window.i18n.t("filter.records_flat_title_filtered", {name: filters.assignee})
+        : (filters.assignee + " 님의 기록 (플랫 보기)");
+      el.recordsCaption.textContent = visible.length > dashRenderedCount
+        ? ("표시 중 " + dashRenderedCount + "건 · 전체 " + visible.length + "건 (담당자: " + filters.assignee + ")")
+        : ("총 " + visible.length + "건 (담당자: " + filters.assignee + ")");
+    } else {
+      el.recordsLabel.textContent = (window.i18n && typeof window.i18n.t === "function") ? window.i18n.t("filter.records_flat_title") : "전체 기록 (플랫 보기)";
+      el.recordsCaption.textContent = visible.length > dashRenderedCount
+        ? ((window.i18n && typeof window.i18n.t === "function") ? window.i18n.t("filter.showing_items_of", {rendered: dashRenderedCount, total: visible.length}) : ("표시 중 " + dashRenderedCount + "건 · 전체 " + visible.length + "건 (스크롤하여 더 보기)"))
+        : ((window.i18n && typeof window.i18n.t === "function") ? window.i18n.t("filter.total_items", {total: visible.length}) : ("전체 " + visible.length + "건"));
+    }
 
     el.list.innerHTML = initialSlice.map(function(r){
       return renderSingleRecordCard(r, false, highlightId);
@@ -1523,10 +1534,20 @@ function renderRecords(highlightId){
   dashRenderedCount = Math.min(dashPageSize, treeRoots.length);
   var initialTreeSlice = treeRoots.slice(0, dashRenderedCount);
 
-  el.recordsLabel.textContent = (window.i18n && typeof window.i18n.t === "function") ? window.i18n.t("filter.records_tree_title") : "전체 기록 (트리 보기)";
-  el.recordsCaption.textContent = treeRoots.length > dashRenderedCount
-    ? ((window.i18n && typeof window.i18n.t === "function") ? window.i18n.t("filter.showing_groups_of", {rendered: dashRenderedCount, total: visible.length}) : ("표시 중 " + dashRenderedCount + "개 그룹 · 전체 " + visible.length + "건 (스크롤하여 더 보기)"))
-    : ((window.i18n && typeof window.i18n.t === "function") ? window.i18n.t("filter.tree_caption_summary", {total: visible.length, groups: treeRoots.length}) : ("총 " + visible.length + "건 (" + treeRoots.length + "개 그룹)"));
+  var isAssigneeFiltered = Boolean(filters.assignee && filters.assignee !== "all");
+  if(isAssigneeFiltered){
+    el.recordsLabel.textContent = (window.i18n && typeof window.i18n.t === "function")
+      ? window.i18n.t("filter.records_tree_title_filtered", {name: filters.assignee})
+      : (filters.assignee + " 님의 기록 (트리 보기)");
+    el.recordsCaption.textContent = treeRoots.length > dashRenderedCount
+      ? ("표시 중 " + dashRenderedCount + "개 그룹 · 전체 " + visible.length + "건 (담당자: " + filters.assignee + ")")
+      : ("총 " + visible.length + "건 (" + treeRoots.length + "개 그룹 · 담당자: " + filters.assignee + ")");
+  } else {
+    el.recordsLabel.textContent = (window.i18n && typeof window.i18n.t === "function") ? window.i18n.t("filter.records_tree_title") : "전체 기록 (트리 보기)";
+    el.recordsCaption.textContent = treeRoots.length > dashRenderedCount
+      ? ((window.i18n && typeof window.i18n.t === "function") ? window.i18n.t("filter.showing_groups_of", {rendered: dashRenderedCount, total: visible.length}) : ("표시 중 " + dashRenderedCount + "개 그룹 · 전체 " + visible.length + "건 (스크롤하여 더 보기)"))
+      : ((window.i18n && typeof window.i18n.t === "function") ? window.i18n.t("filter.tree_caption_summary", {total: visible.length, groups: treeRoots.length}) : ("총 " + visible.length + "건 (" + treeRoots.length + "개 그룹)"));
+  }
 
   el.list.innerHTML = initialTreeSlice.map(function(r){
     return renderTreeNode(r, highlightId, 0);
@@ -1959,3 +1980,30 @@ window.addEventListener("langchange", function(){
     renderRecords();
   } catch(e){}
 });
+
+function updateActiveAssigneeChipUI(){
+  var activeAssigneeChip = document.getElementById("activeAssigneeChip");
+  var activeAssigneeChipName = document.getElementById("activeAssigneeChipName");
+  var isAssigneeFiltered = Boolean(filters.assignee && filters.assignee !== "all");
+
+  if(activeAssigneeChip && activeAssigneeChipName){
+    if(isAssigneeFiltered){
+      activeAssigneeChip.style.display = "inline-flex";
+      activeAssigneeChipName.textContent = filters.assignee;
+    } else {
+      activeAssigneeChip.style.display = "none";
+    }
+  }
+}
+
+var btnClearAssigneeChip = document.getElementById("btnClearAssigneeChip");
+if(btnClearAssigneeChip){
+  btnClearAssigneeChip.addEventListener("click", function(e){
+    e.preventDefault();
+    e.stopPropagation();
+    filters.assignee = "all";
+    if(el.assigneeFilter) el.assigneeFilter.value = "all";
+    renderAssigneeTable();
+    renderRecords();
+  });
+}

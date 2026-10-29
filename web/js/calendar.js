@@ -737,10 +737,17 @@ function isEventVisible(ev){
 
   // 4. Member Filter (팀원 선택 필터)
   if(allSchedMembers.length > 0){
-    // Thẻ 업무 카드 chưa phân công người (미지정/미배정) luôn hiển thị nếu nhóm 업무 카드 đang bật
+    // Thẻ 업무 카드 chưa phân công người (미지정/미배정)
     var isUnassignedTask = isTaskCardEvent(ev) && (!ev.ownerName || ev.ownerName === "미지정" || ev.ownerName === "미배정");
     if(isUnassignedTask){
-      return isLocalCardsEnabled && isTasksGroupEnabled;
+      var isUnassignedMemberSelected = Array.from(selectedMemberKeys).some(function(k){
+        var kName = k.split("|")[0].trim().toLowerCase();
+        return kName === "미배정" || kName === "미지정" || kName === "unassigned";
+      });
+      if(selectedMemberKeys.size >= allSchedMembers.length || isUnassignedMemberSelected){
+        return isLocalCardsEnabled && isTasksGroupEnabled;
+      }
+      return false;
     }
 
     // Nếu người dùng chọn TẤT CẢ thành viên: hiển thị toàn bộ
@@ -748,13 +755,20 @@ function isEventVisible(ev){
       return true;
     }
 
+    var ownerKey = ev.ownerKey || (ev.ownerName ? (ev.ownerName + "|" + (ev.ownerOrg || "")) : "");
+    var oName = (ev.ownerName || "").trim().toLowerCase();
+
+    var hasPerson = !!(ownerKey || oName || (Array.isArray(ev.participants) && ev.participants.length > 0));
+
+    // Sự kiện toàn công ty không gắn người cụ thể: luôn hiển thị nếu Layer 1 (전사/근태) đang bật
+    if(!hasPerson){
+      return true;
+    }
+
     // Nếu người dùng bỏ chọn tất cả thành viên: ẩn các lịch có người
     if(selectedMemberKeys.size === 0){
       return false;
     }
-
-    var ownerKey = ev.ownerKey || (ev.ownerName ? (ev.ownerName + "|" + (ev.ownerOrg || "")) : "");
-    var oName = (ev.ownerName || "").trim().toLowerCase();
 
     var isOwnerSelected = false;
     if(ownerKey && selectedMemberKeys.has(ownerKey)){
@@ -781,8 +795,7 @@ function isEventVisible(ev){
       });
     }
 
-    var hasPerson = !!(ownerKey || oName || (Array.isArray(ev.participants) && ev.participants.length > 0));
-    if(hasPerson && !isOwnerSelected && !isParticipantSelected){
+    if(!isOwnerSelected && !isParticipantSelected){
       return false;
     }
   }
@@ -867,6 +880,8 @@ function renderMembersList(){
   var counts = {};
   (schedEvents || []).forEach(function(ev){
     if((!isCalendarJiraActive() || !isJiraVisible) && ev.source === "jira") return;
+    if(isTaskCardEvent(ev) && !isTasksGroupEnabled) return;
+    if(isCompanyEvent(ev) && !isCompanyGroupEnabled) return;
     var s = ev.startDate || "";
     var e = ev.endDate || s;
     if(s && e && s <= monthEnd && e >= monthStart){
@@ -876,6 +891,12 @@ function renderMembersList(){
         ev.participants.forEach(function(p){
           if(p.key) keysToCredit.add(p.key);
         });
+      }
+      if(!ev.ownerKey && (!ev.ownerName || ev.ownerName === "미배정" || ev.ownerName === "미지정")){
+        var unassignedMember = (allSchedMembers || []).find(function(m){
+          return m.name === "미배정" || m.name === "미지정";
+        });
+        if(unassignedMember) keysToCredit.add(unassignedMember.key);
       }
       keysToCredit.forEach(function(k){
         counts[k] = (counts[k] || 0) + 1;

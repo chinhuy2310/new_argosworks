@@ -10,7 +10,7 @@
 <script src="js/tom-select.complete.min.js"></script>
 
 <link rel="stylesheet" href="css/variables.css?v=4.2">
-<link rel="stylesheet" href="css/layout.css?v=5.8">
+<link rel="stylesheet" href="css/layout.css?v=5.9">
 <link rel="stylesheet" href="css/dashboard.css?v=7.6">
 <link rel="stylesheet" href="css/form.css?v=4.7">
 <link rel="stylesheet" href="css/calendar.css?v=9.7">
@@ -19,7 +19,7 @@
 <link rel="stylesheet" href="css/settings.css?v=4.6">
 <link rel="stylesheet" href="css/history.css?v=1.2">
 <link rel="stylesheet" href="css/components.css?v=4.3">
-<link rel="stylesheet" href="css/chat.css?v=2.1">
+<link rel="stylesheet" href="css/chat.css?v=2.2">
 <link rel="stylesheet" href="css/canvas.css?v=3.2">
 <script>
   window.updatePrioritySelectColor = function(selectEl){
@@ -552,7 +552,14 @@
 
         <div class="records-header" id="recordsHeader" style="display:none;">
           <div>
-            <p class="records-eyebrow" id="recordsLabel">최근 기록</p>
+            <div class="records-eyebrow-row">
+              <p class="records-eyebrow" id="recordsLabel">최근 기록</p>
+              <div id="activeAssigneeChip" class="active-filter-chip" style="display:none;">
+                <span class="chip-avatar-icon">👤</span>
+                <span class="chip-label" id="activeAssigneeChipName"></span>
+                <button type="button" id="btnClearAssigneeChip" class="btn-chip-clear" title="필터 해제 (전체 보기)">✕</button>
+              </div>
+            </div>
             <p class="records-caption" id="recordsCaption"></p>
           </div>
           <div class="records-header-actions">
@@ -729,21 +736,33 @@
         </div>
 
         <div class="sched-filter-scrollable">
-          <!-- 1. Group: 전사 캘린더 (Company Calendar - Parent Checkbox Only) -->
+          <!-- 1. Group: 전사/근태 (Company & Attendance - 1차 필터) -->
           <div class="sched-filter-group" id="schedGroupCompany">
             <div class="sched-group-header">
-              <label class="sched-group-label" title="전사 캘린더 전체 켜기/끄기">
+              <label class="sched-group-label" title="전사/근태 일정 전체 켜기/끄기">
                 <input type="checkbox" id="schedCompanyMasterCb" checked>
-                <span class="sched-group-title" data-i18n="sched.group_company">전사 캘린더</span>
+                <span class="sched-group-title" data-i18n="sched.group_company">전사/근태</span>
               </label>
               <div class="sched-group-meta">
                 <span class="sched-group-count" id="schedCompanyCount">0</span>
               </div>
             </div>
             <!-- Hidden stub elements for backward compatibility if queried by JS -->
-            <input type="checkbox" id="schedTasksMasterCb" checked hidden style="display:none;">
             <input type="checkbox" id="schedSubCompanyCb" checked hidden style="display:none;">
             <input type="checkbox" id="schedSubLeaveCb" checked hidden style="display:none;">
+          </div>
+
+          <!-- 2. Group: 업무 (Tasks & Jira - 1차 필터) -->
+          <div class="sched-filter-group" id="schedGroupTasks">
+            <div class="sched-group-header">
+              <label class="sched-group-label" title="업무 카드 전체 켜기/끄기">
+                <input type="checkbox" id="schedTasksMasterCb" checked>
+                <span class="sched-group-title" data-i18n="sched.group_tasks">업무</span>
+              </label>
+              <div class="sched-group-meta">
+                <span class="sched-group-count" id="schedTasksCount">0</span>
+              </div>
+            </div>
           </div>
 
           <!-- 2. Group: 내 캘린더 (My Calendar - Single Checkbox Row) -->
@@ -2263,7 +2282,7 @@
   </section>
 
 <!-- === AI Chat Tab === -->
-<section id="sectionChat" class="content-section" hidden>
+<section id="sectionChat" hidden>
   <div class="chat-container">
     <!-- Sessions Sidebar -->
     <aside id="chatSidebar" class="chat-sidebar">
@@ -2905,7 +2924,7 @@
 <script src="js/chat.js?v=3.3"></script>
 <script src="js/canvas.js?v=7.0"></script>
 <script src="js/notifications.js?v=2.1"></script>
-<script src="js/app.js?v=7.1"></script>
+<script src="js/app.js?v=7.2"></script>
 
 </body>
 </html>
