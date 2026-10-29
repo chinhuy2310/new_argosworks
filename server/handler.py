@@ -15,6 +15,9 @@ from utils.logging import log_line, access_log
 from middleware_security import check_rate_limit, validate_csrf_token, get_allowed_cors_origin
 from db import close_connection
 
+PUBLIC_BODY_LIMIT = 16 * 1024  # 16 KB for unauthenticated endpoints
+SETUP_BODY_LIMIT = 1024 * 1024  # 1 MB for setup wizard endpoints
+
 PUBLIC_API_WHITELIST = {
     # System health, release identifier & Setup
     "/api/health",
@@ -392,6 +395,7 @@ class ArgosHandler(BaseHTTPRequestHandler):
 
     # ---- OPTIONS (CORS Preflight) ----
     def do_OPTIONS(self):
+        self._current_session = None
         origin = self.headers.get("Origin")
         allowed_domain = self.headers.get("Host", "localhost")
         self.send_response(204)
@@ -411,6 +415,7 @@ class ArgosHandler(BaseHTTPRequestHandler):
 
     # ---- GET ----
     def do_GET(self):
+        self._current_session = None
         try:
             parsed = urlsplit(self.path)
             path = parsed.path
@@ -464,10 +469,29 @@ class ArgosHandler(BaseHTTPRequestHandler):
 
     # ---- POST ----
     def do_POST(self):
+        self._current_session = None
         try:
             parsed = urlsplit(self.path)
             path = parsed.path
             ip = self._extract_client_ip()
+
+            # Early Content-Length validation to reject oversized unauthenticated payloads before reading body
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                self._send_json(400, {"ok": False, "error": "잘못된 Content-Length 헤더입니다."})
+                return
+
+            if path in PUBLIC_API_WHITELIST:
+                limit = SETUP_BODY_LIMIT if path.startswith("/api/setup/") else PUBLIC_BODY_LIMIT
+                if length > limit:
+                    self._send_json(413, {"ok": False, "error": "요청 본문 크기가 제한을 초과했습니다."})
+                    return
+            else:
+                max_bytes = int((self.cfg.get("max_upload_mb", 25))) * 1024 * 1024
+                if length > max_bytes:
+                    self._send_json(413, {"ok": False, "error": "업로드 용량 제한(%dMB) 초과" % self.cfg.get("max_upload_mb", 25)})
+                    return
 
             # Enterprise Rate Limiting Check on API mutations
             if path.startswith("/api/"):
@@ -539,11 +563,6 @@ class ArgosHandler(BaseHTTPRequestHandler):
                             return
 
             try:
-                length = int(self.headers.get("Content-Length", "0"))
-                max_bytes = int((self.cfg.get("max_upload_mb", 25))) * 1024 * 1024
-                if length > max_bytes:
-                    self._send_json(413, {"ok": False, "error": "업로드 용량 제한(%dMB) 초과" % self.cfg.get("max_upload_mb", 25)})
-                    return
                 # Stream read body with memory capping (prevents thread OOM during concurrent uploads)
                 # Small payloads (<1MB) stay in memory, large payloads spill safely to temporary disk
                 raw_body = b""
