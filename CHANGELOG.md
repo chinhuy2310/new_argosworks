@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Tests — Offline SSRF Validator Mocking (3.6)
+
+- Mocked `socket.getaddrinfo` in `tests/test_unit_utils.py::TestSSRFValidator::test_valid_https_url` to allow the test suite to execute reliably in offline and air-gapped environments without external DNS dependencies.
+
 ### Security — Static Path Traversal Prevention via safe_join (3.5)
 
 - Replaced `os.path.normpath` and `startswith(WEB_DIR)` static file routing check in `server/router.py` with `utils.file_ops.safe_join(WEB_DIR, clean)`, preventing sibling folder traversal attacks (e.g. `web_private`).
