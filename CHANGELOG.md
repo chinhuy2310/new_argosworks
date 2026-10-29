@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security — Department-Isolated Assignee Resolution (2.3)
+
+- Fixed cross-department assignee leakage in `server/services/data_store.py::append_record`. If an assignee does not match within the target department, global fallback requires an unambiguous single candidate (`LIMIT 2`). If multiple users share the same name across other departments, `assignee_id` is left `NULL` to prevent unauthorized cross-department access to private records.
+
 ### Security — Absolute Session Lifetime (2.2)
 
 - Enforced absolute session expiration via `SESSION_MAX_AGE_HOURS` (default 168h / 7 days). Sessions that exceed the maximum age from `created_at` are automatically terminated even if continuously active, preventing permanent hijacking of stolen session tokens.
