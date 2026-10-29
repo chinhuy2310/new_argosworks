@@ -634,8 +634,8 @@ def handle_create_session(handler, raw_body, ip):
     if raw_body:
         try:
             body = json.loads(raw_body.decode('utf-8'))
-        except Exception:
-            pass
+        except Exception as e:
+            log_line("[Chat] Failed to parse request body in create_session:", e)
     title = body.get("title", "새로운 대화")
     new_sess = create_session(session["name"], session.get("org", ""), title)
     handler._send_json(200, {"ok": True, "session": new_sess})
@@ -651,8 +651,8 @@ def handle_delete_session(handler, raw_body, ip):
     if raw_body:
         try:
             body = json.loads(raw_body.decode('utf-8'))
-        except Exception:
-            pass
+        except Exception as e:
+            log_line("[Chat] Failed to parse request body in create_session:", e)
     session_id = body.get("sessionId", "")
     if not session_id:
         handler._send_json(400, {"ok": False, "error": "sessionId가 필요합니다."})

@@ -34,6 +34,7 @@ def _effective_pbkdf2_rounds():
 
 
 from app_paths import APP_HOME
+from utils.logging import log_line
 
 SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE_DIR = APP_HOME
@@ -1143,24 +1144,24 @@ def get_session(token):
     if effective_created_at > 0 and (now - effective_created_at > max_age):
         try:
             execute("DELETE FROM sessions WHERE token = ?", (token_hash,))
-        except Exception:
-            pass
+        except Exception as e:
+            log_line("[auth] Error deleting absolute-expired session:", e)
         return None
 
     # 슬라이딩 유효기간(Sliding Expiration): 마지막 활동 후 ttl 경과 시 만료
     if now - last_active > ttl:
         try:
             execute("DELETE FROM sessions WHERE token = ?", (token_hash,))
-        except Exception:
-            pass
+        except Exception as e:
+            log_line("[auth] Error deleting sliding-expired session:", e)
         return None
 
     # 활동 중인 세션은 5분마다 last_active_at 슬라이딩 갱신
     if now - last_active > 300:
         try:
             execute("UPDATE sessions SET last_active_at = ? WHERE token = ?", (now, token_hash))
-        except Exception:
-            pass
+        except Exception as e:
+            log_line("[auth] Error updating session last_active_at:", e)
 
     u_id = row.get("u_id")
     if not u_id:
@@ -1196,8 +1197,8 @@ def delete_session(token):
         token_hash = hash_session_token(token)
         try:
             execute("DELETE FROM sessions WHERE token = ?", (token_hash,))
-        except Exception:
-            pass
+        except Exception as e:
+            log_line("[auth] Error deleting session:", e)
 
 def rotate_session(old_token):
     """권한 변경 또는 주기적 세션 토큰 교체 (Session Rotation)."""
@@ -1220,8 +1221,8 @@ def delete_all_user_sessions(user_id_or_name):
                 execute("DELETE FROM sessions WHERE user_id = ?", (int(user_id_or_name),))
             else:
                 execute("DELETE FROM sessions WHERE user_name = ? OR user_id IN (SELECT id FROM users WHERE username = ?)", (str(user_id_or_name), str(user_id_or_name)))
-        except Exception:
-            pass
+        except Exception as e:
+            log_line("[auth] Error deleting all user sessions:", e)
 
 def cleanup_expired_sessions():
     """
@@ -1238,7 +1239,7 @@ def cleanup_expired_sessions():
                   OR (created_at > 0 AND created_at < ?)""",
             (sliding_cutoff, max_age_cutoff)
         )
-    except Exception:
-        pass
+    except Exception as e:
+        log_line("[auth] Error cleaning up expired sessions:", e)
 
 

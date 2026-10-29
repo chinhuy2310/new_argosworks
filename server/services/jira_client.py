@@ -223,8 +223,8 @@ def jira_project_for_dept(cfg, dept_id):
                 if d["id"] == dept_id and d.get("jiraKey"):
                     project_key = d["jiraKey"]
                     break
-        except Exception:
-            pass
+        except Exception as e:
+            log_line("[jira_client] Error reading departments for project key resolution:", e)
 
     if not project_key:
         project_key = j.get("default_project_key") or ""
@@ -577,8 +577,8 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None)
                             "source": "local"
                         })
                 conn_c.close()
-        except Exception:
-            pass
+        except Exception as e:
+            log_line("[jira_client] Error reading departments for project key resolution:", e)
 
         # Extract attachments from Jira
         attachments_list = []
@@ -1353,8 +1353,8 @@ def add_jira_comment(cfg, issue_key, comment_text, author_name=None):
         err_msg = ""
         try:
             err_msg = e.read().decode("utf-8", errors="ignore")
-        except Exception:
-            pass
+        except Exception as e:
+            log_line("[jira_client] Error reading departments for project key resolution:", e)
         log_line(f"Jira 댓글 추가 실패: HTTP {e.code}", err_msg[:200])
         return None, f"Jira 댓글 등록 실패 (HTTP {e.code}): {err_msg[:200]}"
     except Exception as e:
@@ -1401,14 +1401,14 @@ def upload_jira_attachment(cfg, issue_key, filename, file_bytes, content_type=No
         err_msg = ""
         try:
             err_msg = e.read().decode("utf-8", errors="ignore")
-        except Exception:
-            pass
+        except Exception as e:
+            log_line("[jira_client] Error reading departments for project key resolution:", e)
         try:
             err_json = json.loads(err_msg)
             if isinstance(err_json, dict) and err_json.get("errorMessages"):
                 err_msg = "; ".join(err_json["errorMessages"])
-        except Exception:
-            pass
+        except Exception as e:
+            log_line("[jira_client] Error reading departments for project key resolution:", e)
         if e.code == 413:
             err_msg = "파일 용량 제한 초과 (Jira 파일 크기 제한)"
         elif e.code == 403:

@@ -150,8 +150,8 @@ def handle_account_register(handler, raw_body, ip):
                 tag="가입요청",
                 tag_type="signup"
             )
-        except Exception:
-            pass
+        except Exception as e:
+            log_line("[Auth] Failed to dispatch admin signup notification:", e)
 
         handler._send_json(200, {
             "ok": True,
@@ -315,8 +315,8 @@ def handle_account_logout(handler, raw_body, ip):
         try:
             from services.auth import delete_session
             delete_session(token)
-        except Exception:
-            pass
+        except Exception as e:
+            log_line("[Auth] Error deleting session on logout:", e)
     logout_cookie_hdr = handler._make_logout_cookie_header()
     handler._send_json(200, {"ok": True}, extra_headers=[logout_cookie_hdr])
 
@@ -332,8 +332,8 @@ def handle_account_logout_all(handler, raw_body, ip):
     try:
         from services.auth import delete_all_user_sessions
         delete_all_user_sessions(session.get("name"))
-    except Exception:
-        pass
+    except Exception as e:
+        log_line("[Auth] Error deleting all user sessions on logout-all:", e)
     logout_cookie_hdr = handler._make_logout_cookie_header()
     handler._send_json(200, {"ok": True, "message": "모든 기기에서 로그아웃되었습니다."}, extra_headers=[logout_cookie_hdr])
 
@@ -430,8 +430,8 @@ def handle_account_update_profile(handler, raw_body, ip):
                     with open(dest, "wb") as f:
                         f.write(img_bytes)
                     new_avatar = f"/api/attachments/avatars/{fname}"
-        except Exception:
-            pass
+        except Exception as e:
+            log_line("[Auth] Failed to save avatar file:", e)
     elif avatar_url_param is not None:
         # Only allow clearing the avatar or an app-relative / HTTPS URL. Arbitrary
         # values (e.g. "javascript:...") must never reach an <img src> attribute.
@@ -564,8 +564,8 @@ def handle_account_update_profile(handler, raw_body, ip):
                 tag="승인요청",
                 tag_type="info"
             )
-        except Exception:
-            pass
+        except Exception as e:
+            log_line("[Auth] Failed to send department change notification to admin:", e)
 
     from services.audit_logger import log_audit
     log_audit(
