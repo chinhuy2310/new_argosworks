@@ -35,3 +35,39 @@ def test_handle_post_vector_sync_has_time_and_rate_limits():
         assert len(handler.responses) == 2
         assert handler.responses[1][0] == 429
         assert "너무 빈번합니다" in handler.responses[1][1]["error"]
+
+
+def test_delete_record_attachment_removes_file_and_protects_traversal(tmp_path, monkeypatch, tmp_db):
+    import os
+    from services.data_store import delete_record_attachment
+    from db import execute, query
+    import config
+
+    attach_root = tmp_path / "attach"
+    monkeypatch.setattr(config, "ATTACH_DIR", str(attach_root))
+    rec_dir = attach_root / "101"
+    rec_dir.mkdir(parents=True)
+
+    test_file = rec_dir / "valid_file.txt"
+    test_file.write_text("sample content")
+
+    execute("INSERT OR IGNORE INTO departments(id, name) VALUES ('dev', 'Development')")
+    execute("INSERT INTO records(id, dept_id, category, title, assignee_name) VALUES (101, 'dev', 'cat', 'test', 'tester')")
+    execute("INSERT INTO record_attachments(id, record_id, filename) VALUES (1, 101, 'valid_file.txt')")
+
+    # Call delete_record_attachment - should succeed, remove row from DB and file from disk
+    ok, err = delete_record_attachment(101, 1)
+    assert ok is True
+    assert err is None
+    assert not test_file.exists()
+    assert len(query("SELECT * FROM record_attachments WHERE id = 1")) == 0
+
+    # Path traversal safety test: filename with ../ should not delete outside file
+    outside_file = attach_root / "outside.txt"
+    outside_file.write_text("critical outside data")
+    execute("INSERT INTO record_attachments(id, record_id, filename) VALUES (2, 101, '../outside.txt')")
+
+    ok, err = delete_record_attachment(101, 2)
+    assert ok is True
+    assert outside_file.exists()  # MUST NOT be removed
+    assert len(query("SELECT * FROM record_attachments WHERE id = 2")) == 0

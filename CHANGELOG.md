@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Undefined name in data_store (1.2)
+
+- Added missing `import os` in `server/services/data_store.py` and wrapped `delete_record_attachment` file removal with `safe_join` to prevent path traversal, with proper `log_line` error logging instead of empty pass.
+
 ### Fixed — Undefined name in router (1.1)
 
 - Added missing `import time` in `server/router.py` to fix `NameError` on `/api/vectors/sync` (`handle_post_vector_sync`) rate limit check.
