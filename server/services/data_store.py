@@ -467,50 +467,54 @@ def append_record(record):
             from utils.logging import log_line
             log_line(f"[Assignee] Error resolving assignee '{assignee_name}':", e)
 
-    execute(
-        """INSERT INTO records(id, dept_id, category, title, project, assignee_id,
-           assignee_name, assignee_email, start_date, due_date, work_date, summary, tags, memo, status, priority, card_code, participants, parent_key, is_scheduled, is_private)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            rec_id,
-            dept_val,
-            record.get("category", ""),
-            record.get("title", ""),
-            record.get("project", "프로젝트 미지정"),
-            assignee_id,
-            assignee_name,
-            assignee_email,
-            start_date,
-            due_date,
-            work_date,
-            record.get("summary", ""),
-            tags_json,
-            record.get("memo", ""),
-            status,
-            priority,
-            card_code,
-            participants,
-            parent_key,
-            is_sched,
-            is_private_val,
-        )
-    )
-
-    # 첨부파일
-    attachments = record.get("attachments", [])
-    for fname in attachments:
-        execute(
-            "INSERT INTO record_attachments(record_id, filename) VALUES (?, ?)",
-            (rec_id, fname)
+    def _do_append(conn):
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO records(id, dept_id, category, title, project, assignee_id,
+               assignee_name, assignee_email, start_date, due_date, work_date, summary, tags, memo, status, priority, card_code, participants, parent_key, is_scheduled, is_private)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                rec_id,
+                dept_val,
+                record.get("category", ""),
+                record.get("title", ""),
+                record.get("project", "프로젝트 미지정"),
+                assignee_id,
+                assignee_name,
+                assignee_email,
+                start_date,
+                due_date,
+                work_date,
+                record.get("summary", ""),
+                tags_json,
+                record.get("memo", ""),
+                status,
+                priority,
+                card_code,
+                participants,
+                parent_key,
+                is_sched,
+                is_private_val,
+            )
         )
 
-    # Jira 연결
-    jira = record.get("jira")
-    if jira and jira.get("key"):
-        execute(
-            "INSERT OR REPLACE INTO record_jira(record_id, jira_key, jira_status, jira_url) VALUES (?, ?, ?, ?)",
-            (rec_id, jira["key"], jira.get("status", ""), jira.get("url", ""))
-        )
+        # 첨부파일
+        attachments = record.get("attachments", [])
+        for fname in attachments:
+            cur.execute(
+                "INSERT INTO record_attachments(record_id, filename) VALUES (?, ?)",
+                (rec_id, fname)
+            )
+
+        # Jira 연결
+        jira = record.get("jira")
+        if jira and jira.get("key"):
+            cur.execute(
+                "INSERT OR REPLACE INTO record_jira(record_id, jira_key, jira_status, jira_url) VALUES (?, ?, ?, ?)",
+                (rec_id, jira["key"], jira.get("status", ""), jira.get("url", ""))
+            )
+
+    transaction(_do_append)
 
 
 def link_record_jira(record_id, jira_key, jira_status="", jira_url=""):

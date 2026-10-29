@@ -202,3 +202,45 @@ def test_login_does_not_leak_token_in_json_by_default(tmp_db, monkeypatch):
     handle_account_login(handler_compat, payload, "127.0.0.1")
     assert handler_compat.status == 200
     assert "token" in handler_compat.data
+
+
+def test_append_record_atomic_transaction_rollback(tmp_db):
+    import sqlite3
+    from services.data_store import append_record
+    from db import get_one, execute
+
+    execute("INSERT OR IGNORE INTO departments(id, name) VALUES ('dev', 'Development')")
+
+    rec_id = 999901
+    record_fail = {
+        "id": rec_id,
+        "dept_id": "dev",
+        "title": "Atomic Test Record",
+        "category": "업무",
+        "attachments": ["file1.txt", None],  # None violates NOT NULL constraint on record_attachments.filename
+        "jira": {"key": "ARGOS-101", "status": "Open", "url": "https://jira.local/ARGOS-101"}
+    }
+
+    # Must raise IntegrityError on attachment insert
+    with pytest.raises(sqlite3.IntegrityError):
+        append_record(record_fail)
+
+    # In atomic transaction, failure MUST roll back the entire record and attachments!
+    saved_rec = get_one("SELECT * FROM records WHERE id = ?", (rec_id,))
+    assert saved_rec is None, "Atomic failure: record was committed despite attachment failure!"
+    att_rows = get_one("SELECT * FROM record_attachments WHERE record_id = ?", (rec_id,))
+    assert att_rows is None
+
+    # Normal execution succeeds completely
+    record_ok = {
+        "id": rec_id,
+        "dept_id": "dev",
+        "title": "Atomic Test Record Success",
+        "category": "업무",
+        "attachments": ["file1.txt", "file2.txt"],
+        "jira": {"key": "ARGOS-101", "status": "Open", "url": "https://jira.local/ARGOS-101"}
+    }
+    append_record(record_ok)
+
+    assert get_one("SELECT * FROM records WHERE id = ?", (rec_id,)) is not None
+    assert get_one("SELECT * FROM record_jira WHERE record_id = ?", (rec_id,)) is not None

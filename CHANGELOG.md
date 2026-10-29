@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Reliability — Atomic Transaction in append_record (3.4)
+
+- Wrapped record creation, attachments insertion, and Jira linkage in `server/services/data_store.py::append_record` inside a single atomic database transaction. Any failure during attachment or Jira insertion guarantees a complete rollback without leaving orphaned partial records.
+
 ### Security — Explicit Department Validation on Registration (3.3)
 
 - Rejected registration requests with invalid or missing department IDs with HTTP 400 (`유효하지 않은 부서입니다.`), eliminating dangerous implicit fallbacks to default or demo departments.
