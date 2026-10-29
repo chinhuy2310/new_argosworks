@@ -103,7 +103,8 @@ def init_app():
 
         # Jira sync loops if enabled
         if cfg.get("jira", {}).get("enabled"):
-            from services.jira_client import sync_jira_cache, jira_auto_sync_loop
+            from services.jira_client import sync_jira_cache, jira_auto_sync_loop, check_jira_ssl_warning
+            check_jira_ssl_warning(cfg)
             threading.Thread(target=sync_jira_cache, args=(cfg,), daemon=True).start()
             threading.Thread(target=jira_auto_sync_loop, args=(cfg,), daemon=True).start()
 

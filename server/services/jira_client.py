@@ -15,7 +15,24 @@ from utils.text import assignee_base_name, _adf_to_text, parse_iso_timestamp
 from config import JIRA_AUTO_SYNC_INTERVAL_SEC, BASE_DIR
 from services.data_store import read_records
 
+_WARNED_JIRA_SSL = False
+
+def check_jira_ssl_warning(cfg=None):
+    """Warns once if insecure Jira SSL verification is enabled."""
+    global _WARNED_JIRA_SSL
+    if _WARNED_JIRA_SSL:
+        return
+    allow_insecure = False
+    if os.environ.get("JIRA_INSECURE_SKIP_VERIFY", "").lower() in ("1", "true", "yes"):
+        allow_insecure = True
+    elif cfg and cfg.get("jira", {}).get("insecure_skip_verify"):
+        allow_insecure = True
+    if allow_insecure:
+        _WARNED_JIRA_SSL = True
+        log_line("[SECURITY WARNING] Jira SSL certificate verification is disabled (insecure_skip_verify). DO NOT USE IN PRODUCTION.")
+
 def _urlopen(req, timeout=15, cfg=None):
+    check_jira_ssl_warning(cfg)
     """
     안전한 Jira API HTTP 요청 호출기.
     기본적으로 엄격한 SSL/TLS 인증서 검증을 수행하며,

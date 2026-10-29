@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security & Observability — Jira Insecure SSL Verification Startup Warning (7.7)
+
+- Added `check_jira_ssl_warning()` in `server/services/jira_client.py` and connected to application initialization in `server/wsgi.py` and `server/main.py` to emit an explicit security warning whenever `insecure_skip_verify` or `JIRA_INSECURE_SKIP_VERIFY` is active.
+
 ### Reliability & Session Security — Per-Request Session Cache Invalidation (7.6)
 
 - Explicitly cleared `self._current_session = None` at the entry of each HTTP dispatch verb (`do_GET`, `do_POST`, `do_OPTIONS`) in `server/handler.py`, preventing cross-request session leakage across keep-alive connections.
