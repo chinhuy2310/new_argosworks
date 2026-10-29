@@ -82,3 +82,24 @@ def _adf_to_text(node):
     except Exception:
         return ""
     return " ".join(p for p in parts if p).strip()
+
+def login_label(acc, login_id: str) -> str:
+    """Returns canonical username if user exists, or a keyed pseudonymous fingerprint if not found,
+    preventing accidentally pasted passwords in login_id from leaking into logs/SIEM.
+    """
+    if acc and isinstance(acc, dict):
+        return acc.get("username") or acc.get("name") or "known_user"
+    clean_id = (login_id or "").strip()
+    if not clean_id:
+        return "anon:empty/len=0"
+    try:
+        from utils.crypto import get_master_key
+        mkey = get_master_key()
+    except Exception:
+        import os
+        mkey = os.environ.get("ARGOS_MASTER_KEY", "fallback_key_2026").encode("utf-8")
+    import hmac
+    import hashlib
+    fp = hmac.new(mkey, clean_id.lower().encode("utf-8"), hashlib.sha256).hexdigest()[:8]
+    return f"anon:{fp}/len={len(clean_id)}"
+

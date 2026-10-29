@@ -170,8 +170,14 @@ def handle_account_login(handler, raw_body, ip):
     org = (payload.get("org") or payload.get("department") or "").strip()
     password = payload.get("password") or ""
 
+    if len(login_id) > 254 or len(password) > 1024 or len(org) > 100:
+        handler._send_json(400, {"ok": False, "error": "잘못된 요청 파라미터입니다."})
+        return
+
+    from utils.text import login_label
     acc = get_user_by_login(login_id, org)
-    ident_key = f"user:{acc['id']}" if acc else f"anon:{(login_id or '').strip().lower()}"
+    label = login_label(acc, login_id)
+    ident_key = f"user:{acc['id']}" if acc else f"anon:{label}"
 
     from services.auth import (
         check_login_rate_limit, record_login_failure, clear_login_failures,
@@ -186,14 +192,14 @@ def handle_account_login(handler, raw_body, ip):
     if not acc:
         record_login_failure(ip, ident_key)
         hash_password(password, salt_hex=_DUMMY_SALT, iterations=_effective_pbkdf2_rounds())
-        access_log(ip, "account_login", 401, "%s|%s (User Not Found)" % (login_id, org))
+        access_log(ip, "account_login", 401, "%s|%s (User Not Found)" % (label, org))
         from services.audit_logger import log_audit
         log_audit(
-            session={"name": login_id, "org": org or "unknown"},
+            session={"name": label, "org": org or "unknown"},
             ip=ip,
             action="LOGIN_FAILED",
             target_type="auth",
-            target_id=login_id,
+            target_id=label,
             details={"reason": "Invalid credentials"}
         )
         handler._send_json(401, {"ok": False, "error": "아이디(또는 이메일) 또는 비밀번호가 올바르지 않습니다."})
@@ -203,14 +209,14 @@ def handle_account_login(handler, raw_body, ip):
     record_login_failure(ip, ident_key)
 
     if not verify_password(password, acc.get("salt", ""), acc.get("password_hash", ""), iterations=acc.get("iterations"), user_id=acc.get("id")):
-        access_log(ip, "account_login", 401, "%s|%s" % (login_id, org))
+        access_log(ip, "account_login", 401, "%s|%s" % (label, org))
         from services.audit_logger import log_audit
         log_audit(
-            session={"name": login_id, "org": org or "unknown"},
+            session={"name": label, "org": org or "unknown"},
             ip=ip,
             action="LOGIN_FAILED",
             target_type="auth",
-            target_id=login_id,
+            target_id=label,
             details={"reason": "Invalid credentials"}
         )
         handler._send_json(401, {"ok": False, "error": "아이디(또는 이메일) 또는 비밀번호가 올바르지 않습니다."})
@@ -222,11 +228,11 @@ def handle_account_login(handler, raw_body, ip):
     if acc_status == "pending":
         from services.audit_logger import log_audit
         log_audit(
-            session={"name": login_id, "org": org or "unknown"},
+            session={"name": label, "org": org or "unknown"},
             ip=ip,
             action="LOGIN_FAILED",
             target_type="auth",
-            target_id=login_id,
+            target_id=label,
             details={"reason": "Account pending approval"}
         )
         handler._send_json(403, {"ok": False, "error": "해당 계정은 관리자 승인 대기(Pending Approval) 상태입니다. 사내 관리자의 승인 완료 후 이용 가능합니다."})
@@ -234,11 +240,11 @@ def handle_account_login(handler, raw_body, ip):
     elif acc_status == "rejected":
         from services.audit_logger import log_audit
         log_audit(
-            session={"name": login_id, "org": org or "unknown"},
+            session={"name": label, "org": org or "unknown"},
             ip=ip,
             action="LOGIN_FAILED",
             target_type="auth",
-            target_id=login_id,
+            target_id=label,
             details={"reason": "Account request rejected"}
         )
         handler._send_json(403, {"ok": False, "error": "계정 가입 요청이 반려되었습니다. 사내 관리자에게 문의하세요."})
@@ -247,17 +253,16 @@ def handle_account_login(handler, raw_body, ip):
           or acc_status not in (None, "", "active")):
         from services.audit_logger import log_audit
         log_audit(
-            session={"name": login_id, "org": org or "unknown"},
+            session={"name": label, "org": org or "unknown"},
             ip=ip,
             action="LOGIN_FAILED",
             target_type="auth",
-            target_id=login_id,
+            target_id=label,
             details={"reason": "Account disabled"}
         )
         handler._send_json(403, {"ok": False, "error": "비활성화(잠금)된 계정입니다. 관리자에게 문의하세요."})
         return
 
-    clear_login_failures(ip, login_id)
     name = acc.get("name", login_id)
     username = acc.get("username", login_id)
     # Never invent a department: an account without dept_id must not be silently
