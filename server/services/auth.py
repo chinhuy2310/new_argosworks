@@ -925,6 +925,7 @@ _session_lock = threading.Lock()
 _login_failures_lock = threading.Lock()
 _login_failures = {}  # key: "ip:user" -> [timestamp, timestamp, ...]
 
+_DUMMY_SALT = "0" * 32
 DEFAULT_SESSION_TTL_HOURS = 24
 DEFAULT_SESSION_MAX_AGE_HOURS = 168
 
@@ -944,52 +945,76 @@ def get_session_max_age_seconds():
     except Exception:
         return DEFAULT_SESSION_MAX_AGE_HOURS * 3600
 
-def check_login_rate_limit(ip, identifier):
+def check_login_rate_limit(ip, identifier, return_retry_after=False):
     """
-    무차별 대입 공격(Brute-force) 방어 (DB 영속화):
-    계정별 독립 임시 잠금 (동일 계정 15분 내 5회 실패 시 해당 계정 잠금)
-    IP별 DoS 방어 (동일 IP 15분 내 30회 실패 시 해당 IP 차단)
-    특정 사용자 실패로 타 사용자가 차단되는 현상 및 IP 리셋 우회 공격 방어.
+    무차별 대입 공격(Brute-force) 3단계 방어:
+    1. (IP, 계정): 15분 내 5회 실패 시 차단 (환경변수 LOGIN_MAX_FAILURES_PER_IP_USER, 기본 5)
+    2. 계정 전역 (모든 IP): 15분 내 20회 실패 시 차단 (환경변수 LOGIN_MAX_FAILURES_PER_ACCOUNT, 기본 20)
+    3. IP 전역 (모든 계정): 15분 내 30회 실패 시 차단 (환경변수 LOGIN_MAX_FAILURES_PER_IP, 기본 30)
     """
     now = time.time()
     cutoff = now - 900
     ident = (identifier or '').strip().lower()
+
+    limit_ip_user = int(os.environ.get("LOGIN_MAX_FAILURES_PER_IP_USER", 5))
+    limit_account = int(os.environ.get("LOGIN_MAX_FAILURES_PER_ACCOUNT", 20))
+    limit_ip = int(os.environ.get("LOGIN_MAX_FAILURES_PER_IP", 30))
+
     try:
-        # 1. Target account lockout: 5 failures within 15 mins locks that account
+        # Tier 1: Target (IP, account)
+        if ident and ip:
+            row_ip_user = get_one(
+                "SELECT COUNT(*) as cnt, MIN(failed_at) as earliest FROM login_attempts WHERE ip = ? AND identifier = ? AND failed_at > ?",
+                (ip, ident, cutoff)
+            )
+            cnt_ip_user = row_ip_user["cnt"] if row_ip_user else 0
+            if cnt_ip_user >= limit_ip_user:
+                earliest = row_ip_user["earliest"] if row_ip_user and row_ip_user.get("earliest") else cutoff
+                remaining = max(1, int(900 - (now - earliest)))
+                mins = max(1, remaining // 60)
+                msg = f"보안 경고: 해당 계정의 로그인 실패 횟수 초과로 임시 잠금되었습니다. {mins}분 후 다시 시도하세요."
+                return (False, msg, remaining) if return_retry_after else (False, msg)
+
+        # Tier 2: Account global across all IPs
         if ident:
-            row_user = get_one(
+            row_account = get_one(
                 "SELECT COUNT(*) as cnt, MIN(failed_at) as earliest FROM login_attempts WHERE identifier = ? AND failed_at > ?",
                 (ident, cutoff)
             )
-            cnt_user = row_user["cnt"] if row_user else 0
-            if cnt_user >= 5:
-                earliest = row_user["earliest"] if row_user and row_user.get("earliest") else cutoff
-                remaining = int(900 - (now - earliest))
+            cnt_account = row_account["cnt"] if row_account else 0
+            if cnt_account >= limit_account:
+                earliest = row_account["earliest"] if row_account and row_account.get("earliest") else cutoff
+                remaining = max(1, int(900 - (now - earliest)))
                 mins = max(1, remaining // 60)
-                return False, f"보안 경고: 해당 계정의 로그인 실패 횟수 초과로 임시 잠금되었습니다. {mins}분 후 다시 시도하세요."
+                msg = f"보안 경고: 해당 계정에 대한 비정상적인 로그인 시도가 감지되어 계정이 보호 잠금되었습니다. {mins}분 후 다시 시도하세요."
+                return (False, msg, remaining) if return_retry_after else (False, msg)
 
-        # 2. IP-level brute-force flood defense: 30 failures from same IP within 15 mins blocks IP
-        row_ip = get_one(
-            "SELECT COUNT(*) as cnt, MIN(failed_at) as earliest FROM login_attempts WHERE ip = ? AND failed_at > ?",
-            (ip, cutoff)
-        )
-        cnt_ip = row_ip["cnt"] if row_ip else 0
-        if cnt_ip >= 30:
-            earliest = row_ip["earliest"] if row_ip and row_ip.get("earliest") else cutoff
-            remaining = int(900 - (now - earliest))
-            mins = max(1, remaining // 60)
-            return False, f"보안 경고: 비정상적인 로그인 시도로 인해 IP가 임시 차단되었습니다. {mins}분 후 다시 시도하세요."
+        # Tier 3: IP global across all accounts
+        if ip:
+            row_ip = get_one(
+                "SELECT COUNT(*) as cnt, MIN(failed_at) as earliest FROM login_attempts WHERE ip = ? AND failed_at > ?",
+                (ip, cutoff)
+            )
+            cnt_ip = row_ip["cnt"] if row_ip else 0
+            if cnt_ip >= limit_ip:
+                earliest = row_ip["earliest"] if row_ip and row_ip.get("earliest") else cutoff
+                remaining = max(1, int(900 - (now - earliest)))
+                mins = max(1, remaining // 60)
+                msg = f"보안 경고: 비정상적인 로그인 시도로 인해 IP가 임시 차단되었습니다. {mins}분 후 다시 시도하세요."
+                return (False, msg, remaining) if return_retry_after else (False, msg)
+
     except Exception:
-        # Fallback to in-memory if DB fails
         key = f"{ip}:{ident}"
         with _login_failures_lock:
             attempts = [t for t in _login_failures.get(key, []) if now - t < 900]
             _login_failures[key] = attempts
-            if len(attempts) >= 5:
-                remaining = int(900 - (now - attempts[0]))
+            if len(attempts) >= limit_ip_user:
+                remaining = max(1, int(900 - (now - attempts[0])))
                 mins = max(1, remaining // 60)
-                return False, f"보안 경고: 로그인 시도 실패 횟수 초과로 계정이 임시 잠금되었습니다. {mins}분 후 다시 시도하세요."
-    return True, ""
+                msg = f"보안 경고: 로그인 시도 실패 횟수 초과로 계정이 임시 잠금되었습니다. {mins}분 후 다시 시도하세요."
+                return (False, msg, remaining) if return_retry_after else (False, msg)
+
+    return (True, "", 0) if return_retry_after else (True, "")
 
 def record_login_failure(ip, identifier):
     """로그인 실패 시각 기록 (DB 및 메모리 동기화)."""

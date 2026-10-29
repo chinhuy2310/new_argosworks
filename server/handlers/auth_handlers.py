@@ -165,15 +165,39 @@ def handle_account_login(handler, raw_body, ip):
     org = (payload.get("org") or payload.get("department") or "").strip()
     password = payload.get("password") or ""
 
-    from services.auth import check_login_rate_limit, record_login_failure, clear_login_failures
-    allowed, rate_msg = check_login_rate_limit(ip, login_id)
+    acc = get_user_by_login(login_id, org)
+    ident_key = f"user:{acc['id']}" if acc else f"anon:{(login_id or '').strip().lower()}"
+
+    from services.auth import (
+        check_login_rate_limit, record_login_failure, clear_login_failures,
+        hash_password, _effective_pbkdf2_rounds, _DUMMY_SALT
+    )
+    allowed, rate_msg, retry_after = check_login_rate_limit(ip, ident_key, return_retry_after=True)
     if not allowed:
-        handler._send_json(429, {"ok": False, "error": rate_msg})
+        extra_headers = [("Retry-After", str(retry_after))]
+        handler._send_json(429, {"ok": False, "error": rate_msg}, extra_headers=extra_headers)
         return
 
-    acc = get_user_by_login(login_id, org)
-    if not acc or not verify_password(password, acc.get("salt", ""), acc.get("password_hash", ""), iterations=acc.get("iterations"), user_id=acc.get("id")):
-        record_login_failure(ip, login_id)
+    if not acc:
+        record_login_failure(ip, ident_key)
+        hash_password(password, salt_hex=_DUMMY_SALT, iterations=_effective_pbkdf2_rounds())
+        access_log(ip, "account_login", 401, "%s|%s (User Not Found)" % (login_id, org))
+        from services.audit_logger import log_audit
+        log_audit(
+            session={"name": login_id, "org": org or "unknown"},
+            ip=ip,
+            action="LOGIN_FAILED",
+            target_type="auth",
+            target_id=login_id,
+            details={"reason": "Invalid credentials"}
+        )
+        handler._send_json(401, {"ok": False, "error": "아이디(또는 이메일) 또는 비밀번호가 올바르지 않습니다."})
+        return
+
+    # Record attempt BEFORE verify to prevent parallel race conditions
+    record_login_failure(ip, ident_key)
+
+    if not verify_password(password, acc.get("salt", ""), acc.get("password_hash", ""), iterations=acc.get("iterations"), user_id=acc.get("id")):
         access_log(ip, "account_login", 401, "%s|%s" % (login_id, org))
         from services.audit_logger import log_audit
         log_audit(
@@ -186,6 +210,8 @@ def handle_account_login(handler, raw_body, ip):
         )
         handler._send_json(401, {"ok": False, "error": "아이디(또는 이메일) 또는 비밀번호가 올바르지 않습니다."})
         return
+
+    clear_login_failures(ip, ident_key)
 
     acc_status = acc.get("status")
     if acc_status == "pending":

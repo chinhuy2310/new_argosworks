@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security — Hardened Login Rate Limiting & Timing Attack Defense (3.1)
+
+- Added dummy PBKDF2 hash computation on non-existent usernames to equalize response time, defending against user enumeration timing attacks.
+- Enforced 3-tier login rate limiting with canonicalized identifier keys (`(ip, user)` = 5/15m, `user` across IPs = 20/15m, `ip` across users = 30/15m).
+- Recorded login failures immediately prior to password verification to eliminate concurrency race conditions, returning standard HTTP 429 with `Retry-After` header.
+
 ### Security — Remove session token from JS client storage (2.5)
 
 - Removed token storage in `localStorage` and `sessionStorage` in frontend JS (`web/js/auth.js`, `api.js`, `calendar.js`, `notifications.js`, `settings.js`), adhering to strict HttpOnly cookie security.
