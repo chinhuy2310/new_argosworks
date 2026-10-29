@@ -7,6 +7,7 @@ Provides:
 4. Account lockout & Brute-force protection
 """
 
+import os
 import time
 import secrets
 import hmac
@@ -21,28 +22,82 @@ _csrf_tokens_lock = threading.Lock()
 _csrf_tokens: Dict[str, str] = {}  # token -> session_token
 _csrf_token_times: Dict[str, float] = {}  # token -> timestamp
 _CSRF_SECRET: Optional[bytes] = None
+_csrf_secret_lock = threading.Lock()
 
 def _get_csrf_secret() -> bytes:
-    """Returns persistent secret key for CSRF HMAC generation and verification across restarts."""
+    """Returns persistent secret key for CSRF HMAC generation and verification across restarts.
+    Priority:
+    1. Read data/.csrf_secret if >= 16 bytes.
+    2. Atomically create data/.csrf_secret with 32 bytes and 0o600 permissions.
+    3. If filesystem read-only, derive deterministically from master key via HMAC-SHA256.
+    4. Otherwise, fail closed by raising RuntimeError.
+    """
     global _CSRF_SECRET
     if _CSRF_SECRET is not None:
         return _CSRF_SECRET
-    try:
+
+    with _csrf_secret_lock:
+        if _CSRF_SECRET is not None:
+            return _CSRF_SECRET
+
         from config import DATA_DIR
-        import os
         secret_file = os.path.join(DATA_DIR, ".csrf_secret")
-        if os.path.exists(secret_file):
-            with open(secret_file, "rb") as f:
-                _CSRF_SECRET = f.read().strip()
-        if not _CSRF_SECRET or len(_CSRF_SECRET) < 16:
-            _CSRF_SECRET = secrets.token_bytes(32)
+
+        # 1. Read existing file
+        try:
+            if os.path.exists(secret_file):
+                with open(secret_file, "rb") as f:
+                    content = f.read().strip()
+                if len(content) >= 16:
+                    _CSRF_SECRET = content
+                    return _CSRF_SECRET
+        except Exception:
+            pass
+
+        # 2. Atomically create file
+        try:
             os.makedirs(DATA_DIR, exist_ok=True)
-            with open(secret_file, "wb") as f:
-                f.write(_CSRF_SECRET)
-    except Exception:
-        if not _CSRF_SECRET:
-            _CSRF_SECRET = b"argos_works_enterprise_csrf_fallback_key_2026"
-    return _CSRF_SECRET
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            if hasattr(os, "O_BINARY"):
+                flags |= os.O_BINARY
+            new_secret = secrets.token_bytes(32)
+            try:
+                fd = os.open(secret_file, flags, 0o600)
+                try:
+                    os.write(fd, new_secret)
+                finally:
+                    os.close(fd)
+                _CSRF_SECRET = new_secret
+                return _CSRF_SECRET
+            except FileExistsError:
+                # Race condition: another thread/process created it
+                with open(secret_file, "rb") as f:
+                    content = f.read().strip()
+                if len(content) >= 16:
+                    _CSRF_SECRET = content
+                    return _CSRF_SECRET
+        except (OSError, PermissionError):
+            pass
+
+        # 3. Derive from master key if read-only filesystem
+        try:
+            from utils.crypto import get_master_key
+            mkey = get_master_key()
+            if mkey:
+                derived = hmac.new(mkey, b"argos-csrf-secret-v1", hashlib.sha256).digest()
+                _CSRF_SECRET = derived
+                return _CSRF_SECRET
+        except Exception:
+            pass
+
+        env_mkey = os.environ.get("ARGOS_MASTER_KEY", "").strip() or os.environ.get("JARVIS_MASTER_KEY", "").strip()
+        if env_mkey:
+            derived = hmac.new(env_mkey.encode("utf-8"), b"argos-csrf-secret-v1", hashlib.sha256).digest()
+            _CSRF_SECRET = derived
+            return _CSRF_SECRET
+
+        # 4. Fail closed
+        raise RuntimeError("CSRF secret unavailable: fail closed")
 
 DEFAULT_RATE_LIMIT_RPM = 120  # Max 120 requests per minute per IP
 

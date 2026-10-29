@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security & Hardening — Fail-Closed Dynamic CSRF Secret Resolution (7.4)
+
+- Removed the static hardcoded CSRF fallback key (`b"argos_works_enterprise_csrf_fallback_key_2026"`), eliminating static secret vulnerabilities.
+- Implemented robust, prioritized CSRF secret resolution: atomic file creation (`0o600` via `O_CREAT | O_EXCL`) -> HMAC-SHA256 master key derivation for read-only containers -> fail-closed `RuntimeError`.
+- Added eager initialization of CSRF secret at startup in `server/wsgi.py` and `server/main.py`.
+
 ### Security & Deployment — Narrow Default Trusted Proxies & Compose Network Isolation (7.3)
 
 - **BREAKING**: Narrowed `DEFAULT_TRUSTED_PROXIES` in `server/handler.py` from `127.0.0.1,::1,172.16.0.0/12` to loopback only (`127.0.0.1,::1`). Upgrading deployments running behind an external reverse proxy on a non-loopback IP must explicitly set `TRUSTED_PROXIES` in `.env` to their reverse proxy's IP.
