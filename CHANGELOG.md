@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Reliability & Session Security — Per-Request Session Cache Invalidation (7.6)
+
+- Explicitly cleared `self._current_session = None` at the entry of each HTTP dispatch verb (`do_GET`, `do_POST`, `do_OPTIONS`) in `server/handler.py`, preventing cross-request session leakage across keep-alive connections.
+
+### Security & Denial of Service Defense — Public Body Size Limits (7.5)
+
+- Enforced early `Content-Length` validation in `server/handler.py` rejecting payloads exceeding `PUBLIC_BODY_LIMIT` (16 KB) on unauthenticated public endpoints and 1 MB on `/api/setup/*` wizard endpoints with HTTP 413 before reading the input stream, eliminating unauthenticated heap exhaustion and DoS attack vectors.
+
 ### Security & Hardening — Fail-Closed Dynamic CSRF Secret Resolution (7.4)
 
 - Removed the static hardcoded CSRF fallback key (`b"argos_works_enterprise_csrf_fallback_key_2026"`), eliminating static secret vulnerabilities.
