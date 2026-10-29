@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Observability & Compliance — Audit Log Failure Metric and Safe Logging (6.2)
+
+- Replaced silent \except Exception: pass\ in \server/router.py::_audit()\ and \server/services/audit_logger.py::log_audit()\ with thread-safe failure counting (\get_audit_failure_count()\) and sanitized \log_line\ error output (\[Audit] write failed: action=... target=... err=...\).
+- Preserved zero-downtime reliability (primary requests continue without throwing 500s when audit writes fail) while guaranteeing monitoring systems detect audit storage exhaustion and zero secret/password leakage occurs.
+
 ### Security & Observability — SQL Parameter Sanitization in Logs (6.1)
 
 - Replaced raw SQL parameter interpolation across SQLite and PostgreSQL error logging with sanitized \<N params>\ summary placeholders via \_safe_params()\, completely preventing sensitive data (passwords, salts, password hashes, session tokens) from leaking into server logs or customer SIEMs upon query failures.

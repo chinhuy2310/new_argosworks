@@ -6,10 +6,28 @@ critical system events (logins, records, PIM price modifications, backups, user 
 
 import json
 import logging
+import threading
 from datetime import datetime
 from db import execute, query
+from utils.logging import log_line
 
 logger = logging.getLogger(__name__)
+
+_audit_failure_lock = threading.Lock()
+_audit_failure_count = 0
+
+def get_audit_failure_count() -> int:
+    """Returns the total number of audit log write failures encountered."""
+    with _audit_failure_lock:
+        return _audit_failure_count
+
+def _record_audit_failure(action="", target_type="", target_id="", err=None):
+    """Safely increments the audit failure counter and logs structured failure without sensitive details."""
+    global _audit_failure_count
+    with _audit_failure_lock:
+        _audit_failure_count += 1
+    err_cls = type(err).__name__ if err else "UnknownError"
+    log_line(f"[Audit] write failed: action={action} target={target_type}/{target_id} err={err_cls}")
 
 def log_audit(session_or_user=None, ip=None, action="", target_type="", target_id="", details=None, session=None, **kwargs):
     """
@@ -63,7 +81,7 @@ def log_audit(session_or_user=None, ip=None, action="", target_type="", target_i
             )
         )
     except Exception as e:
-        logger.error(f"[AuditLogger] Failed to write audit log: {e}")
+        _record_audit_failure(action=action, target_type=target_type, target_id=target_id, err=e)
 
 def build_audit_export(logs, export_format="csv"):
     """

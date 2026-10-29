@@ -52,3 +52,54 @@ def test_sql_params_debug_env(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING):
         _check_sql_params_debug()
     assert "[SECURITY WARNING] ARGOS_LOG_SQL_PARAMS=1 is active" in caplog.text
+
+
+def test_audit_failure_metric_and_logging(monkeypatch, capsys):
+    """Verify audit logger failure increments metric and logs structured warning without swallowing."""
+    from services.audit_logger import log_audit, get_audit_failure_count
+    import services.audit_logger as al
+    import sqlite3
+
+    initial_count = get_audit_failure_count()
+
+    def mock_execute(*args, **kwargs):
+        raise sqlite3.OperationalError("disk full simulated")
+
+    monkeypatch.setattr(al, "execute", mock_execute)
+
+    # Should not raise exception
+    log_audit(session={"name": "testuser"}, ip="1.2.3.4", action="LOGIN_ATTEMPT", target_type="auth", target_id="testuser")
+
+    captured = capsys.readouterr()
+    assert get_audit_failure_count() == initial_count + 1
+    assert "write failed: action=LOGIN_ATTEMPT target=auth/testuser err=OperationalError" in captured.err
+
+
+def test_router_audit_swallow_and_metric(monkeypatch, capsys):
+    """Verify router._audit catches exceptions, increments failure metric, and does not leak secrets."""
+    import router
+    from services.audit_logger import get_audit_failure_count
+
+    initial_count = get_audit_failure_count()
+
+    def mock_log_audit(*args, **kwargs):
+        raise RuntimeError("simulated audit failure in router")
+
+    monkeypatch.setattr("services.audit_logger.log_audit", mock_log_audit)
+
+    # Must not raise to callers
+    router._audit(
+        session={"name": "admin"},
+        ip="10.0.0.1",
+        action="CHANGE_PASSWORD",
+        target_type="user",
+        target_id="admin",
+        details={"old_password": "super_secret_pw_123"}
+    )
+
+    captured = capsys.readouterr()
+    assert get_audit_failure_count() == initial_count + 1
+    assert "write failed: action=CHANGE_PASSWORD target=user/admin err=RuntimeError" in captured.err
+    assert "super_secret_pw_123" not in captured.err
+    assert "super_secret_pw_123" not in captured.out
+
