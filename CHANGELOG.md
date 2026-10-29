@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — CI linting gate (Phase 0)
+
+- Integrated `ruff` (F821, F811) into CI and `requirements-dev.txt` with configuration in `ruff.toml` to prevent undefined variables and duplicate imports. Cleaned trivial redundant re-imports across `handler.py`, `auth_handlers.py`, and `router.py`.
+
 ### Fixed — Password change (self-service & admin reset)
 
 - **`/api/account/update-profile` now verifies the current password** before storing a
