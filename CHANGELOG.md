@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Maintenance & Dual-Engine Reliability — Clean Dead Regex and Enforce Replace PK Mapping Contract (7.2)
+
+- Removed dead unused _RE_INSERT_OR_REPLACE regex in server/db.py, standardizing SQL translation around _RE_INSERT_OR_REPLACE_HEAD.
+- Added automated regression tests verifying that every database table utilizing INSERT OR REPLACE across the backend is tracked in _REPLACE_PK_MAP, and confirmed that multi-row batch inserts correctly translate to PostgreSQL with terminal ON CONFLICT (...) DO UPDATE clauses.
+
 ### Reliability & Security — Database Engine Detection and Fail-Closed Scheme Validation (7.1)
 
 - Added _detect_engine() in server/db.py to parse DATABASE_URL via URL scheme, correctly recognizing postgres://, postgresql://, and postgresql+psycopg2:// as PostgreSQL, and normalising legacy postgres:// URLs for database drivers.
