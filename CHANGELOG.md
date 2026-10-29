@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security — Case-Insensitive Unique User Identities & Username Validation (3.2)
+
+- Added case-insensitive unique indexes on `LOWER(username)` and `LOWER(email)` for users table in SQLite and PostgreSQL schemas and migration v6.
+- Added migration pre-check preventing startup crashes if duplicate case-insensitive usernames exist, logging warnings and providing `scripts/check_duplicate_identities.py` for administrator audit.
+- Added strict username format validation (`^[A-Za-z0-9_.-]{3,30}$`, disallowing `@`) across registration, admin creation, and setup wizard.
+- Ensured all single-row user queries specify deterministic `ORDER BY id ASC`.
+
 ### Security — Hardened Login Rate Limiting & Timing Attack Defense (3.1)
 
 - Added dummy PBKDF2 hash computation on non-existent usernames to equalize response time, defending against user enumeration timing attacks.

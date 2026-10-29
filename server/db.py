@@ -212,6 +212,16 @@ if ENGINE == "sqlite":
             if os.path.exists(schema_path):
                 with open(schema_path, 'r', encoding='utf-8') as f:
                     schema_script = f.read()
+
+                # Check if legacy database contains case-insensitive duplicate accounts
+                cur_u_tbl = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+                if cur_u_tbl.fetchone():
+                    dup_u = conn.execute("SELECT LOWER(username) FROM users WHERE username != '' GROUP BY LOWER(username) HAVING COUNT(*) > 1 LIMIT 1").fetchone()
+                    dup_e = conn.execute("SELECT LOWER(email) FROM users WHERE email != '' GROUP BY LOWER(email) HAVING COUNT(*) > 1 LIMIT 1").fetchone()
+                    if dup_u or dup_e:
+                        schema_script = schema_script.replace("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower ON users(LOWER(username)) WHERE username != '';", "-- skipped idx_users_username_lower")
+                        schema_script = schema_script.replace("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users(LOWER(email)) WHERE email != '';", "-- skipped idx_users_email_lower")
+
                 conn.executescript(schema_script)
                 logger.info("Canonical schema applied successfully.")
 
@@ -353,6 +363,19 @@ if ENGINE == "sqlite":
                         conn.execute("UPDATE sessions SET last_active_at = created_at WHERE last_active_at = 0;")
                 conn.execute("INSERT OR IGNORE INTO schema_migrations (version, name) VALUES (4, 'v2.3_session_sliding_ttl');")
                 logger.info("[db] Migration v4 (sessions last_active_at) applied.")
+            # Migration v6: Case-insensitive unique indexes on users (username, email)
+            if 6 not in applied_migrations:
+                cur_dup = conn.execute("SELECT LOWER(username) FROM users WHERE username != '' GROUP BY LOWER(username) HAVING COUNT(*) > 1 LIMIT 1")
+                dup_u = cur_dup.fetchone()
+                cur_dup_e = conn.execute("SELECT LOWER(email) FROM users WHERE email != '' GROUP BY LOWER(email) HAVING COUNT(*) > 1 LIMIT 1")
+                dup_e = cur_dup_e.fetchone()
+                if dup_u or dup_e:
+                    logger.warning("[db] Duplicate case-insensitive identities detected in users table. Skipping unique lower indexes until resolved via scripts/check_duplicate_identities.py.")
+                else:
+                    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower ON users(LOWER(username)) WHERE username != '';")
+                    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users(LOWER(email)) WHERE email != '';")
+                    conn.execute("INSERT OR IGNORE INTO schema_migrations (version, name) VALUES (6, 'v2.7_case_insensitive_unique_identities');")
+                    logger.info("[db] Migration v6 (case-insensitive unique user indexes) applied.")
         except sqlite3.Error as e:
             logger.error(f"Database initialization failed: {e}")
             raise
@@ -771,6 +794,24 @@ else:
                     ON CONFLICT (version) DO NOTHING;
                 """)
                 logger.info("[db/postgres] Migration v5 (free-text columns widened) applied.")
+
+            # Migration 6: Case-insensitive unique indexes on users (username, email)
+            if 6 not in applied_versions:
+                cur.execute("SELECT LOWER(username) FROM users WHERE username != '' GROUP BY LOWER(username) HAVING COUNT(*) > 1 LIMIT 1;")
+                dup_u = cur.fetchone()
+                cur.execute("SELECT LOWER(email) FROM users WHERE email != '' GROUP BY LOWER(email) HAVING COUNT(*) > 1 LIMIT 1;")
+                dup_e = cur.fetchone()
+                if dup_u or dup_e:
+                    logger.warning("[db/postgres] Duplicate case-insensitive identities detected in users table. Skipping unique lower indexes until resolved via scripts/check_duplicate_identities.py.")
+                else:
+                    cur.execute("""
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower ON users(LOWER(username)) WHERE username != '';
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users(LOWER(email)) WHERE email != '';
+                        INSERT INTO schema_migrations (version, name)
+                        VALUES (6, 'v2.7_case_insensitive_unique_identities')
+                        ON CONFLICT (version) DO NOTHING;
+                    """)
+                    logger.info("[db/postgres] Migration v6 (case-insensitive unique user indexes) applied.")
 
             cur.close()
         except psycopg2.Error as e:
