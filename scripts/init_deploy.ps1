@@ -133,7 +133,7 @@ if ($dbUrlStale) {
 }
 
 $defaults = [ordered]@{
-    'TRUSTED_PROXIES'       = '127.0.0.1,::1,172.16.0.0/12'
+    'TRUSTED_PROXIES'       = '127.0.0.1,::1'
     'SESSION_TTL_HOURS'     = '24'
     'ALLOW_PUBLIC_REGISTER' = 'false'
     'TZ'                    = 'Asia/Seoul'

@@ -33,7 +33,7 @@ ENV_EXAMPLE = os.path.join(ROOT, ".env.example")
 CONFIG_PATH = os.path.join(ROOT, "server", "config.json")
 CONFIG_EXAMPLE = os.path.join(ROOT, "server", "config.example.json")
 DATA_DIRS = ["data", "data/backups", "data/attachments", "data/templates", "logs"]
-DEFAULT_TRUSTED_PROXIES = "127.0.0.1,::1,172.16.0.0/12"
+DEFAULT_TRUSTED_PROXIES = "127.0.0.1,::1"
 
 # Values copied verbatim from .env.example that must never reach production.
 PLACEHOLDER_VALUES = {

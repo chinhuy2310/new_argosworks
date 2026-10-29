@@ -52,9 +52,9 @@ PUBLIC_API_WHITELIST = {
 # accepted for backwards compatibility) whose X-Forwarded-For / X-Real-IP
 # headers are honoured. Only the *immediate* TCP peer is matched against this
 # list, so a workstation that talks to ARGOS directly can never spoof its IP.
-#   127.0.0.1 / ::1   - reverse proxy running on the same host
-#   172.16.0.0/12     - default Docker bridge / compose networks (Caddy)
-# Deployments fronted by a proxy on another subnet MUST extend this value.
+#   127.0.0.1 / ::1   - reverse proxy running on the same host (default)
+# Deployments fronted by a proxy on another subnet (or Docker Compose argos_net)
+# MUST explicitly configure TRUSTED_PROXIES.
 # "0.0.0.0" (trust every peer, therefore spoofable) exists only for isolated
 # lab setups and is never enabled implicitly.
 DEFAULT_TRUSTED_PROXIES = "127.0.0.1,::1"
