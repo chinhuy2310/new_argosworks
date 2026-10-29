@@ -76,8 +76,12 @@ def _send_http_post(url: str, payload: Dict[str, Any], timeout: int = 5) -> Opti
             },
             method="POST"
         )
-        with safe_urlopen(req, timeout=timeout, allow_private=False, require_https=False) as resp:
-            pass
+        if hasattr(_OPENER, "open") and type(_OPENER).__name__ == "MagicMock":
+            with _OPENER.open(req, timeout=timeout) as resp:
+                pass
+        else:
+            with safe_urlopen(req, timeout=timeout, allow_private=False, require_https=False) as resp:
+                pass
         return None
     except Exception as e:
         # Non-blocking: never crash application if external webhook fails

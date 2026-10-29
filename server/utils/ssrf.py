@@ -109,7 +109,7 @@ class _SafeHTTPSConnection(http.client.HTTPSConnection):
             self._tunnel()
 
         server_hostname = self.host
-        context = self.context or ssl.create_default_context()
+        context = getattr(self, "_context", None) or getattr(self, "context", None) or ssl.create_default_context()
         self.sock = context.wrap_socket(sock, server_hostname=server_hostname)
 
 

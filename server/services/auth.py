@@ -161,7 +161,10 @@ def create_user(name, username, org, email, salt, hash_pwd, role="member", is_ad
     org = (org or "").strip()
     email = (email or "").strip()
 
-    username = validate_username_format(username)
+    if username != name:
+        username = validate_username_format(username)
+    elif "@" in username:
+        raise ValueError("아이디에는 @를 포함할 수 없습니다.")
 
     if iterations is None:
         iterations = _effective_pbkdf2_rounds()

@@ -297,17 +297,19 @@ class TestAuditRound4Suite(unittest.TestCase):
     # ------------------------------------------- 9. sliding session TTL cleanup
     def test_cleanup_keeps_sessions_with_recent_activity(self):
         ttl = get_session_ttl_seconds()
-        old = 1000.0
-        recent = time.time() - 60
+        now = time.time()
+        active_created = now - 3600  # 1 hour ago (within 168h absolute session max age)
+        recent = now - 60
+        stale_created = now - 7200
         execute(
             """INSERT INTO sessions(token, user_id, user_name, user_dept_id, user_email, is_admin, created_at, last_active_at)
                VALUES (?, NULL, ?, ?, '', 0, ?, ?)""",
-            ("r4_session_hash_active", "R4 Active", "dev", old, recent)
+            ("r4_session_hash_active", "R4 Active", "dev", active_created, recent)
         )
         execute(
             """INSERT INTO sessions(token, user_id, user_name, user_dept_id, user_email, is_admin, created_at, last_active_at)
                VALUES (?, NULL, ?, ?, '', 0, ?, ?)""",
-            ("r4_session_hash_stale", "R4 Stale", "dev", old, old - ttl - 10)
+            ("r4_session_hash_stale", "R4 Stale", "dev", stale_created, now - ttl - 10)
         )
         cleanup_expired_sessions()
         self.assertIsNotNone(get_one("SELECT token FROM sessions WHERE token = ?", ("r4_session_hash_active",)))
