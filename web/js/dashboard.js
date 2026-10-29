@@ -708,8 +708,8 @@ function renderAssigneeTable(){
     if(a.todo > 0) breakdown.push('<span class="pg-item pg-todo">' + escapeHtml(sTodo) + ' ' + a.todo + '</span>');
     if(breakdown.length === 0) breakdown.push('<span class="pg-item pg-todo">' + escapeHtml(sZeroTasks) + '</span>');
 
-    var deptTag = (isUnassignedUser || !dept || !dept.name || dept.name === "-")
-      ? '<span class="org-tag org-tag-none">-</span>'
+    var deptTag = (isUnassignedUser || !dept || !dept.name || dept.name === "-" || dept.name === "미배정")
+      ? ''
       : ('<span class="org-tag" style="--tag-color:' + colorVar(dept.colorIndex) + ';" title="' + escapeHtml(dept.name) + '">' + escapeHtml(dept.name) + '</span>');
 
     var delayedTag = (a.delayed > 0)
@@ -720,7 +720,7 @@ function renderAssigneeTable(){
       '<div class="fluid-compact-row' + (isSelected ? " selected" : "") + '" data-assignee="' + escapeHtml(a.name) + '" title="' + escapeHtml(tooltip) + '">' +
         '<div class="fcr-left">' +
           '<div class="fcr-avatar" style="background:' + avatarColor + ';">' +
-            (isCustomAvatar ? '<img src="' + escapeHtml(avatarUrl) + '" alt="" onerror="this.remove();">' : '') +
+            (isCustomAvatar ? '<img src="' + escapeHtml(avatarUrl) + '" alt="" class="fcr-avatar-img" onerror="this.remove();">' : '') +
             '<span class="fcr-avatar-initial">' + escapeHtml(initial) + '</span>' +
           '</div>' +
           '<div class="fcr-meta">' +
