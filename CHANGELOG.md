@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security & Observability — SQL Parameter Sanitization in Logs (6.1)
+
+- Replaced raw SQL parameter interpolation across SQLite and PostgreSQL error logging with sanitized \<N params>\ summary placeholders via \_safe_params()\, completely preventing sensitive data (passwords, salts, password hashes, session tokens) from leaking into server logs or customer SIEMs upon query failures.
+- Sanitized database error messages with \_format_db_error()\ to strip PostgreSQL \DETAIL: Key ...\ clauses that expose column values on constraint violations.
+- Added debug-only \ARGOS_LOG_SQL_PARAMS=1\ environment variable with mandatory startup warning for authorized technical support troubleshooting.
+
 ### Logging & Observability — Unhandled Exception Logging (5.2)
 
 - Replaced silent `except Exception: pass` blocks across `server/services/auth.py`, `server/services/data_store.py`, `server/services/jira_client.py`, `server/handlers/auth_handlers.py`, and `server/handlers/chat_handler.py` with structured `log_line` error messages, eliminating silent failure swallowing while keeping normal control flow intact.
