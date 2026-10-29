@@ -499,9 +499,10 @@ class TestSSRFValidator:
 
     def test_valid_https_url(self):
         from utils.ssrf import validate_external_url
-        # This will try DNS resolution, so use a well-known domain
-        result = validate_external_url("https://www.google.com", require_https=True)
-        assert result is True
+        from unittest.mock import patch
+        with patch("utils.ssrf.socket.getaddrinfo", return_value=[(2, 1, 6, "", ("93.184.216.34", 443))]):
+            result = validate_external_url("https://www.google.com", require_https=True)
+            assert result is True
 
     def test_reject_http_without_allow(self):
         from utils.ssrf import validate_external_url
