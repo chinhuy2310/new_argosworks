@@ -135,3 +135,36 @@ def test_handle_account_register_handles_db_error_cleanly(monkeypatch, tmp_db):
     status, data = handler.responses[0]
     assert status == 500
     assert "계정 등록 처리 중 오류가 발생했습니다" in data["error"]
+
+
+def test_notification_backfill_handles_first_block_error_without_nameerror(tmp_db, monkeypatch):
+    import services.notification_service as notif_svc
+    from db import query
+
+    orig_query = notif_svc.query
+
+    def mock_query(sql, *args, **kwargs):
+        if "records" in sql and "due_date" in sql:
+            raise RuntimeError("simulated deadline failure")
+        elif "activities" in sql:
+            return [{
+                "id": 1,
+                "issue_key": "REC-1",
+                "action_type": "comment",
+                "action_detail": "hello",
+                "author_name": "bob",
+                "author_email": "bob@example.com",
+                "summary": "Fix bug",
+                "created_at": "2026-10-29 12:00:00"
+            }]
+        return orig_query(sql, *args, **kwargs)
+
+    monkeypatch.setattr(notif_svc, "query", mock_query)
+
+    # In bugged state: block 1 raises RuntimeError -> except executes print(..., file=sys.stderr) -> NameError: sys not defined
+    # The function aborts and block 2 never creates notifications.
+    notif_svc.backfill_initial_notifications()
+
+    # In fixed state: block 2 runs successfully and inserts the activity notification
+    notifs = query("SELECT * FROM notifications WHERE type = 'comment'")
+    assert len(notifs) >= 1

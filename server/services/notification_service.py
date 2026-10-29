@@ -10,6 +10,7 @@ Persists all notifications in the SQLite `notifications` table:
 """
 
 import os
+import sys
 import time
 import uuid
 from datetime import datetime, timedelta
@@ -418,7 +419,6 @@ def trigger_review_request_notification(local_rec, sender_session):
                 tag_type="review"
             )
     except Exception as e:
-        import sys
         print(f"[ReviewNotification] Error sending review notification: {e}", file=sys.stderr)
 
 
