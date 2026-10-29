@@ -54,9 +54,30 @@ PUBLIC_API_WHITELIST = {
 # Deployments fronted by a proxy on another subnet MUST extend this value.
 # "0.0.0.0" (trust every peer, therefore spoofable) exists only for isolated
 # lab setups and is never enabled implicitly.
-DEFAULT_TRUSTED_PROXIES = "127.0.0.1,::1,172.16.0.0/12"
+DEFAULT_TRUSTED_PROXIES = "127.0.0.1,::1"
 
 _TRUSTED_PROXY_CACHE = {}
+_WARNED_TRUSTED_PROXIES = False
+
+
+def check_trusted_proxies_warning():
+    """Warns once if TRUSTED_PROXIES contains overly broad CIDR networks (prefixlen <= 12) or 0.0.0.0."""
+    global _WARNED_TRUSTED_PROXIES
+    if _WARNED_TRUSTED_PROXIES:
+        return
+    raw = os.environ.get("TRUSTED_PROXIES", DEFAULT_TRUSTED_PROXIES)
+    exact, networks, trust_any = _parse_trusted_proxies(raw)
+    is_too_broad = False
+    if trust_any:
+        is_too_broad = True
+    else:
+        for net in networks:
+            if (net.version == 4 and net.prefixlen <= 12) or (net.version == 6 and net.prefixlen <= 32):
+                is_too_broad = True
+                break
+    if is_too_broad:
+        _WARNED_TRUSTED_PROXIES = True
+        log_line("[SECURITY WARNING] TRUSTED_PROXIES is too broad: peers in this range can spoof client IPs")
 
 
 def _parse_trusted_proxies(raw):
@@ -77,6 +98,7 @@ def _parse_trusted_proxies(raw):
 
 def get_trusted_proxies():
     """Parsed TRUSTED_PROXIES, cached per raw configuration value."""
+    check_trusted_proxies_warning()
     raw = os.environ.get("TRUSTED_PROXIES", DEFAULT_TRUSTED_PROXIES)
     cached = _TRUSTED_PROXY_CACHE.get(raw)
     if cached is None:

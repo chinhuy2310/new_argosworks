@@ -11,6 +11,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - argos_net
     ports:
       - "127.0.0.1:8080:8080"
     expose:
@@ -23,7 +25,7 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-argos_admin}:${POSTGRES_PASSWORD:?bắt buộc đặt}@postgres:5432/${POSTGRES_DB:-argos_works}
       - ALLOW_PUBLIC_REGISTER=${ALLOW_PUBLIC_REGISTER:-false}
       - SESSION_TTL_HOURS=${SESSION_TTL_HOURS:-24}
-      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-127.0.0.1,::1,172.16.0.0/12}
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-127.0.0.1,::1,${ARGOS_NET_SUBNET:-172.28.0.0/24}}
       - ARGOS_BOOTSTRAP_TOKEN=${ARGOS_BOOTSTRAP_TOKEN:-}
     volumes:
       # Persistent SQLite CSDL, backups, attachments, vectors
@@ -58,6 +60,8 @@ services:
     image: caddy:2-alpine
     container_name: argos-proxy
     restart: unless-stopped
+    networks:
+      - argos_net
     ports:
       - "80:80"     # HTTP -> Tự động chuyển hướng HTTPS
       - "443:443"   # HTTPS chính thức
@@ -77,6 +81,8 @@ services:
     image: postgres:16-alpine
     container_name: argos-postgres
     restart: unless-stopped
+    networks:
+      - argos_net
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-argos_works}
       POSTGRES_USER: ${POSTGRES_USER:-argos_admin}
@@ -103,3 +109,11 @@ services:
 
 volumes:
   postgres_data:
+
+networks:
+  argos_net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: ${ARGOS_NET_SUBNET:-172.28.0.0/24}

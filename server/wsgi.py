@@ -87,6 +87,8 @@ def init_app():
         cfg = load_config()
         ArgosHandler.cfg = cfg
         JarvisHandler.cfg = cfg
+        from handler import check_trusted_proxies_warning
+        check_trusted_proxies_warning()
 
         # Backup scheduler
         from services.backup_manager import start_backup_scheduler
