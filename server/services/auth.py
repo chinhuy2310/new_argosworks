@@ -461,15 +461,14 @@ def can_view_record(user_or_session, record):
     is_involved = False
     if u_id and rec_assignee_id and str(u_id) == str(rec_assignee_id):
         is_involved = True
-    elif u_username and u_username == rec_assignee:
-        is_involved = True
     elif u_email and rec_assignee_email and u_email == rec_assignee_email:
         is_involved = True
     elif u_name and u_name == rec_assignee:
         if not is_private or is_same_dept or not rec_dept:
             is_involved = True
     elif u_username and u_username in parts:
-        is_involved = True
+        if not is_private or is_same_dept or not rec_dept:
+            is_involved = True
     elif u_name and u_name in parts:
         if not is_private or is_same_dept or not rec_dept:
             is_involved = True
@@ -523,8 +522,6 @@ def can_modify_record(user_or_session, record):
     if u_id and rec_assignee_id:
         if str(u_id) == str(rec_assignee_id):
             return True
-    elif u_username and u_username == rec_assignee:
-        return True
     elif u_name and u_name == rec_assignee:
         is_private = bool(record.get("is_private"))
         if not is_private or u_dept == rec_dept or not rec_dept:
