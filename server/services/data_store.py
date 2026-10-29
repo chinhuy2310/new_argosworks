@@ -450,14 +450,22 @@ def append_record(record):
     if not assignee_id and assignee_name:
         try:
             u_row = get_one("SELECT id, email FROM users WHERE (name = ? OR username = ?) AND dept_id = ? LIMIT 1", (assignee_name, assignee_name, dept_val))
-            if not u_row:
-                u_row = get_one("SELECT id, email FROM users WHERE name = ? OR username = ? LIMIT 1", (assignee_name, assignee_name))
             if u_row:
                 assignee_id = u_row["id"]
                 if not assignee_email and u_row.get("email"):
                     assignee_email = u_row["email"]
-        except Exception:
-            pass
+            else:
+                from utils.logging import log_line
+                candidates = query("SELECT id, email FROM users WHERE name = ? OR username = ? LIMIT 2", (assignee_name, assignee_name))
+                if len(candidates) == 1:
+                    assignee_id = candidates[0]["id"]
+                    if not assignee_email and candidates[0].get("email"):
+                        assignee_email = candidates[0]["email"]
+                elif len(candidates) >= 2:
+                    log_line(f"[Assignee] Ambiguous assignee '{assignee_name}' across multiple departments. Assignee ID left NULL.")
+        except Exception as e:
+            from utils.logging import log_line
+            log_line(f"[Assignee] Error resolving assignee '{assignee_name}':", e)
 
     execute(
         """INSERT INTO records(id, dept_id, category, title, project, assignee_id,
