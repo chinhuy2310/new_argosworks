@@ -2804,7 +2804,7 @@ def handle_post_admin_user_update(handler, raw_body, ip):
                 if cur_token:
                     from services.auth import hash_session_token
                     token_hash = hash_session_token(cur_token)
-                    execute("DELETE FROM sessions WHERE (user_id = ? OR user_name = ?) AND token != ? AND token != ?", (user_id, target_user.get("username"), cur_token, token_hash))
+                    execute("DELETE FROM sessions WHERE (user_id = ? OR user_name = ?) AND token != ?", (user_id, target_user.get("username"), token_hash))
                 else:
                     delete_all_user_sessions(user_id)
             else:
