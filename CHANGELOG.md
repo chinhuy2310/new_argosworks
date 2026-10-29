@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security & Frontend Hardening — Admin Users Error HTML Escaping (9.3)
+
+- Enforced `escapeHtml()` on asynchronous communication error messages when rendering the admin user management table in `web/js/settings.js`, preventing DOM-based XSS injection via malformed network error payloads.
+
 ### Security & Observability — Jira Insecure SSL Verification Startup Warning (7.7)
 
 - Added `check_jira_ssl_warning()` in `server/services/jira_client.py` and connected to application initialization in `server/wsgi.py` and `server/main.py` to emit an explicit security warning whenever `insecure_skip_verify` or `JIRA_INSECURE_SKIP_VERIFY` is active.
