@@ -34,18 +34,18 @@ class TestAiChatDataPermissions(unittest.TestCase):
         """)
         # 3. Dept Sales: private record
         execute("""
-            INSERT INTO records (id, card_code, title, summary, dept_id, category, assignee_name, is_private, status, work_date)
-            VALUES (999903, 'SALES-903', 'Sales Confidential Deal', 'High value secret deal', 'sales', '영업', 'kang.dw', 1, '진행', '2026-10-23')
+            INSERT INTO records (id, card_code, title, summary, dept_id, category, assignee_id, assignee_name, is_private, status, work_date)
+            VALUES (999903, 'SALES-903', 'Sales Confidential Deal', 'High value secret deal', 'sales', '영업', 6, '강동원', 1, '진행', '2026-10-23')
         """)
         # 4. Dept Sales: public record
         execute("""
-            INSERT INTO records (id, card_code, title, summary, dept_id, category, assignee_name, is_private, status, work_date)
-            VALUES (999904, 'SALES-904', 'Sales Public Campaign', 'Open campaign', 'sales', '영업', 'kang.dw', 0, '진행', '2026-10-23')
+            INSERT INTO records (id, card_code, title, summary, dept_id, category, assignee_id, assignee_name, is_private, status, work_date)
+            VALUES (999904, 'SALES-904', 'Sales Public Campaign', 'Open campaign', 'sales', '영업', 6, '강동원', 0, '진행', '2026-10-23')
         """)
         # 5. Child task of SALES-903 (private parent)
         execute("""
-            INSERT INTO records (id, card_code, title, summary, dept_id, category, assignee_name, is_private, parent_key, status, work_date)
-            VALUES (999905, 'SALES-905', 'Sales Child Subtask', 'Subtask under secret deal', 'sales', '영업', 'kang.dw', 1, 'SALES-903', '진행', '2026-10-23')
+            INSERT INTO records (id, card_code, title, summary, dept_id, category, assignee_id, assignee_name, is_private, parent_key, status, work_date)
+            VALUES (999905, 'SALES-905', 'Sales Child Subtask', 'Subtask under secret deal', 'sales', '영업', 6, '강동원', 1, 'SALES-903', '진행', '2026-10-23')
         """)
 
     @classmethod
