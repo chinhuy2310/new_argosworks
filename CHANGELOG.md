@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security & Privacy — Failed Login Identifier Sanitization (6.3)
+
+- Implemented utils.text.login_label() to pseudonymize unknown login identifiers using keyed HMAC-SHA256 (non:<8 hex>/len=<len>) across ccess_log and udit_logs. This guarantees that if a user accidentally types or pastes their password into the username field, the plaintext password is never recorded in logs, audit tables, or SIEM systems.
+- Added strict length validation for login requests (username <= 254 chars, password <= 1024 chars), returning HTTP 400 for malformed or abusive payloads.
+- Maintained rate limiting and account lockout capabilities using the keyed pseudonym identifier for non-existent accounts.
+
 ### Observability & Compliance — Audit Log Failure Metric and Safe Logging (6.2)
 
 - Replaced silent \except Exception: pass\ in \server/router.py::_audit()\ and \server/services/audit_logger.py::log_audit()\ with thread-safe failure counting (\get_audit_failure_count()\) and sanitized \log_line\ error output (\[Audit] write failed: action=... target=... err=...\).
