@@ -601,6 +601,8 @@ function renderAssigneeTable(){
       else if(cat === "inprog") a.inprog += 1;
       else a.todo += 1;
     }
+    var isDelayed = (r.status === "critical" || (r.statusName && r.statusName.indexOf("지연") !== -1));
+    if(isDelayed) a.delayed = (a.delayed || 0) + 1;
   });
   var rows = Object.keys(map).map(function(k){ return map[k]; }).sort(function(x, y){
     if(y.count !== x.count) return y.count - x.count;
@@ -635,7 +637,7 @@ function renderAssigneeTable(){
       barEl.innerHTML = '<span style="font-size:12px;color:var(--ink-faint);padding:6px 0;">' + escapeHtml(emptyMsg) + '</span>';
     }
     if(el.assigneeBody){
-      el.assigneeBody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--ink-faint);padding:24px 10px;">' + escapeHtml(emptyMsg) + '</td></tr>';
+      el.assigneeBody.innerHTML = '<div style="text-align:center;color:var(--ink-faint);padding:24px 10px;grid-column:1/-1;">' + escapeHtml(emptyMsg) + '</div>';
     }
     return;
   }
@@ -706,26 +708,42 @@ function renderAssigneeTable(){
     if(a.todo > 0) breakdown.push('<span class="pg-item pg-todo">' + escapeHtml(sTodo) + ' ' + a.todo + '</span>');
     if(breakdown.length === 0) breakdown.push('<span class="pg-item pg-todo">' + escapeHtml(sZeroTasks) + '</span>');
 
+    var deptTag = (isUnassignedUser || !dept || !dept.name || dept.name === "-")
+      ? '<span class="org-tag org-tag-none">-</span>'
+      : ('<span class="org-tag" style="--tag-color:' + colorVar(dept.colorIndex) + ';" title="' + escapeHtml(dept.name) + '">' + escapeHtml(dept.name) + '</span>');
+
+    var delayedTag = (a.delayed > 0)
+      ? ('<span class="fcr-delayed-tag" style="font-size:11px;color:var(--stat-critical);font-weight:600;white-space:nowrap;">⚠️ ' + a.delayed + '건 지연</span>')
+      : '';
+
     return (
-      '<tr class="assignee-row' + (isSelected ? " selected" : "") + '" data-assignee="' + escapeHtml(a.name) + '" style="cursor:pointer;' + (isSelected ? 'background:var(--accent-2-soft);' : '') + '">' +
-        '<td class="assignee-name">' + escapeHtml(a.name) + '</td>' +
-        '<td class="assignee-col-org"><span class="org-tag" style="--tag-color:' + colorVar(dept.colorIndex) + '" title="' + escapeHtml(dept.name) + '">' + escapeHtml(dept.name) + '</span></td>' +
-        '<td class="num assignee-col-count" title="' + escapeHtml(assignedText + " (" + sDone + " " + a.done + ", " + sReview + " " + a.review + ", " + sInprog + " " + a.inprog + ", " + sTodo + " " + a.todo + ")") + '">' + a.count + '</td>' +
-        '<td class="assignee-col-cats"><div class="assignee-cat-tags">' + shown + overflow + '</div></td>' +
-        '<td class="assignee-col-progress">' +
-          '<div class="assignee-progress-cell" title="' + escapeHtml(tooltip) + '">' +
-            '<div class="assignee-donut-wrap">' +
-              '<div class="assignee-donut-pie" style="background:' + donutBg + ';"></div>' +
-              '<div class="assignee-donut-hole">' +
-                '<span class="assignee-donut-num" style="color:' + numColor + ';">' + overallPct + '%</span>' +
-              '</div>' +
-            '</div>' +
-            '<div class="assignee-progress-breakdown">' +
-              breakdown.join('<span style="color:var(--line-strong);margin:0 2px;">·</span>') +
+      '<div class="fluid-compact-row' + (isSelected ? " selected" : "") + '" data-assignee="' + escapeHtml(a.name) + '" title="' + escapeHtml(tooltip) + '">' +
+        '<div class="fcr-left">' +
+          '<div class="fcr-avatar" style="background:' + avatarColor + ';">' +
+            (isCustomAvatar ? '<img src="' + escapeHtml(avatarUrl) + '" alt="" onerror="this.remove();">' : '') +
+            '<span class="fcr-avatar-initial">' + escapeHtml(initial) + '</span>' +
+          '</div>' +
+          '<div class="fcr-meta">' +
+            '<div class="fcr-name-row">' +
+              '<span class="fcr-name">' + escapeHtml(a.name) + '</span>' +
+              deptTag +
+              delayedTag +
             '</div>' +
           '</div>' +
-        '</td>' +
-      '</tr>'
+        '</div>' +
+        '<div class="fcr-right">' +
+          '<span class="fcr-count-badge">' + a.count + '건</span>' +
+          '<div class="assignee-donut-wrap">' +
+            '<div class="assignee-donut-pie" style="background:' + donutBg + ';"></div>' +
+            '<div class="assignee-donut-hole">' +
+              '<span class="assignee-donut-num" style="color:' + numColor + ';">' + overallPct + '%</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="assignee-progress-breakdown">' +
+            breakdown.join('<span class="pg-dot">·</span>') +
+          '</div>' +
+        '</div>' +
+      '</div>'
     );
   }).join("");
 
@@ -1632,7 +1650,7 @@ if(el.assigneeFilter){
 }
 
 el.assigneeBody.addEventListener("click", function(e){
-  var tr = e.target.closest("tr[data-assignee]");
+  var tr = e.target.closest("[data-assignee]");
   if(!tr) return;
   var name = tr.getAttribute("data-assignee");
   if(filters.assignee === name || (filters.assignee !== "all" && assigneeBaseName(filters.assignee) === assigneeBaseName(name))){
