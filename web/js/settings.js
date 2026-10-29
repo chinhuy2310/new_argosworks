@@ -2035,7 +2035,7 @@ async function loadAdminUsers() {
 
   } catch (err) {
     console.error("loadAdminUsers error:", err);
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color: #ef4444; padding: 24px;">통신 오류: ' + (err.message || "") + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color: #ef4444; padding: 24px;">통신 오류: ' + escapeHtml(err.message || "") + '</td></tr>';
   }
 }
 

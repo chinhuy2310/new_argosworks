@@ -81,6 +81,20 @@ def init_app():
         ensure_seed_files()
         init_db()
 
+        # Architecture Concurrency Warning for Multi-Process Deployments
+        web_concurrency = os.environ.get("WEB_CONCURRENCY") or os.environ.get("GUNICORN_WORKERS")
+        if web_concurrency:
+            try:
+                if int(web_concurrency) > 1:
+                    log_line(
+                        f"[ARCHITECTURE WARNING] Multi-process deployment detected (workers={web_concurrency}). "
+                        "In-memory state (SSE notifications, login rate limiting, background schedulers) "
+                        "requires single-process multi-threaded deployment (e.g. Waitress --threads=64 or "
+                        "Gunicorn --workers=1 --threads=64) unless Redis is integrated."
+                    )
+            except ValueError:
+                pass
+
         # Background session cleaner daemon
         threading.Thread(target=_session_cleanup_loop, daemon=True, name="SessionCleanup").start()
 
