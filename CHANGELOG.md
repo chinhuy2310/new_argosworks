@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Undefined name in notification_service (1.5)
+
+- Moved `import sys` to module level in `server/services/notification_service.py` to prevent `NameError` in exception handlers during notification backfill.
+
 ### Fixed — Undefined name in auth_handlers (1.4)
 
 - Added missing `log_line` import to `server/handlers/auth_handlers.py` to ensure unhandled registration errors return a clean JSON 500 without crashing with `NameError`.
