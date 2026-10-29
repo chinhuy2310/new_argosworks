@@ -79,10 +79,6 @@ _RE_INSERT_OR_IGNORE = re.compile(
     r"INSERT\s+OR\s+IGNORE\s+INTO\s+(\w+)\s*\(([^)]+)\)",
     re.IGNORECASE,
 )
-_RE_INSERT_OR_REPLACE = re.compile(
-    r"INSERT\s+OR\s+REPLACE\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)",
-    re.IGNORECASE,
-)
 # Header-only variant: used to determine the conflict target / update columns without
 # assuming a single VALUES row.
 _RE_INSERT_OR_REPLACE_HEAD = re.compile(
