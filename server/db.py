@@ -17,6 +17,35 @@ from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
+def _safe_params(p):
+    """Sanitizes SQL query parameters in logs to prevent password/secret leakage."""
+    if os.environ.get("ARGOS_LOG_SQL_PARAMS", "").strip().lower() in ("1", "true", "yes", "on"):
+        return str(p)
+    if not p:
+        return "<none>"
+    try:
+        return f"<{len(p)} params>"
+    except TypeError:
+        return "<params>"
+
+def _format_db_error(e):
+    """Formats database exception for logging without leaking sensitive values from DETAIL clauses."""
+    err_cls = type(e).__name__
+    pgcode = getattr(e, "pgcode", None)
+    first_line = str(e).splitlines()[0] if str(e) else ""
+    if pgcode:
+        return f"{err_cls} (pgcode={pgcode}): {first_line}"
+    return f"{err_cls}: {first_line}"
+
+_WARNED_SQL_PARAMS = False
+
+def _check_sql_params_debug():
+    global _WARNED_SQL_PARAMS
+    if not _WARNED_SQL_PARAMS and os.environ.get("ARGOS_LOG_SQL_PARAMS", "").strip().lower() in ("1", "true", "yes", "on"):
+        _WARNED_SQL_PARAMS = True
+        logger.warning("[SECURITY WARNING] ARGOS_LOG_SQL_PARAMS=1 is active: SQL parameter values will be logged for debugging. DO NOT USE IN PRODUCTION.")
+
+
 # ---------------------------------------------------------------------------
 # Engine Detection
 # ---------------------------------------------------------------------------
@@ -186,6 +215,7 @@ if ENGINE == "sqlite":
         schema_path = os.path.join(RES_DIR, 'schema.sql')
 
         logger.info(f"Initializing SQLite database at {db_path}")
+        _check_sql_params_debug()
 
         # Pre-migration safety snapshot: Protect on-premise customer data before DDL
         if os.path.exists(db_path) and os.path.getsize(db_path) > 0:
@@ -465,7 +495,7 @@ if ENGINE == "sqlite":
             cursor = conn.execute(sql, params)
             return cursor.fetchall()
         except sqlite3.Error as e:
-            logger.error(f"Error executing query: {sql}\nParams: {params}\nError: {e}")
+            logger.error(f"Error executing query: {sql}\nParams: {_safe_params(params)}\nError: {_format_db_error(e)}")
             raise
 
     def get_one(sql, params=()):
@@ -475,7 +505,7 @@ if ENGINE == "sqlite":
             cursor = conn.execute(sql, params)
             return cursor.fetchone()
         except sqlite3.Error as e:
-            logger.error(f"Error executing get_one: {sql}\nParams: {params}\nError: {e}")
+            logger.error(f"Error executing get_one: {sql}\nParams: {_safe_params(params)}\nError: {_format_db_error(e)}")
             raise
 
     def execute(sql, params=()):
@@ -488,7 +518,7 @@ if ENGINE == "sqlite":
             return cursor.lastrowid
         except sqlite3.Error as e:
             conn.rollback()
-            logger.error(f"Error executing statement: {sql}\nParams: {params}\nError: {e}")
+            logger.error(f"Error executing statement: {sql}\nParams: {_safe_params(params)}\nError: {_format_db_error(e)}")
             raise
         finally:
             cursor.close()
@@ -503,7 +533,7 @@ if ENGINE == "sqlite":
             return cursor.rowcount
         except sqlite3.Error as e:
             conn.rollback()
-            logger.error(f"Error executing statement for rowcount: {sql}\nParams: {params}\nError: {e}")
+            logger.error(f"Error executing statement for rowcount: {sql}\nParams: {_safe_params(params)}\nError: {_format_db_error(e)}")
             raise
         finally:
             cursor.close()
@@ -694,6 +724,7 @@ else:
         from app_paths import RES_DIR
         schema_path = os.path.join(RES_DIR, 'schema.postgres.sql')
         logger.info(f"[db/postgres] Initializing database with schema: {schema_path}")
+        _check_sql_params_debug()
 
         pool = _get_pool()
         conn = pool.getconn()
@@ -938,7 +969,7 @@ else:
             return [dict(r) for r in rows]
         except psycopg2.Error as e:
             conn.rollback()
-            logger.error(f"[db/postgres] Error executing query: {sql}\nTranslated: {translated}\nParams: {params}\nError: {e}")
+            logger.error(f"[db/postgres] Error executing query: {sql}\nTranslated: {translated}\nParams: {_safe_params(params)}\nError: {_format_db_error(e)}")
             raise
         finally:
             _release(pool, conn)
@@ -960,7 +991,7 @@ else:
             return dict(row) if row else None
         except psycopg2.Error as e:
             conn.rollback()
-            logger.error(f"[db/postgres] Error executing get_one: {sql}\nTranslated: {translated}\nParams: {params}\nError: {e}")
+            logger.error(f"[db/postgres] Error executing get_one: {sql}\nTranslated: {translated}\nParams: {_safe_params(params)}\nError: {_format_db_error(e)}")
             raise
         finally:
             _release(pool, conn)
@@ -1041,7 +1072,7 @@ else:
             return 0
         except psycopg2.Error as e:
             conn.rollback()
-            logger.error(f"[db/postgres] Error executing statement: {sql}\nTranslated: {translated}\nParams: {params}\nError: {e}")
+            logger.error(f"[db/postgres] Error executing statement: {sql}\nTranslated: {translated}\nParams: {_safe_params(params)}\nError: {_format_db_error(e)}")
             raise
         finally:
             _release(pool, conn)
@@ -1064,7 +1095,7 @@ else:
             return rowcount
         except psycopg2.Error as e:
             conn.rollback()
-            logger.error(f"[db/postgres] Error executing statement for rowcount: {sql}\nTranslated: {translated}\nParams: {params}\nError: {e}")
+            logger.error(f"[db/postgres] Error executing statement for rowcount: {sql}\nTranslated: {translated}\nParams: {_safe_params(params)}\nError: {_format_db_error(e)}")
             raise
         finally:
             _release(pool, conn)

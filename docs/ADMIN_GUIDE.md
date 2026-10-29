@@ -134,6 +134,11 @@ curl    https://<domain>/api/version    # {"version":"1.0.0"}
 | AI không trả lời | Thiếu API key hoặc Ollama offline | Settings → API 및 외부 연동 → 연결 테스트 |
 | Không đăng nhập được bằng tài khoản công ty (SSO) | 1.0.0 **chưa hỗ trợ** SSO/LDAP — dùng tài khoản nội bộ do Admin tạo | Theo dõi `CHANGELOG.md` cho bản có OIDC |
 
+### 9.1 Debugging và Log tham số SQL
+
+- Mặc định hệ thống **không bao giờ** ghi giá trị tham số SQL vào log nhằm chống lộ dữ liệu nhạy cảm (mật khẩu, salt, token, session).
+- Biến môi trường \ARGOS_LOG_SQL_PARAMS=1\: **CHỈ DÙNG TẠM THỜI KHI HỖ TRỢ KỸ THUẬT ĐỂ ĐIỀU TRA SỰ CỐ**. Tuyệt đối **KHÔNG BẬT** trên môi trường production vì có thể ghi nhận dữ liệu nhạy cảm vào log file và hệ thống SIEM.
+
 ## 10. Nhật ký kiểm toán (Audit)
 
 - **Settings → 감사 로그 (Audit)**: lọc theo loại sự kiện, user, khoảng ngày.
