@@ -929,6 +929,7 @@ _login_failures_lock = threading.Lock()
 _login_failures = {}  # key: "ip:user" -> [timestamp, timestamp, ...]
 
 DEFAULT_SESSION_TTL_HOURS = 24
+DEFAULT_SESSION_MAX_AGE_HOURS = 168
 
 def get_session_ttl_seconds():
     """세션 유효 기간(초)을 반환한다 (환경변수 SESSION_TTL_HOURS 지원, 기본 24시간)."""
@@ -937,6 +938,14 @@ def get_session_ttl_seconds():
         return max(1, val) * 3600
     except Exception:
         return DEFAULT_SESSION_TTL_HOURS * 3600
+
+def get_session_max_age_seconds():
+    """세션 절대 유효 기간(초)을 반환한다 (환경변수 SESSION_MAX_AGE_HOURS 지원, 기본 168시간=7일)."""
+    try:
+        val = int(os.environ.get("SESSION_MAX_AGE_HOURS", DEFAULT_SESSION_MAX_AGE_HOURS))
+        return max(1, val) * 3600
+    except Exception:
+        return DEFAULT_SESSION_MAX_AGE_HOURS * 3600
 
 def check_login_rate_limit(ip, identifier):
     """
@@ -1084,6 +1093,16 @@ def get_session(token):
     last_active = row.get("last_active_at") or created_at
     now = time.time()
     ttl = get_session_ttl_seconds()
+    max_age = get_session_max_age_seconds()
+
+    # 절대 만료기간(Absolute Expiration): 생성 시점(created_at)으로부터 max_age 경과 시 무조건 만료
+    effective_created_at = created_at if created_at > 0 else last_active
+    if effective_created_at > 0 and (now - effective_created_at > max_age):
+        try:
+            execute("DELETE FROM sessions WHERE token = ?", (token_hash,))
+        except Exception:
+            pass
+        return None
 
     # 슬라이딩 유효기간(Sliding Expiration): 마지막 활동 후 ttl 경과 시 만료
     if now - last_active > ttl:
@@ -1164,16 +1183,17 @@ def delete_all_user_sessions(user_id_or_name):
 def cleanup_expired_sessions():
     """
     주기적으로 만료된 세션을 정리한다.
-
-    세션은 '마지막 활동 + TTL' 슬라이딩 만료 정책을 사용하므로(create_session /
-    get_session 참고) created_at 만으로 삭제하면 계속 활동 중인 사용자까지
-    강제 로그아웃된다. last_active_at(없으면 created_at) 을 기준으로 판정한다.
+    슬라이딩 만료(마지막 활동 + TTL) 및 절대 만료(생성 시점 + MAX_AGE)를 모두 적용한다.
     """
-    cutoff = time.time() - get_session_ttl_seconds()
+    now = time.time()
+    sliding_cutoff = now - get_session_ttl_seconds()
+    max_age_cutoff = now - get_session_max_age_seconds()
     try:
         execute(
-            "DELETE FROM sessions WHERE COALESCE(NULLIF(last_active_at, 0), created_at) < ?",
-            (cutoff,)
+            """DELETE FROM sessions
+               WHERE COALESCE(NULLIF(last_active_at, 0), created_at) < ?
+                  OR (created_at > 0 AND created_at < ?)""",
+            (sliding_cutoff, max_age_cutoff)
         )
     except Exception:
         pass

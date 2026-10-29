@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security — Absolute Session Lifetime (2.2)
+
+- Enforced absolute session expiration via `SESSION_MAX_AGE_HOURS` (default 168h / 7 days). Sessions that exceed the maximum age from `created_at` are automatically terminated even if continuously active, preventing permanent hijacking of stolen session tokens.
+
 ### Security — Eliminate Pass-the-Hash in session tokens (2.1)
 
 - Removed legacy plaintext fallback `OR s.token = ?` from all session queries in `server/services/auth.py`, `server/handlers/auth_handlers.py`, and `server/router.py`. All session lookups, updates, and deletions now strictly match SHA-256 token hashes, completely preventing hash-equivalence authentication bypass.
