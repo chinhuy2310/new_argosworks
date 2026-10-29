@@ -260,12 +260,31 @@
       height: 28px;
       border-radius: 50%;
       color: #fff;
-      font-size: 11px;
+      font-size: 11.5px;
       font-weight: 700;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
+      position: relative;
+      overflow: hidden;
+    }
+    .fcr-avatar img,
+    .fcr-avatar .fcr-avatar-img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
+      display: block;
+      z-index: 1;
+    }
+    .fcr-avatar-initial {
+      position: relative;
+      z-index: 0;
+      line-height: 1;
     }
     .fcr-meta {
       display: flex;
@@ -868,7 +887,7 @@
               <div class="fcr-meta">
                 <div class="fcr-name-row">
                   <span class="fcr-name">미배정 (Chưa gán)</span>
-                  <span class="org-tag org-tag-none">-</span>
+                  
                   <span style="font-size:11px;color:var(--overdue-color);font-weight:600;">⚠️ 1건 지연 (Trễ hạn)</span>
                 </div>
               </div>
