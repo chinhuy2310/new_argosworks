@@ -4,7 +4,8 @@ import json
 from datetime import datetime
 from services.auth import (
     account_key, read_accounts, write_accounts, hash_password, verify_password,
-    create_session, is_admin_user, get_user_by_login, get_user_by_id, create_user, safe_delete_user
+    create_session, is_admin_user, get_user_by_login, get_user_by_id, create_user, safe_delete_user,
+    validate_username_format
 )
 from services.data_store import _save_lock, read_departments
 from db import get_one, transaction
@@ -79,6 +80,11 @@ def handle_account_register(handler, raw_body, ip):
 
     if not username:
         handler._send_json(400, {"ok": False, "error": "ArgosWorks ID(아이디)를 입력해주세요."})
+        return
+    try:
+        username = validate_username_format(username)
+    except ValueError as val_err:
+        handler._send_json(400, {"ok": False, "error": str(val_err)})
         return
     if not name:
         handler._send_json(400, {"ok": False, "error": "이름(성명)을 입력해주세요."})

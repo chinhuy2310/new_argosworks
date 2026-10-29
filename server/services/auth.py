@@ -78,6 +78,24 @@ def get_user_by_id(user_id):
     )
 
 
+USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,30}$")
+
+
+def validate_username_format(username):
+    """
+    사용자 아이디(username) 형식을 검증한다.
+    - 길이 3~30자
+    - 영문 대소문자, 숫자, 특수문자(_ . -)만 허용
+    - @는 이메일과의 혼동 방지를 위해 불허
+    """
+    username = (username or "").strip()
+    if not username:
+        raise ValueError("아이디(Username)를 입력해주세요.")
+    if "@" in username or not USERNAME_RE.match(username):
+        raise ValueError("아이디는 3~30자의 영문, 숫자, 특수문자(_ . -)만 사용 가능하며 @는 포함할 수 없습니다.")
+    return username
+
+
 def get_user_by_login(login_id, org=None):
     """
     로그인 식별자(아이디, 이메일, 사원명)로 사용자를 고속 조회한다 (인덱스 활용).
@@ -94,6 +112,7 @@ def get_user_by_login(login_id, org=None):
                   is_admin, role, disabled, status, created_at
            FROM users
            WHERE LOWER(username) = ?
+           ORDER BY id ASC
            LIMIT 1""",
         (login_lower,)
     )
@@ -106,6 +125,7 @@ def get_user_by_login(login_id, org=None):
                   is_admin, role, disabled, status, created_at
            FROM users
            WHERE email != '' AND LOWER(email) = ?
+           ORDER BY id ASC
            LIMIT 1""",
         (login_lower,)
     )
@@ -119,6 +139,7 @@ def get_user_by_login(login_id, org=None):
                       is_admin, role, disabled, status, created_at
                FROM users
                WHERE LOWER(name) = ? AND LOWER(dept_id) = ?
+               ORDER BY id ASC
                LIMIT 1""",
             (login_lower, str(org).strip().lower())
         )
@@ -139,27 +160,27 @@ def create_user(name, username, org, email, salt, hash_pwd, role="member", is_ad
     org = (org or "").strip()
     email = (email or "").strip()
 
+    username = validate_username_format(username)
+
     if iterations is None:
         iterations = _effective_pbkdf2_rounds()
 
-    if not username:
-        raise ValueError("아이디(Username)를 입력해주세요.")
     if not name:
         raise ValueError("이름(Name)을 입력해주세요.")
 
     # 1. 중복 username 검증
-    dup_user = get_one("SELECT id FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1", (username,))
+    dup_user = get_one("SELECT id FROM users WHERE LOWER(username) = LOWER(?) ORDER BY id ASC LIMIT 1", (username,))
     if dup_user:
         raise ValueError("이미 사용 중인 ArgosWorks ID입니다. 다른 ID를 입력해주세요.")
 
     # 2. 중복 email 검증 (email이 제공된 경우)
     if email:
-        dup_email = get_one("SELECT id FROM users WHERE email != '' AND LOWER(email) = LOWER(?) LIMIT 1", (email,))
+        dup_email = get_one("SELECT id FROM users WHERE email != '' AND LOWER(email) = LOWER(?) ORDER BY id ASC LIMIT 1", (email,))
         if dup_email:
             raise ValueError("이미 등록된 이메일 주소입니다.")
 
     # 3. 동일 소속 + 이름 중복 검증
-    dup_name_dept = get_one("SELECT id FROM users WHERE name = ? AND dept_id = ? LIMIT 1", (name, org))
+    dup_name_dept = get_one("SELECT id FROM users WHERE name = ? AND dept_id = ? ORDER BY id ASC LIMIT 1", (name, org))
     if dup_name_dept:
         raise ValueError("해당 소속에 이미 동일한 이름의 사용자가 존재합니다.")
 
@@ -361,7 +382,7 @@ def get_user_role(user_or_session):
         # 2. Look up by verified username in DB if available
         username = user_or_session.get("username")
         if username:
-            row = get_one("SELECT role, is_admin FROM users WHERE username != '' AND LOWER(username) = LOWER(?) LIMIT 1", (username,))
+            row = get_one("SELECT role, is_admin FROM users WHERE username != '' AND LOWER(username) = LOWER(?) ORDER BY id ASC LIMIT 1", (username,))
             if row:
                 r = row.get("role")
                 if r in ("admin", "manager", "member", "viewer"):
@@ -395,7 +416,7 @@ def get_user_role(user_or_session):
     if isinstance(user_or_session, str):
         login_str = user_or_session.strip()
         if login_str:
-            row = get_one("SELECT role, is_admin FROM users WHERE username != '' AND LOWER(username) = LOWER(?) LIMIT 1", (login_str,))
+            row = get_one("SELECT role, is_admin FROM users WHERE username != '' AND LOWER(username) = LOWER(?) ORDER BY id ASC LIMIT 1", (login_str,))
             if row:
                 r = row.get("role")
                 if r in ("admin", "manager", "member", "viewer"):
@@ -1068,11 +1089,11 @@ def create_session(name_or_user_id, org=None, email=None, user_id=None):
     elif not u_id:
         u_row = get_user_by_login(name, org)
         if not u_row and org:
-            u_row = get_one("SELECT id, name, dept_id, email, role, is_admin FROM users WHERE LOWER(name) = ? AND LOWER(dept_id) = ? LIMIT 1", (name.lower(), str(org).lower()))
+            u_row = get_one("SELECT id, name, dept_id, email, role, is_admin FROM users WHERE LOWER(name) = ? AND LOWER(dept_id) = ? ORDER BY id ASC LIMIT 1", (name.lower(), str(org).lower()))
         if not u_row and email:
-            u_row = get_one("SELECT id, name, dept_id, email, role, is_admin FROM users WHERE LOWER(email) = ? LIMIT 1", (email.lower(),))
+            u_row = get_one("SELECT id, name, dept_id, email, role, is_admin FROM users WHERE LOWER(email) = ? ORDER BY id ASC LIMIT 1", (email.lower(),))
         if not u_row:
-            u_row = get_one("SELECT id, name, dept_id, email, role, is_admin FROM users WHERE LOWER(username) = ? LIMIT 1", (name.lower(),))
+            u_row = get_one("SELECT id, name, dept_id, email, role, is_admin FROM users WHERE LOWER(username) = ? ORDER BY id ASC LIMIT 1", (name.lower(),))
         if u_row:
             u_id = u_row["id"]
             name = u_row.get("name") or name

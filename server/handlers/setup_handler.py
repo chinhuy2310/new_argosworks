@@ -127,6 +127,13 @@ def handle_post_setup_complete(handler, raw_body, ip):
         handler._send_json(400, {"ok": False, "error": "관리자 ID는 최소 3자 이상이어야 합니다."})
         return
 
+    from services.auth import validate_username_format
+    try:
+        username = validate_username_format(username)
+    except ValueError as ve:
+        handler._send_json(400, {"ok": False, "error": str(ve)})
+        return
+
     if len(password) < 8:
         handler._send_json(400, {"ok": False, "error": "관리자 비밀번호는 보안을 위해 최소 8자 이상이어야 합니다."})
         return
