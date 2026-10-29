@@ -65,6 +65,23 @@ def _compute_sha256(filepath):
             h.update(chunk)
     return h.hexdigest()
 
+def _find_pg_tool(name: str) -> str:
+    found = shutil.which(name)
+    if found:
+        return found
+    candidates = [
+        os.path.join(BASE_DIR, 'pgsql', 'bin'),
+        os.path.join(BASE_DIR, 'vendor', 'pgsql', 'bin'),
+        os.path.join(os.path.dirname(BASE_DIR), 'pgsql', 'bin'),
+        os.path.join(os.path.dirname(BASE_DIR), 'vendor', 'pgsql', 'bin'),
+    ]
+    for cdir in candidates:
+        candidate_exe = os.path.join(cdir, f'{name}.exe' if os.name == 'nt' else name)
+        if os.path.isfile(candidate_exe):
+            return candidate_exe
+    return name
+
+
 def update_backup_config(new_dir):
     """
     Admin이 백업 저장 경로를 변경할 때 유효성을 검사하고 config.json에 저장한다.
