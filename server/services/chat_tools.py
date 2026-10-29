@@ -1618,11 +1618,11 @@ def _tool_add_issue_comment(args, current_user, cfg):
 
 
 
-    from services.auth import can_modify_record
+    from services.auth import can_view_record
 
     local_rec = find_record_by_key_or_code(issue_key)
 
-    if local_rec and not can_modify_record(current_user, local_rec):
+    if local_rec and not can_view_record(current_user, local_rec):
 
         return {"success": False, "error": "해당 업무 카드에 댓글을 작성할 권한이 없습니다."}
 

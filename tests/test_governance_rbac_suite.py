@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "server"))
 
 from db import init_db, execute, get_one, query
 from services.auth import can_modify_record, can_delete_record, can_transition_status
-from router import handle_delete_record, handle_post_issue_transition
+from router import handle_delete_record, handle_post_issue_transition, handle_delete_record_attachment
 from services.data_store import get_record_by_id
 
 
@@ -138,6 +138,42 @@ class TestGovernanceRBAC(unittest.TestCase):
         req_admin = MockRequestHelper(session=self.admin_sess)
         handle_delete_record(req_admin, json.dumps({"id": 88002}).encode('utf-8'), "127.0.0.1")
         self.assertEqual(req_admin.status_code, 200)
+
+    def test_viewer_cannot_transition_jira_issue(self):
+        """Audit F-0001: a read-only viewer must never reach the Jira transition call."""
+        from unittest.mock import patch
+
+        called = []
+
+        def _fake_transition(cfg, key, status):
+            called.append((key, status))
+            return True, "ok"
+
+        req = MockRequestHelper(session=self.viewer_sess)
+        with patch("router.transition_jira_issue", _fake_transition):
+            handle_post_issue_transition(
+                req,
+                json.dumps({"issue_key": "JIRA-9999", "status": "완료"}).encode("utf-8"),
+                "127.0.0.1",
+            )
+
+        self.assertEqual(req.status_code, 403)
+        self.assertEqual(called, [], "viewer must never reach the Jira transition call")
+
+    def test_delete_attachment_invalid_id_returns_400(self):
+        """Audit F-0012: a non-numeric attachment id must be a 400, not a 500."""
+        from unittest.mock import patch
+
+        rec = {"id": 88001, "card_code": "DEV-88001", "dept_id": "dev", "assignee_name": "AdminGov"}
+        req = MockRequestHelper(session=self.admin_sess)
+        with patch("router.find_record_by_key_or_code", return_value=rec):
+            handle_delete_record_attachment(
+                req,
+                json.dumps({"key": "DEV-88001", "id": "not-a-number"}).encode("utf-8"),
+                "127.0.0.1",
+            )
+
+        self.assertEqual(req.status_code, 400)
 
     def test_http_transition_member_review_and_done(self):
         try:

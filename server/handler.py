@@ -128,7 +128,8 @@ def is_trusted_proxy_peer(peer):
 
 
 class ArgosHandler(BaseHTTPRequestHandler):
-    server_version = "ArgosServer/2.0"
+    server_version = "ArgosWorks"
+    sys_version = ""
     cfg = None  # class-level, set in main()
     timeout = 60  # Socket inactivity timeout (seconds) preventing thread leaks
 
@@ -147,7 +148,8 @@ class ArgosHandler(BaseHTTPRequestHandler):
         self.send_header("X-Frame-Options", "SAMEORIGIN")
         self.send_header("X-XSS-Protection", "1; mode=block")
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
-        self.send_header("Server", "ArgosEnterprise/2.0")
+        # Version banner intentionally omitted: SECURITY_WHITEPAPER §7 promises the
+        # Server header never discloses the product version.
         if extra_headers:
             for k, v in extra_headers:
                 self.send_header(k, v)
@@ -155,9 +157,18 @@ class ArgosHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _is_secure(self):
-        """요청이 HTTPS를 통해 전달되었는지 검사 (Direct TLS 또는 Reverse Proxy X-Forwarded-Proto)."""
+        """Direct TLS, or X-Forwarded-Proto=https from a TRUSTED proxy only.
+
+        A direct client could otherwise spoof the header and make the server emit
+        Secure cookies on plain HTTP (session loss / DoS behind internal proxies).
+        """
         proto = (self.headers.get("X-Forwarded-Proto") or "").lower()
-        if proto == "https":
+        peer = ""
+        try:
+            peer = self.client_address[0]
+        except Exception:
+            peer = ""
+        if proto == "https" and peer and is_trusted_proxy_peer(peer):
             return True
         conn = getattr(self, "connection", None)
         if conn and hasattr(conn, "getpeercert"):

@@ -10,7 +10,7 @@ import json
 import base64
 import time
 import threading
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from db import query, get_one, execute
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
@@ -32,6 +32,18 @@ LEGACY_LICENSE_PUBLIC_KEY_HEXES = []
 
 # License status is read on almost every write request; cache it briefly.
 _STATUS_CACHE_TTL_SECONDS = 30
+
+# Upper bound accepted for a signed trial term (defensive: a corrupted or
+# maliciously signed payload must never grant a multi-year evaluation).
+_MAX_TRIAL_TERM_DAYS = 365
+
+# Clock-rollback protection (offline trial tampering). The highest wall-clock
+# timestamp this instance has ever observed is persisted as a high-water mark;
+# trial maths is clamped to it, so winding the system clock back can never
+# extend an evaluation. Tolerates small NTP corrections; writes are throttled so
+# normal read traffic does not hammer the database.
+_CLOCK_ROLLBACK_TOLERANCE_SECONDS = 300
+_LAST_SEEN_WRITE_INTERVAL_SECONDS = 3600
 _status_cache = {"ts": 0.0, "data": None}
 _status_cache_lock = threading.Lock()
 
@@ -86,8 +98,109 @@ def _empty_license_status(reason="No valid license"):
         "license_reason": reason,
         "days_left": 0,
         "expiry_warning": False,
+        "is_trial": False,
+        "term_days": 0,
+        "activated_at": "",
+        "hard_expiry_date": "",
+        "last_seen_at": "",
+        "clock_rollback_detected": False,
         "modules": []
     }
+
+
+def _parse_iso_date(value):
+    """'YYYY-MM-DD' (optionally followed by a time) → date, or None."""
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def resolve_license_expiry(payload, activated_at=None, now=None):
+    """
+    Resolve the effective expiry of a signed licence payload.
+
+    Returns ``(effective_expiry, hard_cap, anchor)`` where both dates may be
+    ``None`` when the payload carries no usable date.
+
+    * Commercial licence (no ``trial``/``term_days``): expiry is the absolute
+      date signed by the vendor — behaviour identical to previous releases.
+    * Trial licence: ``term_days`` counts from the FIRST activation
+      (``license_info.activated_at``), never from "today", so re-activating the
+      same key cannot extend the evaluation period. The anchor is clamped into
+      ``[iat, now]`` so a tampered DB row or a wound-back clock cannot push the
+      window forward. A signed ``expiry`` is optional: when present it stays a
+      hard cap, when absent the trial simply runs ``term_days`` from activation.
+    """
+    payload = payload or {}
+    hard = _parse_iso_date(payload.get("expiry"))
+    iat = _parse_iso_date(payload.get("iat"))
+
+    # Payloads produced by verify_license_key() normalise the flag to ``is_trial``
+    # while the signed JSON uses ``trial``; accept both.
+    is_trial = bool(payload.get("trial")) or bool(payload.get("is_trial"))
+    if not is_trial or not payload.get("term_days"):
+        return hard, hard, None
+
+    try:
+        term = int(payload.get("term_days"))
+    except (TypeError, ValueError):
+        return hard, hard, None
+    if term <= 0 or term > _MAX_TRIAL_TERM_DAYS:
+        return hard, hard, None
+
+    today = now or date.today()
+    anchor = _parse_iso_date(activated_at) or iat or today
+    if iat and anchor < iat:
+        anchor = iat            # a licence can never start before its issue date
+    if anchor > today:
+        anchor = iat or today   # future anchor = tampered DB / rolled-back clock
+    soft = anchor + timedelta(days=term)
+    return (min(soft, hard) if hard else soft), hard, anchor
+
+
+def _load_last_seen_ts():
+    """Highest wall-clock timestamp this instance has observed (0 when unknown)."""
+    try:
+        row = get_one("SELECT last_seen_ts FROM license_info WHERE id = 1") or {}
+        return float(row.get("last_seen_ts") or 0)
+    except Exception:
+        return 0.0
+
+
+def _record_last_seen(now_epoch, stored):
+    """Advance the clock high-water mark (throttled, never moves backwards)."""
+    if now_epoch - stored < _LAST_SEEN_WRITE_INTERVAL_SECONDS:
+        return
+    try:
+        execute(
+            "UPDATE license_info SET last_seen_ts = ? WHERE id = 1 AND last_seen_ts < ?",
+            (now_epoch, now_epoch),
+        )
+    except Exception:
+        pass
+
+
+def resolve_current_date():
+    """
+    Return ``(now_date, clock_rollback_detected, high_water_date)``.
+
+    ``now_date`` is the LATER of the wall clock and the persisted high-water
+    mark. Winding the system clock backwards therefore never moves a trial
+    clock backwards: the evaluation keeps counting from the last time the
+    instance was really seen.
+    """
+    now_epoch = time.time()
+    stored = _load_last_seen_ts()
+    rollback = bool(stored and now_epoch < (stored - _CLOCK_ROLLBACK_TOLERANCE_SECONDS))
+    if rollback:
+        high_water = datetime.fromtimestamp(stored).date()
+        return high_water, True, high_water
+    _record_last_seen(now_epoch, stored)
+    today = date.today()
+    high_water = datetime.fromtimestamp(stored).date() if stored else today
+    return today, False, high_water
+
 
 
 def get_license_status(use_cache=True):
@@ -125,13 +238,28 @@ def _compute_license_status():
     stored_key = (row.get("license_key") or "").strip()
     verified_ok, verify_msg, verified_data = verify_license_key(stored_key)
 
-    # Seats / expiry / modules are taken from the signed payload when available,
-    # so editing the DB row cannot inflate the contract.
+    # Seats / expiry / modules come from the signed payload. Trial expiry is
+    # anchored to the first activation. `clock_now` is the LATER of the wall
+    # clock and the persisted high-water mark, so winding the system clock back
+    # can never move the trial window backwards.
+    clock_now, clock_rollback, high_water = resolve_current_date()
+
+    is_trial = False
+    term_days = 0
+    anchor_str = ""
+    hard_str = ""
     if verified_ok and verified_data:
         max_seats = int(verified_data.get("seats") or 0)
-        exp_str = (verified_data.get("expiry") or "1970-01-01")[:10]
         modules = verified_data.get("modules") or []
         customer = verified_data.get("customer") or row.get("customer_name") or "Enterprise Customer"
+        is_trial = bool(verified_data.get("is_trial"))
+        term_days = int(verified_data.get("term_days") or 0)
+        exp_date, hard_cap, anchor = resolve_license_expiry(
+            verified_data, row.get("activated_at"), now=clock_now
+        )
+        exp_str = exp_date.strftime("%Y-%m-%d") if exp_date else "1970-01-01"
+        hard_str = hard_cap.strftime("%Y-%m-%d") if hard_cap else ""
+        anchor_str = anchor.strftime("%Y-%m-%d") if anchor else (row.get("activated_at") or "")[:10]
     else:
         max_seats = 0
         exp_str = "1970-01-01"
@@ -142,7 +270,7 @@ def _compute_license_status():
     days_left = 0
     try:
         exp_date = datetime.strptime(exp_str[:10], "%Y-%m-%d").date()
-        days_left = (exp_date - date.today()).days
+        days_left = (exp_date - clock_now).days
         is_expired = days_left < 0
     except Exception:
         is_expired = True
@@ -151,19 +279,27 @@ def _compute_license_status():
     is_active = verified_ok and row_active and not is_expired
     is_read_only = not is_active
 
+    warn_window = min(30, max(3, term_days // 2)) if (is_trial and term_days) else 30
+
     return {
         "customer_name": customer,
         "license_key": stored_key,
         "max_seats": max_seats,
         "active_seats": active_seats,
         "expiry_date": exp_str,
+        "hard_expiry_date": hard_str,
+        "is_trial": is_trial,
+        "term_days": term_days,
+        "activated_at": anchor_str,
+        "last_seen_at": high_water.strftime("%Y-%m-%d"),
+        "clock_rollback_detected": clock_rollback,
         "is_active": is_active,
         "is_expired": is_expired,
         "is_read_only": is_read_only,
         "license_valid": verified_ok,
         "license_reason": verify_msg,
         "days_left": max(0, days_left),
-        "expiry_warning": bool(verified_ok and not is_expired and 0 <= days_left <= 30),
+        "expiry_warning": bool(verified_ok and not is_expired and 0 <= days_left <= warn_window),
         "modules": modules
     }
 
@@ -211,9 +347,15 @@ def is_system_read_only():
         return True
 
 
-def generate_signed_license_key(customer_name, max_seats, expiry_date_str, modules, signing_key_hex=None):
+def generate_signed_license_key(customer_name, max_seats, expiry_date_str, modules,
+                                signing_key_hex=None, is_trial=False, term_days=None):
     """
     VENDOR-ONLY: sign an offline license with the Ed25519 private key.
+
+    ``is_trial=True`` + ``term_days=N`` issues an evaluation licence whose clock
+    starts on the customer's FIRST activation: the runtime computes
+    ``expiry = activated_at + N`` (capped by ``expiry_date_str`` when one is
+    supplied). Pass ``expiry_date_str=None`` for a trial with no absolute cap.
 
     The private key must be provided explicitly (argument or
     ARGOS_LICENSE_SIGNING_KEY). There is deliberately NO default/fallback key:
@@ -241,10 +383,24 @@ def generate_signed_license_key(customer_name, max_seats, expiry_date_str, modul
     payload = {
         "customer": customer_name,
         "seats": max_seats,
-        "expiry": expiry_date_str,
         "modules": modules,
         "iat": datetime.now().strftime("%Y-%m-%d")
     }
+    # A trial may run purely for ``term_days`` from the first activation; when an
+    # expiry is supplied it acts as an absolute hard cap.
+    if expiry_date_str:
+        payload["expiry"] = expiry_date_str
+    if is_trial:
+        try:
+            term = int(term_days)
+        except (TypeError, ValueError):
+            raise ValueError("term_days must be a positive integer for a trial license.")
+        if term <= 0 or term > _MAX_TRIAL_TERM_DAYS:
+            raise ValueError(
+                f"term_days must be between 1 and {_MAX_TRIAL_TERM_DAYS} days."
+            )
+        payload["trial"] = True
+        payload["term_days"] = term
     raw_json = json.dumps(payload, separators=(',', ':'), sort_keys=True).encode("utf-8")
     sig = private_key.sign(raw_json)
     b64_payload = base64.urlsafe_b64encode(raw_json).decode("ascii").rstrip("=")
@@ -253,7 +409,7 @@ def generate_signed_license_key(customer_name, max_seats, expiry_date_str, modul
 
 
 DEFAULT_TRIAL_LICENSE_KEY = (
-    "AGY-eyJjdXN0b21lciI6IkFyZ29zIEVudGVycHJpc2UgVHJpYWwiLCJleHBpcnkiOiIyMDI3LTEyLTMxIiwiaWF0IjoiMjAyNi0xMC0yMyIsIm1vZHVsZXMiOlsiY2FudmFzIiwicGltIiwiamlyYSIsInJhZyIsInNjaGVkdWxlIiwiYXVkaXQiXSwic2VhdHMiOjUwfQ.yEYIb5-mi0VGep5q-vMMi_EHjG8xb2Frsamytfw_sUKjQFFizBci55Q-0bh8sdoq9NOAorGqC_xbmtp5LlDMDw"
+    "AGY-eyJjdXN0b21lciI6IkFyZ29zIEVudGVycHJpc2UgVHJpYWwiLCJpYXQiOiIyMDI2LTEwLTI5IiwibW9kdWxlcyI6WyJjYW52YXMiLCJwaW0iLCJqaXJhIiwicmFnIiwic2NoZWR1bGUiLCJhdWRpdCJdLCJzZWF0cyI6NTAsInRlcm1fZGF5cyI6NjAsInRyaWFsIjp0cnVlfQ.ovSRoVxez65COM4zzyVnNKrZ5chxofIqcyVtCWYq-ExX5KLt6vb8JrBHDPW21ygMCTAKXm63sMLVmVWZ6jtQDQ"
 )
 
 
@@ -318,23 +474,46 @@ def verify_license_key(license_key_str):
         data = json.loads(raw_json.decode("utf-8"))
         customer = data.get("customer") or "Valued Enterprise Customer"
         seats = int(data.get("seats") or 0)
-        expiry = data.get("expiry") or "1970-01-01"
+        expiry = str(data.get("expiry") or "")[:10]
         modules = data.get("modules") or []
 
-        # Check expiration date
-        try:
-            exp_date = datetime.strptime(expiry[:10], "%Y-%m-%d").date()
-            if date.today() > exp_date:
-                return False, f"만료된 라이선스 키입니다 (만료일: {expiry}).", None
-        except Exception:
-            pass
+        is_trial = bool(data.get("trial"))
+        term_days = 0
+        if is_trial:
+            try:
+                term_days = int(data.get("term_days"))
+            except (TypeError, ValueError):
+                return False, "체험 기간(term_days) 값이 유효하지 않습니다.", None
+            if term_days <= 0 or term_days > _MAX_TRIAL_TERM_DAYS:
+                return False, (
+                    f"체험 기간(term_days) 값이 유효하지 않습니다 (1~{_MAX_TRIAL_TERM_DAYS}일)."
+                ), None
+            if not _parse_iso_date(data.get("iat")):
+                return False, "체험 라이선스에 발급일(iat) 정보가 없습니다.", None
+
+        # A trial may omit `expiry` entirely: its window is term_days counted from
+        # the first activation. Every other licence must carry a signed expiry.
+        if not expiry and not term_days:
+            return False, "라이선스에 만료일(expiry) 정보가 없습니다.", None
+
+        # Hard cap, when present. The effective trial window is resolved later
+        # against the first activation anchor.
+        if expiry:
+            try:
+                exp_date = datetime.strptime(expiry[:10], "%Y-%m-%d").date()
+                if date.today() > exp_date:
+                    return False, f"만료된 라이선스 키입니다 (만료일: {expiry}).", None
+            except Exception:
+                pass
 
         return True, "유효한 엔터프라이즈 정품 라이선스입니다.", {
             "customer": customer,
             "seats": seats,
             "expiry": expiry,
             "modules": modules,
-            "is_trial": ("trial" in customer.lower())
+            "iat": str(data.get("iat") or "")[:10],
+            "is_trial": is_trial or ("trial" in customer.lower()),
+            "term_days": term_days,
         }
     except Exception as e:
         return False, f"라이선스 페이로드 파싱 실패: {e}", None
@@ -352,13 +531,43 @@ def activate_license(license_key_str):
     try:
         customer = data.get("customer") or "Valued Enterprise"
         seats = int(data.get("seats") or 0)
-        expiry = data.get("expiry") or "1970-01-01"
+        expiry = str(data.get("expiry") or "")[:10]
         modules = data.get("modules") or []
         key = (license_key_str or "").strip()
+        now_dt = datetime.now()
+        now_str = now_dt.strftime("%Y-%m-%dT%H:%M:%S")
+        now_epoch = time.time()
+
+        # Clock-rollback protection: never evaluate a trial against a clock that
+        # is earlier than the highest time this instance has already seen.
+        clock_now, _clock_rollback, _hw = resolve_current_date()
+
+        # Trial anchor: written once per licence key. Re-activating the SAME key
+        # must not restart the evaluation clock; switching to a different key
+        # (e.g. trial -> commercial, or a freshly issued trial) resets it.
+        row = get_one("SELECT license_key, activated_at FROM license_info WHERE id = 1") or {}
+        same_key = (row.get("license_key") or "").strip() == key
+        anchor_str = ((row.get("activated_at") or "").strip() if same_key else "") or now_str
+
+        exp_date, _hard_cap, _anchor = resolve_license_expiry(data, anchor_str, now=clock_now)
+        if data.get("term_days"):
+            if exp_date and exp_date < clock_now:
+                return False, (
+                    f"체험 기간({data['term_days']}일)이 종료되었습니다 "
+                    f"(만료일: {exp_date.strftime('%Y-%m-%d')}). 정품 라이선스를 활성화해주세요."
+                )
+
+        # `expiry_date` in the DB is informational only: the signed payload plus
+        # `activated_at` are authoritative. A trial without a signed hard cap
+        # stores its computed end date for readability.
+        if not expiry and exp_date:
+            expiry = exp_date.strftime("%Y-%m-%d")
+        if not expiry:
+            expiry = "1970-01-01"
 
         execute("""
-            INSERT INTO license_info (id, customer_name, license_key, max_seats, expiry_date, modules_json, is_active, updated_at)
-            VALUES (1, ?, ?, ?, ?, ?, 1, ?)
+            INSERT INTO license_info (id, customer_name, license_key, max_seats, expiry_date, modules_json, is_active, activated_at, last_seen_ts, updated_at)
+            VALUES (1, ?, ?, ?, ?, ?, 1, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE SET
                 customer_name = EXCLUDED.customer_name,
                 license_key = EXCLUDED.license_key,
@@ -366,10 +575,27 @@ def activate_license(license_key_str):
                 expiry_date = EXCLUDED.expiry_date,
                 modules_json = EXCLUDED.modules_json,
                 is_active = 1,
+                activated_at = CASE
+                    WHEN COALESCE(license_info.license_key, '') <> EXCLUDED.license_key
+                        THEN EXCLUDED.activated_at
+                    ELSE COALESCE(NULLIF(license_info.activated_at, ''), EXCLUDED.activated_at)
+                END,
+                last_seen_ts = CASE
+                    WHEN COALESCE(license_info.last_seen_ts, 0) > EXCLUDED.last_seen_ts
+                        THEN license_info.last_seen_ts
+                    ELSE EXCLUDED.last_seen_ts
+                END,
                 updated_at = EXCLUDED.updated_at
-        """, (customer, key, seats, expiry, json.dumps(modules), datetime.now().strftime("%Y-%m-%dT%H:%M:%S")))
+        """, (customer, key, seats, expiry, json.dumps(modules), anchor_str, now_epoch, now_str))
 
         invalidate_license_cache()
+
+        if data.get("term_days"):
+            effective = exp_date.strftime("%Y-%m-%d") if exp_date else expiry
+            return True, (
+                f"'{customer}' 체험판 {data['term_days']}일이 활성화되었습니다 "
+                f"(활성화일: {anchor_str[:10]}, 만료일: {effective})."
+            )
         return True, f"'{customer}' 엔터프라이즈 라이선스(좌석: {seats}명, 만료일: {expiry})가 성공적으로 활성화되었습니다."
     except Exception as e:
         return False, f"라이선스 활성화 실패: {e}"

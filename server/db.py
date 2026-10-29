@@ -436,6 +436,28 @@ if ENGINE == "sqlite":
                 )
                 conn.execute("INSERT OR IGNORE INTO schema_migrations (version, name) VALUES (7, 'v2.8_id_allocator');")
                 logger.info("[db] Migration v7 (id_allocator table) applied.")
+
+            # Migration v8: Trial license activation anchor
+            # A trial licence counts its term from the FIRST activation, so the
+            # anchor has to be persisted. Idempotent for legacy databases.
+            if 8 not in applied_migrations:
+                cur_lic = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='license_info'")
+                if cur_lic.fetchone():
+                    l_cols = {row[1] for row in conn.execute("PRAGMA table_info(license_info)").fetchall()}
+                    if "activated_at" not in l_cols:
+                        conn.execute("ALTER TABLE license_info ADD COLUMN activated_at TEXT NOT NULL DEFAULT '';")
+                conn.execute("INSERT OR IGNORE INTO schema_migrations (version, name) VALUES (8, 'v2.9_license_activation_anchor');")
+                logger.info("[db] Migration v8 (license activation anchor) applied.")
+
+            # Migration v9: Monotonic clock high-water mark (trial rollback guard)
+            if 9 not in applied_migrations:
+                cur_lic = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='license_info'")
+                if cur_lic.fetchone():
+                    l_cols = {row[1] for row in conn.execute("PRAGMA table_info(license_info)").fetchall()}
+                    if "last_seen_ts" not in l_cols:
+                        conn.execute("ALTER TABLE license_info ADD COLUMN last_seen_ts REAL NOT NULL DEFAULT 0;")
+                conn.execute("INSERT OR IGNORE INTO schema_migrations (version, name) VALUES (9, 'v3.0_license_monotonic_clock');")
+                logger.info("[db] Migration v9 (license monotonic clock) applied.")
         except sqlite3.Error as e:
             logger.error(f"Database initialization failed: {e}")
             raise
@@ -889,6 +911,26 @@ else:
                     ON CONFLICT (version) DO NOTHING;
                 """)
                 logger.info("[db/postgres] Migration v7 (id_allocator table) applied.")
+
+            # Migration 8: Trial license activation anchor
+            if 8 not in applied_versions:
+                cur.execute("""
+                    ALTER TABLE license_info ADD COLUMN IF NOT EXISTS activated_at VARCHAR(64) NOT NULL DEFAULT '';
+                    INSERT INTO schema_migrations (version, name)
+                    VALUES (8, 'v2.9_license_activation_anchor')
+                    ON CONFLICT (version) DO NOTHING;
+                """)
+                logger.info("[db/postgres] Migration v8 (license activation anchor) applied.")
+
+            # Migration 9: Monotonic clock high-water mark (trial rollback guard)
+            if 9 not in applied_versions:
+                cur.execute("""
+                    ALTER TABLE license_info ADD COLUMN IF NOT EXISTS last_seen_ts DOUBLE PRECISION NOT NULL DEFAULT 0;
+                    INSERT INTO schema_migrations (version, name)
+                    VALUES (9, 'v3.0_license_monotonic_clock')
+                    ON CONFLICT (version) DO NOTHING;
+                """)
+                logger.info("[db/postgres] Migration v9 (license monotonic clock) applied.")
 
             cur.close()
         except psycopg2.Error as e:

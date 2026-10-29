@@ -71,3 +71,30 @@ def test_broad_cidr_triggers_security_warning(monkeypatch, capsys):
     check_trusted_proxies_warning()
     captured2 = capsys.readouterr()
     assert "[SECURITY WARNING] TRUSTED_PROXIES is too broad" in captured2.err
+
+
+def test_is_secure_ignores_spoofed_xfp_from_direct_client(monkeypatch):
+    """Audit F-0005: a direct client must not be able to force the Secure flag."""
+    monkeypatch.delenv("TRUSTED_PROXIES", raising=False)
+    handler._TRUSTED_PROXY_CACHE.clear()
+
+    class FakeHandler:
+        client_address = ("172.20.1.5", 54321)
+        headers = {"X-Forwarded-Proto": "https"}
+        connection = object()  # no getpeercert -> not a TLS socket
+
+    assert ArgosHandler._is_secure(FakeHandler()) is False
+
+
+def test_is_secure_honours_xfp_from_trusted_proxy(monkeypatch):
+    """X-Forwarded-Proto is trusted only when it comes from TRUSTED_PROXIES."""
+    monkeypatch.setenv("TRUSTED_PROXIES", "127.0.0.1,::1,172.28.0.0/24")
+    handler._TRUSTED_PROXY_CACHE.clear()
+
+    class FakeHandler:
+        client_address = ("172.28.0.3", 54321)
+        headers = {"X-Forwarded-Proto": "https"}
+        connection = object()
+
+    assert ArgosHandler._is_secure(FakeHandler()) is True
+

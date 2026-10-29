@@ -86,6 +86,18 @@ Mở `https://<domain>/setup.html` và thực hiện 3 bước:
 2. Dán vào ô **라이선스 활성화 / 갱신** → **활성화**.
 3. Hoặc offline: `python scripts/apply_license.py duong/dan/cong-ty.lic --db data/argos.db` rồi restart service.
 
+### 5.2b Bản dùng thử (trial) có thời hạn
+
+License trial chứa `term_days` (ví dụ 60) trong payload đã ký. Hạn dùng **được tính từ lần kích hoạt đầu tiên**, không phải từ ngày phát hành hay ngày cài:
+
+- Hạn hiệu lực = `ngày kích hoạt đầu tiên + term_days`. Key trial **không cần** ngày hết hạn tuyệt đối; nếu vendor có ký kèm `expiry` thì đó là **hạn cứng** (không bao giờ vượt qua).
+- Kích hoạt lại **cùng key** (nâng cấp phiên bản, restore DB) **không** làm mới thời gian thử.
+- Cột `license_info.activated_at` lưu mốc kích hoạt đầu tiên; sửa giá trị này trong DB sẽ bị vô hiệu (hệ thống kẹp về khoảng `[iat, hôm nay]`).
+- **Chống lùi đồng hồ**: hệ thống lưu mốc thời gian lớn nhất từng thấy (`license_info.last_seen_ts`, cập nhật tối đa 1 giờ/lần, không bao giờ giảm). Nếu đồng hồ hệ thống bị chỉnh về trước mốc đó (dung sai 5 phút cho NTP), mọi phép tính trial dùng **mốc cao nhất** thay vì giờ hiện tại → thời gian thử **không** được kéo dài, và UI hiện cảnh báo `clock_rollback_detected`.
+- Hết thời gian thử → **read-only** giống license hết hạn; kích hoạt lại key trial đã hết hạn bị từ chối (`체험 기간(60일)이 종료되었습니다`).
+- UI hiển thị badge `체험판 (D-xx)`, dòng **체험 기간 60일 (활성화 YYYY-MM-DD)** và **체험 만료일**.
+- Giới hạn đã biết: xoá toàn bộ thư mục `data/` (DB + mốc neo + mốc thời gian) rồi kích hoạt lại sẽ bắt đầu trial mới; muốn chặn tuyệt đối cần license server online hoặc key gắn định danh máy.
+
 ### 5.3 Hết hạn
 
 Hệ thống chuyển **read-only**: không ghi/sửa/xoá mới, **dữ liệu cũ vẫn đọc được**. Gia hạn → ghi bình thường trở lại.

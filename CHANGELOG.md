@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security — Full remediation of the 12 audit findings (audit/REPORT.md §1.1)
+
+- **F-0001 (High):** `handle_post_issue_transition` now enforces `can_write_data(session)`
+  before touching Jira, so a read-only viewer can no longer transition external issues.
+- **F-0002 (High):** `encrypt_secret` / `decrypt_secret` no longer `.strip()` the payload —
+  secrets (PEM keys, tokens) are encrypted byte-for-byte.
+- **F-0003 (High):** new `server/utils/http_body.py` (`parse_json_dict`, `as_text`) replaces
+  **43** unguarded `json.loads(raw_body)` sites; settings values are validated before
+  `os.environ`; backup filenames are validated; `.xlsx` uploads must be real ZIP containers.
+  `audit/harness/fuzz_routes.py`: **528 cases → 0** unhandled 500s (was 119).
+- **F-0004 (Medium):** the version banner is gone (`Server` header no longer emitted,
+  `server_version="ArgosWorks"`, `sys_version=""`), matching `SECURITY_WHITEPAPER.md` §7.
+- **F-0005 (Medium):** `_is_secure()` only honours `X-Forwarded-Proto` from a
+  `TRUSTED_PROXIES` peer, so direct clients cannot force `Secure` cookies over HTTP.
+- **F-0006 (Medium):** admin backup APIs no longer return `db_path` /
+  `default_backup_dir`; `update_backup_config` returns only the configured directory.
+- **F-0007 (Medium):** the AI chat comment tool now uses `can_view_record`, matching the
+  REST comment endpoint.
+- **F-0008 (Medium):** `delete_record` detaches sub-tasks (`parent_key`) in the same
+  transaction, so no phantom hierarchy nodes remain.
+- **F-0009 (Medium):** changing a user's department now revokes their sessions.
+- **F-0010 (Low):** added `sched.login_required` and `sched.search_no_results` (KO + EN);
+  `check_i18n.py` reports 390/390 keys, 0 missing.
+- **F-0011 (Low):** added boundary tests for admin record deletion and the rate-limit `>=`.
+- **F-0012 (Low):** non-numeric attachment ids return 400 instead of 500.
+
+### Licensing — Trial licences with a term anchored to the first activation
+
+- Signed licence payloads may now carry `trial: true` + `term_days: N`. The effective
+  expiry is `first_activation + N days`, so an evaluation always lasts exactly N days
+  from the moment the customer activates — never from the issue date.
+- `expiry` is optional for a trial: omit it for a pure term licence (the bundled
+  `TRIAL` key is now a 50-seat, 60-day key with **no absolute end date**). When a
+  vendor does sign an `expiry`, it remains a hard cap.
+- New `license_info.activated_at` column (migration **v8** `v2.9_license_activation_anchor`,
+  SQLite + PostgreSQL) stores the first activation. Re-activating the **same** key keeps
+  the original anchor, so upgrades/restores cannot restart the trial clock.
+- The anchor is clamped into `[iat, now]`: editing `activated_at` in the database can no
+  longer extend the trial.
+- **Clock-rollback protection.** `license_info.last_seen_ts` (migration **v9**
+  `v3.0_license_monotonic_clock`) keeps a high-water mark of the highest wall-clock time
+  this instance has observed (write throttled to once an hour, never decreasing). All
+  trial maths runs against `max(wall clock, high-water)` with a 5-minute NTP tolerance,
+  so winding the system clock back cannot extend an evaluation or revive an expired one.
+  `GET /api/admin/license` exposes `clock_rollback_detected` and `last_seen_at`; Settings
+  shows an explicit warning.
+- `GET /api/admin/license` also gains `is_trial`, `term_days`, `activated_at` and
+  `hard_expiry_date`; Settings shows a `체험판 (D-xx)` badge, the trial term and a
+  "trial expiry" label. `/api/setup/verify-license` previews the effective trial expiry.
+- Vendor CLI: `license_tool.py issue --trial --days 60 ...` (one trial per customer,
+  `--force-trial` for documented exceptions); `inspect` prints the term and hard cap.
+- `POST /api/setup/complete` no longer writes a half-activated licence row when
+  activation fails; it now returns the activation error instead.
+- Commercial licences and legacy trial keys without `term_days` keep their absolute
+  expiry (and still require one) — no behaviour change for existing customers.
+
 ### Security & Frontend Hardening — Admin Users Error HTML Escaping (9.3)
 
 - Enforced `escapeHtml()` on asynchronous communication error messages when rendering the admin user management table in `web/js/settings.js`, preventing DOM-based XSS injection via malformed network error payloads.

@@ -11,12 +11,16 @@ from services.data_store import _save_lock, read_departments
 from db import get_one, transaction
 from utils.text import dept_by_id
 from utils.logging import access_log, log_line
+from utils.http_body import parse_json_dict
 
 # ---- /api/account/check (POST) — 이름+소속이 이미 계정이 있는지(비번 물어볼지,
 # 새로 만들지) 로그인 폼이 미리 확인할 때 씀 ----
 def handle_account_check(handler, raw_body, ip):
     try:
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
+        payload, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청 본문"})
         return
@@ -43,7 +47,10 @@ def handle_account_check(handler, raw_body, ip):
 # ---- /api/account/register (POST) — 계정 발급 요청 (관리자 승인 워크플로) ----
 def handle_account_register(handler, raw_body, ip):
     try:
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
+        payload, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청 본문"})
         return
@@ -162,7 +169,10 @@ def handle_account_register(handler, raw_body, ip):
 # ---- /api/account/login (POST) — 기존 계정 비밀번호 확인 ----
 def handle_account_login(handler, raw_body, ip):
     try:
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
+        payload, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청 본문"})
         return
@@ -350,7 +360,10 @@ def handle_account_update_profile(handler, raw_body, ip):
         return
 
     try:
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
+        payload, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청 본문입니다."})
         return

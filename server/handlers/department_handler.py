@@ -4,6 +4,7 @@ import time
 from services.data_store import read_departments, write_departments, update_department, delete_department, _save_lock
 from services.auth import is_admin_user
 from utils.logging import access_log
+from utils.http_body import parse_json_dict, as_text
 
 def _require_system_admin(handler, ip, action_name):
     """Quản lý cơ cấu tổ chức (phòng ban) là quyền của System Admin."""
@@ -27,15 +28,18 @@ def handle_add_department(handler, raw_body, ip):
     if session is None:
         return
     try:
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
+        payload, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청 본문"})
         return
 
-    name = (payload.get("name") or "").strip()
-    local_prefix = (payload.get("localPrefix") or payload.get("local_prefix") or "").strip().upper()
-    jira_key = (payload.get("jiraKey") or payload.get("jira_key") or "").strip().upper()
-    custom_categories = (payload.get("customCategories") or payload.get("custom_categories") or "").strip()
+    name = as_text(payload.get("name"))
+    local_prefix = as_text(payload.get("localPrefix") or payload.get("local_prefix")).upper()
+    jira_key = as_text(payload.get("jiraKey") or payload.get("jira_key")).upper()
+    custom_categories = as_text(payload.get("customCategories") or payload.get("custom_categories"))
 
     if not name:
         handler._send_json(400, {"ok": False, "error": "이름을 입력해주세요."})
@@ -85,12 +89,15 @@ def handle_delete_department(handler, raw_body, ip):
     if session is None:
         return
     try:
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
+        payload, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청 본문"})
         return
 
-    dept_id = (payload.get("id") or "").strip()
+    dept_id = as_text(payload.get("id"))
     if not dept_id:
         handler._send_json(400, {"ok": False, "error": "부서 ID가 필요합니다."})
         return
@@ -115,16 +122,19 @@ def handle_update_department(handler, raw_body, ip):
     if session is None:
         return
     try:
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
+        payload, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청 본문"})
         return
 
-    dept_id = (payload.get("id") or "").strip()
-    name = (payload.get("name") or "").strip()
-    local_prefix = (payload.get("localPrefix") or payload.get("local_prefix") or "").strip().upper()
-    jira_key = (payload.get("jiraKey") or payload.get("jira_key") or "").strip().upper()
-    custom_categories = (payload.get("customCategories") or payload.get("custom_categories") or "").strip()
+    dept_id = as_text(payload.get("id"))
+    name = as_text(payload.get("name"))
+    local_prefix = as_text(payload.get("localPrefix") or payload.get("local_prefix")).upper()
+    jira_key = as_text(payload.get("jiraKey") or payload.get("jira_key")).upper()
+    custom_categories = as_text(payload.get("customCategories") or payload.get("custom_categories"))
 
     if not dept_id:
         handler._send_json(400, {"ok": False, "error": "카테고리 ID가 필요합니다."})

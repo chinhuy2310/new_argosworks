@@ -183,6 +183,13 @@ python tools/vendor/license_tool.py issue \
     --modules canvas,pim,jira,rag,schedule,audit \
     --out licenses/ACME-2027.lic
 
+# issue a 60-day trial (term counted from the customer's FIRST activation).
+# --expiry is optional; supply it only to impose an absolute hard cap.
+python tools/vendor/license_tool.py issue \
+    --trial --days 60 --customer "ACME Manufacturing" --seats 50 \
+    --modules canvas,pim,jira,rag,schedule,audit \
+    --out licenses/ACME-trial.lic
+
 # verify before sending
 python tools/vendor/license_tool.py inspect licenses/ACME-2027.lic
 ```

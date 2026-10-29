@@ -9,6 +9,7 @@ import json
 from datetime import datetime
 from db import query, get_one, execute, transaction
 from utils.logging import access_log
+from utils.http_body import parse_json_dict
 
 
 _setup_completed_cache = None
@@ -51,7 +52,10 @@ def handle_get_setup_status(handler, parsed, ip):
 def handle_post_setup_verify_license(handler, raw_body, ip):
     """POST /api/setup/verify-license — 마법사 1단계: 라이선스 키 사전 검증."""
     try:
-        body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
 
@@ -60,16 +64,26 @@ def handle_post_setup_verify_license(handler, raw_body, ip):
         handler._send_json(400, {"ok": False, "error": "라이선스 키를 입력해주세요."})
         return
 
-    from services.license_manager import verify_license_key
+    from services.license_manager import verify_license_key, resolve_license_expiry
     ok, msg, data = verify_license_key(license_key)
     if not ok:
         handler._send_json(400, {"ok": False, "error": msg})
         return
 
+    # Trial preview: show the expiry the customer will actually get when they
+    # activate now — the term is anchored to the first activation and capped by
+    # the signed hard expiry.
+    license_payload = dict(data or {})
+    if license_payload.get("term_days"):
+        exp_date, _hard_cap, _anchor = resolve_license_expiry(license_payload, None)
+        if exp_date:
+            license_payload["hard_expiry"] = license_payload.get("expiry")
+            license_payload["expiry"] = exp_date.strftime("%Y-%m-%d")
+
     handler._send_json(200, {
         "ok": True,
         "message": msg,
-        "license": data
+        "license": license_payload
     })
 
 
@@ -80,7 +94,10 @@ def handle_post_setup_complete(handler, raw_body, ip):
     3단계: 회사명 및 기본 부서 등록
     """
     try:
-        body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
 
@@ -215,14 +232,12 @@ def handle_post_setup_complete(handler, raw_body, ip):
     admin_user = get_one("SELECT id, name, dept_id, email, role FROM users WHERE username = ? LIMIT 1", (username,))
 
     # 5. 라이선스 정보 활성화 반영
+    #    Activation MUST succeed: a verified key that cannot be anchored/activated
+    #    would otherwise leave a half-written licence row behind.
     act_ok, act_msg = activate_license(license_key)
     if not act_ok:
-        # 라이선스 활성화 실패 시에도 기본 활성화 기록
-        execute("""
-            UPDATE license_info
-            SET customer_name = ?, license_key = ?, is_active = 1, updated_at = ?
-            WHERE id = 1
-        """, (company_name, license_key, now_str))
+        handler._send_json(400, {"ok": False, "error": act_msg})
+        return
 
     # 6. 회사명 업데이트 (license_info customer_name 반영)
     execute("""

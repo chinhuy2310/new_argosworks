@@ -2536,6 +2536,9 @@ async function loadLicenseStatus() {
   var licSeats = document.getElementById("licSeats");
   var licSeatsBar = document.getElementById("licSeatsBar");
   var licModules = document.getElementById("licModules");
+  var licExpiryLabel = document.getElementById("licExpiryLabel");
+  var licTrialRow = document.getElementById("licTrialRow");
+  var licTrialTerm = document.getElementById("licTrialTerm");
 
   if (!badge && !licCustomer) return;
 
@@ -2611,6 +2614,24 @@ async function loadLicenseStatus() {
         warnBox.style.color = "#92400e";
         warnBox.textContent = "⚠️ 라이선스 만료가 " + lic.days_left + "일 남았습니다. 계약 갱신 키를 준비해주세요.";
       }
+    } else if (lic.is_trial) {
+      // Trial licence: the term is anchored to the FIRST activation, so the
+      // remaining days are the contract, not the calendar.
+      if (badge) {
+        badge.textContent = lic.term_days ? ("체험판 (D-" + lic.days_left + ")") : "평가판";
+        badge.style.background = "rgba(56,189,248,0.14)";
+        badge.style.color = "#0284c7";
+        badge.style.border = "1px solid rgba(56,189,248,0.35)";
+      }
+      if (warnBox) {
+        warnBox.style.display = "block";
+        warnBox.style.borderColor = "#38bdf8";
+        warnBox.style.background = "rgba(56,189,248,0.10)";
+        warnBox.style.color = "#075985";
+        warnBox.textContent = lic.term_days
+          ? ("ℹ️ 체험판 " + lic.term_days + "일 라이선스입니다. 잔여 " + lic.days_left + "일 (기간은 최초 활성화일부터 기산됩니다).")
+          : ("ℹ️ 평가판 라이선스입니다. 잔여 " + lic.days_left + "일.");
+      }
     } else {
       if (badge) {
         badge.textContent = "정상 활성";
@@ -2623,9 +2644,24 @@ async function loadLicenseStatus() {
       }
     }
 
+    // Clock-rollback guard: the backend clamps trial maths to the highest time
+    // this instance has ever observed, so a wound-back clock cannot extend it.
+    if (lic.clock_rollback_detected && warnBox) {
+      warnBox.style.display = "block";
+      warnBox.style.borderColor = "#ef4444";
+      warnBox.style.background = "rgba(239,68,68,0.10)";
+      warnBox.style.color = "#b91c1c";
+      warnBox.textContent = "⚠️ 시스템 시간이 마지막으로 확인된 시각(" + (lic.last_seen_at || "-") + ")보다 이전으로 설정되었습니다. 시간을 되돌려도 라이선스 기간은 연장되지 않으며, 마지막 확인 시각 기준으로 계산됩니다.";
+    }
+
     // 2. Info Table
     if (licCustomer) licCustomer.textContent = lic.customer_name || "-";
     if (licExpiry) licExpiry.textContent = lic.expiry_date || "-";
+    if (licExpiryLabel) licExpiryLabel.textContent = lic.is_trial ? "체험 만료일" : "만료일";
+    if (licTrialRow) licTrialRow.style.display = lic.term_days ? "" : "none";
+    if (licTrialTerm && lic.term_days) {
+      licTrialTerm.textContent = lic.term_days + "일 (활성화 " + (lic.activated_at || "-") + ")";
+    }
     if (licDaysLeft) {
       if (!lic.license_valid) {
         licDaysLeft.textContent = "-";

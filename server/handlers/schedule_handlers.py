@@ -5,6 +5,7 @@ from services.data_store import read_schedule, write_schedule, _save_lock, next_
 from utils.logging import access_log
 from config import SCHEDULE_DATE_RE
 from services.auth import account_key
+from utils.http_body import parse_json_dict, as_text
 
 
 def _audit(session, ip, action, target_id, details=None):
@@ -58,15 +59,18 @@ def handle_schedule_create(handler, raw_body, ip):
     if not _require_schedule_write(handler, session, ip, "schedule_create"):
         return
     try:
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
+        payload, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청 본문"})
         return
-    title = (payload.get("title") or "").strip()
-    ev_type = (payload.get("type") or "").strip() or "기타"
-    start_date = (payload.get("startDate") or "").strip()
-    end_date = (payload.get("endDate") or "").strip() or start_date
-    memo = (payload.get("memo") or "").strip()
+    title = as_text(payload.get("title"))
+    ev_type = as_text(payload.get("type")) or "기타"
+    start_date = as_text(payload.get("startDate"))
+    end_date = as_text(payload.get("endDate")) or start_date
+    memo = as_text(payload.get("memo"))
     if not title:
         handler._send_json(400, {"ok": False, "error": "제목을 입력해주세요."})
         return
@@ -196,7 +200,10 @@ def handle_schedule_update(handler, raw_body, ip):
     if not _require_schedule_write(handler, session, ip, "schedule_update"):
         return
     try:
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
+        payload, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청 본문"})
         return
@@ -218,9 +225,9 @@ def handle_schedule_update(handler, raw_body, ip):
         if not (is_owner or is_admin or is_dept_manager):
             handler._send_json(403, {"ok": False, "error": "본인 또는 소속 부서의 일정만 수정할 수 있습니다."})
             return
-        title = (payload.get("title") or "").strip()
-        start_date = (payload.get("startDate") or "").strip()
-        end_date = (payload.get("endDate") or "").strip() or start_date
+        title = as_text(payload.get("title"))
+        start_date = as_text(payload.get("startDate"))
+        end_date = as_text(payload.get("endDate")) or start_date
         if not title:
             handler._send_json(400, {"ok": False, "error": "제목을 입력해주세요."})
             return
@@ -229,11 +236,11 @@ def handle_schedule_update(handler, raw_body, ip):
             return
         if end_date < start_date:
             end_date = start_date
-        target["type"] = ((payload.get("type") or "").strip() or "기타")[:20]
+        target["type"] = (as_text(payload.get("type")) or "기타")[:20]
         target["title"] = title[:80]
         target["startDate"] = start_date
         target["endDate"] = end_date
-        target["memo"] = (payload.get("memo") or "").strip()[:500]
+        target["memo"] = as_text(payload.get("memo"))[:500]
 
         # Update participants if provided
         if "participants" in payload:
@@ -279,7 +286,10 @@ def handle_schedule_delete(handler, raw_body, ip):
     if not _require_schedule_write(handler, session, ip, "schedule_delete"):
         return
     try:
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
+        payload, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청 본문"})
         return
@@ -321,14 +331,17 @@ def handle_schedule_approve(handler, raw_body, ip):
         return
 
     try:
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
+        payload, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청 본문"})
         return
 
     event_id = payload.get("id") or payload.get("eventId")
     action = (payload.get("action") or "approve").strip().lower()
-    reason = (payload.get("reason") or "").strip()
+    reason = as_text(payload.get("reason"))
 
     if action not in ("approve", "reject"):
         handler._send_json(400, {"ok": False, "error": "action은 'approve' 또는 'reject' 여야 합니다."})

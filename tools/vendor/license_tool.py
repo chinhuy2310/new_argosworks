@@ -18,6 +18,13 @@ Usage
       --modules canvas,pim,jira,rag,schedule,audit \
       --out licenses/ACME-2027.lic
 
+  # Issue a 60-day trial: the term starts on the customer's FIRST activation.
+  # Omit --expiry for a pure term trial; pass --expiry only to impose a hard cap.
+  python tools/vendor/license_tool.py issue \
+      --trial --days 60 --customer "ACME Manufacturing Co., Ltd." \
+      --seats 50 --modules canvas,pim,jira,rag,schedule,audit \
+      --out licenses/ACME-trial.lic
+
   # Verify a license file / key before sending it to the customer
   python tools/vendor/license_tool.py inspect licenses/ACME-2027.lic
 
@@ -55,6 +62,8 @@ DEFAULT_KEY_FILE = os.path.join(BASE_DIR, "tools", "vendor", "license_signing_ke
 ISSUE_LOG = os.path.join(BASE_DIR, "tools", "vendor", "issued_licenses.csv")
 
 VALID_MODULES = ["canvas", "pim", "jira", "rag", "schedule", "audit"]
+
+MAX_TRIAL_TERM_DAYS = 365
 
 
 def _read_key(key_file=None):
@@ -127,8 +136,25 @@ def cmd_keygen(args):
     print("=" * 72)
 
 
+def _trial_already_issued(customer):
+    """A customer must only receive ONE trial licence (tracked in the issue log)."""
+    if not customer or not os.path.exists(ISSUE_LOG):
+        return False
+    try:
+        with open(ISSUE_LOG, "r", newline="", encoding="utf-8") as log:
+            for row in csv.DictReader(log):
+                if (row.get("customer") or "").strip().lower() != customer.strip().lower():
+                    continue
+                if (row.get("trial") or "").strip().lower() in ("true", "1", "yes"):
+                    return True
+    except Exception:
+        return False
+    return False
+
+
 def _log_issue(args, out_path):
-    headers = ["issued_at", "customer", "seats", "expiry", "modules", "file", "key_sha256"]
+    headers = ["issued_at", "customer", "seats", "expiry", "modules", "trial",
+               "term_days", "file", "key_sha256"]
     new_file = not os.path.exists(ISSUE_LOG)
     try:
         with open(out_path, "r", encoding="utf-8") as f:
@@ -143,6 +169,8 @@ def _log_issue(args, out_path):
                 args.seats,
                 args.expiry,
                 ",".join(m.strip().lower() for m in args.modules.split(",") if m.strip()),
+                "true" if args.trial else "false",
+                args.days if args.trial else "",
                 os.path.relpath(out_path, BASE_DIR),
                 key_hash,
             ])
@@ -158,10 +186,29 @@ def cmd_issue(args):
     if not modules:
         sys.exit("[ERROR] --modules is required (comma separated).")
 
-    try:
-        datetime.strptime(args.expiry, "%Y-%m-%d")
-    except ValueError:
-        sys.exit("[ERROR] --expiry must be YYYY-MM-DD")
+    if args.days is not None and not args.trial:
+        sys.exit("[ERROR] --days is only valid together with --trial.")
+
+    if args.trial:
+        if not args.days:
+            sys.exit("[ERROR] --trial requires --days (e.g. --trial --days 60).")
+        if args.days <= 0 or args.days > MAX_TRIAL_TERM_DAYS:
+            sys.exit(f"[ERROR] --days must be between 1 and {MAX_TRIAL_TERM_DAYS}.")
+        if not args.force_trial and _trial_already_issued(args.customer):
+            sys.exit(
+                f"[ERROR] A trial license was already issued to '{args.customer}'. "
+                "Use --force-trial only after a documented exception approval."
+            )
+
+    expiry = (args.expiry or "").strip()
+    if expiry:
+        try:
+            datetime.strptime(expiry, "%Y-%m-%d")
+        except ValueError:
+            sys.exit("[ERROR] --expiry must be YYYY-MM-DD")
+    elif not args.trial:
+        sys.exit("[ERROR] --expiry is required (YYYY-MM-DD) for a commercial license.")
+    args.expiry = expiry
 
     if args.seats <= 0:
         sys.exit("[ERROR] --seats must be a positive integer")
@@ -177,9 +224,11 @@ def cmd_issue(args):
         license_key = generate_signed_license_key(
             customer_name=args.customer,
             max_seats=args.seats,
-            expiry_date_str=args.expiry,
+            expiry_date_str=args.expiry or None,
             modules=modules,
             signing_key_hex=key_hex,
+            is_trial=bool(args.trial),
+            term_days=args.days if args.trial else None,
         )
     except LicenseSigningKeyMissing as e:
         sys.exit(f"[ERROR] {e}")
@@ -203,7 +252,10 @@ def cmd_issue(args):
     print("=" * 72)
     print(f"Customer : {data['customer']}")
     print(f"Seats    : {data['seats']}")
-    print(f"Expiry   : {data['expiry']}")
+    print(f"Expiry   : {data['expiry'] or '(none - trial term only)'}" + ("  (trial HARD CAP)" if data.get("term_days") and data.get("expiry") else ""))
+    if data.get("term_days"):
+        print(f"Trial    : {data['term_days']} days, counted from the FIRST activation")
+        print(f"Issued   : {data.get('iat')}")
     print(f"Modules  : {', '.join(data['modules'])}")
     print(f"File     : {out_path}")
     print(f"SHA256   : {_sha256(license_key)}")
@@ -227,9 +279,12 @@ def cmd_inspect(args):
     if data:
         print(f"Customer : {data.get('customer')}")
         print(f"Seats    : {data.get('seats')}")
-        print(f"Expiry   : {data.get('expiry')}")
+        print(f"Expiry   : {data.get('expiry') or '(none - trial term only)'}" + ("  (trial HARD CAP)" if data.get("term_days") and data.get("expiry") else ""))
         print(f"Modules  : {', '.join(data.get('modules') or [])}")
         print(f"Trial    : {data.get('is_trial')}")
+        if data.get("term_days"):
+            print(f"Term     : {data.get('term_days')} days from the FIRST activation")
+            print(f"Issued   : {data.get('iat')}")
     print("=" * 72)
     if not ok:
         sys.exit(1)
@@ -247,8 +302,14 @@ def main():
     p_issue = sub.add_parser("issue", help="Issue a signed offline license")
     p_issue.add_argument("--customer", required=True)
     p_issue.add_argument("--seats", type=int, required=True)
-    p_issue.add_argument("--expiry", required=True, help="YYYY-MM-DD")
+    p_issue.add_argument("--expiry", help="YYYY-MM-DD (trial: hard cap, optional)")
     p_issue.add_argument("--modules", required=True, help="Comma separated: " + ",".join(VALID_MODULES))
+    p_issue.add_argument("--trial", action="store_true",
+                         help="Issue an evaluation licence whose term starts at first activation")
+    p_issue.add_argument("--days", type=int,
+                         help="Trial term in days counted from the first activation (requires --trial)")
+    p_issue.add_argument("--force-trial", action="store_true",
+                         help="Allow a second trial licence for the same customer (exception only)")
     p_issue.add_argument("--out", help="Output .lic path")
     p_issue.add_argument("--key-file", help="Path to the private key file")
     p_issue.set_defaults(func=cmd_issue)

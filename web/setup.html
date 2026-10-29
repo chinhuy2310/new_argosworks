@@ -497,7 +497,7 @@
         <div class="form-group">
           <div class="form-label">
             <span id="lblLicenseInput">라이선스 키 (License Key)</span>
-            <button type="button" class="trial-auto-btn" id="btnAutoTrial">⚡ 무료 평가판(Trial) 키 입력</button>
+            <button type="button" class="trial-auto-btn" id="btnAutoTrial">⚡ 60일 무료 체험판 키 입력</button>
           </div>
           <input type="text" id="inputLicenseKey" class="form-input" placeholder="AGY-eyJjdXN0b21lciI... 또는 TRIAL 입력">
           <div class="input-hint" id="hintLicense">엔터프라이즈 정품 키 (AGY-xxxx.xxxx) 또는 테스트용 TRIAL을 지원합니다.</div>
@@ -657,7 +657,7 @@
     let currentLang = localStorage.getItem('argos_lang') || 'ko';
     if (currentLang !== 'en') currentLang = 'ko';
 
-    const DEFAULT_TRIAL_KEY = 'AGY-eyJjdXN0b21lciI6IkFyZ29zIEVudGVycHJpc2UgVHJpYWwiLCJleHBpcnkiOiIyMDI3LTEyLTMxIiwiaWF0IjoiMjAyNi0xMC0yMyIsIm1vZHVsZXMiOlsiY2FudmFzIiwicGltIiwiamlyYSIsInJhZyIsInNjaGVkdWxlIiwiYXVkaXQiXSwic2VhdHMiOjUwfQ.yEYIb5-mi0VGep5q-vMMi_EHjG8xb2Frsamytfw_sUKjQFFizBci55Q-0bh8sdoq9NOAorGqC_xbmtp5LlDMDw';
+    const DEFAULT_TRIAL_KEY = 'AGY-eyJjdXN0b21lciI6IkFyZ29zIEVudGVycHJpc2UgVHJpYWwiLCJpYXQiOiIyMDI2LTEwLTI5IiwibW9kdWxlcyI6WyJjYW52YXMiLCJwaW0iLCJqaXJhIiwicmFnIiwic2NoZWR1bGUiLCJhdWRpdCJdLCJzZWF0cyI6NTAsInRlcm1fZGF5cyI6NjAsInRyaWFsIjp0cnVlfQ.ovSRoVxez65COM4zzyVnNKrZ5chxofIqcyVtCWYq-ExX5KLt6vb8JrBHDPW21ygMCTAKXm63sMLVmVWZ6jtQDQ';
 
     const dict = {
       ko: {
@@ -673,9 +673,9 @@
         titleStep1: "B2B 계약 라이선스 키 인증",
         descStep1: "도입 계약 시 발급받으신 정품 라이선스 키를 입력하세요. 오프라인 망에서도 서명 검증을 통해 좌석(Seat)과 모듈이 활성화됩니다.",
         lblLicenseInput: "라이선스 키 (License Key)",
-        btnAutoTrial: "⚡ 무료 평가판(Trial) 키 입력",
+        btnAutoTrial: "⚡ 60일 무료 체험판 키 입력",
         phLicenseKey: "AGY-eyJjdXN0b21lciI... 또는 TRIAL 입력",
-        hintLicense: "엔터프라이즈 정품 키 (AGY-xxxx.xxxx) 또는 테스트용 TRIAL을 지원합니다.",
+        hintLicense: "엔터프라이즈 정품 키 (AGY-xxxx.xxxx) 또는 60일 무료 체험판(TRIAL)을 지원합니다. 체험 기간은 최초 활성화일부터 기산됩니다.",
         btnVerifyLicense: "🔍 라이선스 키 유효성 검증",
         txtLicStatus: "정품 라이선스 인증 완료",
         lblMetaCustomer: "고객사 (Customer)",
@@ -749,9 +749,9 @@
         titleStep1: "B2B Contract License Key Authentication",
         descStep1: "Enter your official license key issued upon contract. User seats and modules will be activated via offline asymmetric signature verification.",
         lblLicenseInput: "License Key",
-        btnAutoTrial: "⚡ Auto-fill Free Trial Key",
+        btnAutoTrial: "⚡ Auto-fill 60-day Trial Key",
         phLicenseKey: "AGY-eyJjdXN0b21lciI... or enter TRIAL",
-        hintLicense: "Supports official Enterprise keys (AGY-xxxx.xxxx) or test TRIAL key.",
+        hintLicense: "Supports official Enterprise keys (AGY-xxxx.xxxx) or a 60-day free trial (TRIAL). The trial term starts on first activation.",
         btnVerifyLicense: "🔍 Verify License Key",
         txtLicStatus: "License Verified Successfully",
         lblMetaCustomer: "Customer",
@@ -970,7 +970,12 @@
           verifiedLicenseData = data.license;
           document.getElementById('valCustomer').textContent = verifiedLicenseData.customer || (currentLang === 'en' ? 'Enterprise Customer' : '고객사');
           document.getElementById('valSeats').textContent = verifiedLicenseData.seats + ' Seats';
-          document.getElementById('valExpiry').textContent = verifiedLicenseData.expiry || '2099-12-31';
+          document.getElementById('valExpiry').textContent = (verifiedLicenseData.expiry || '2099-12-31') +
+            (verifiedLicenseData.term_days
+              ? ' (' + verifiedLicenseData.term_days + (currentLang === 'en'
+                  ? '-day trial from first activation)'
+                  : '일 체험 · 최초 활성화일부터 기산)')
+              : '');
           document.getElementById('valModules').textContent = (verifiedLicenseData.modules || []).join(', ');
 
           document.getElementById('licenseResultBox').classList.add('active');

@@ -389,6 +389,8 @@ CREATE TABLE IF NOT EXISTS license_info (
     expiry_date VARCHAR(64) NOT NULL DEFAULT '2099-12-31',
     modules_json TEXT NOT NULL DEFAULT '["canvas","rag","jira","pim","schedule","audit"]',
     is_active INTEGER NOT NULL DEFAULT 1,
+    activated_at VARCHAR(64) NOT NULL DEFAULT '',
+    last_seen_ts DOUBLE PRECISION NOT NULL DEFAULT 0,
     updated_at VARCHAR(64) NOT NULL DEFAULT TO_CHAR(CURRENT_TIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS')
 );
 
@@ -427,6 +429,8 @@ CREATE TABLE IF NOT EXISTS id_allocator (
 );
 
 -- Baseline Department & License Seeds for PostgreSQL (Korean Native B2B)
+-- The signed trial licence below counts 60 days from the FIRST activation
+-- (license_info.activated_at) and has no absolute end date.
 INSERT INTO departments (id, name, color_index, local_prefix, jira_key, custom_categories) VALUES
 ('mgmt', '경영지원·기획실', 1, 'MGMT', 'MGMT', '["경영전략","예산승인","주간보고","대외협력"]'),
 ('dev', '소프트웨어·AI개발팀', 2, 'DEV', 'ARGOS', '["인프라","기능개발","보안강화","성능최적화","API연동"]'),
@@ -436,6 +440,6 @@ INSERT INTO departments (id, name, color_index, local_prefix, jira_key, custom_c
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO license_info (id, customer_name, license_key, max_seats, expiry_date, modules_json, is_active)
-VALUES (1, 'Argos Enterprise Trial', 'AGY-eyJjdXN0b21lciI6IkFyZ29zIEVudGVycHJpc2UgVHJpYWwiLCJleHBpcnkiOiIyMDI3LTEyLTMxIiwiaWF0IjoiMjAyNi0xMC0yMyIsIm1vZHVsZXMiOlsiY2FudmFzIiwicGltIiwiamlyYSIsInJhZyIsInNjaGVkdWxlIiwiYXVkaXQiXSwic2VhdHMiOjUwfQ.yEYIb5-mi0VGep5q-vMMi_EHjG8xb2Frsamytfw_sUKjQFFizBci55Q-0bh8sdoq9NOAorGqC_xbmtp5LlDMDw', 50, '2027-12-31', '["canvas","pim","jira","rag","schedule","audit"]', 1)
+VALUES (1, 'Argos Enterprise Trial', 'AGY-eyJjdXN0b21lciI6IkFyZ29zIEVudGVycHJpc2UgVHJpYWwiLCJpYXQiOiIyMDI2LTEwLTI5IiwibW9kdWxlcyI6WyJjYW52YXMiLCJwaW0iLCJqaXJhIiwicmFnIiwic2NoZWR1bGUiLCJhdWRpdCJdLCJzZWF0cyI6NTAsInRlcm1fZGF5cyI6NjAsInRyaWFsIjp0cnVlfQ.ovSRoVxez65COM4zzyVnNKrZ5chxofIqcyVtCWYq-ExX5KLt6vb8JrBHDPW21ygMCTAKXm63sMLVmVWZ6jtQDQ', 50, '', '["canvas","pim","jira","rag","schedule","audit"]', 1)
 ON CONFLICT (id) DO NOTHING;
 

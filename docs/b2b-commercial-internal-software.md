@@ -63,9 +63,20 @@ python tools/vendor/license_tool.py issue \
     --modules canvas,pim,jira,rag,schedule,audit \
     --out licenses/ACME-2027.lic
 
+# Cấp bản dùng thử 60 ngày (hạn tính từ lần kích hoạt đầu tiên của khách;
+# --expiry là tuỳ chọn, chỉ dùng khi muốn đặt thêm hạn cứng tuyệt đối)
+python tools/vendor/license_tool.py issue \
+    --trial --days 60 --customer "ACME Manufacturing" \
+    --seats 50 --modules canvas,pim,jira,rag,schedule,audit \
+    --out licenses/ACME-trial.lic
+
 # Kiểm tra trước khi gửi
 python tools/vendor/license_tool.py inspect licenses/ACME-2027.lic
 ```
+
+- Trial key chứa `trial: true` + `term_days`, được ký nên khách không sửa được.
+  Mỗi khách chỉ nên nhận **một** trial (tool chặn phát lần 2 trừ khi `--force-trial`).
+- Cùng một trial key kích hoạt lại **không** kéo dài thời gian thử.
 
 - Bản khách hàng **chỉ chứa public key**; không có `tools/vendor/`.
 - Mọi lần phát hành được ghi vào `tools/vendor/issued_licenses.csv` (không commit) để đối soát doanh thu.
