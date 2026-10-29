@@ -1394,11 +1394,18 @@ body.sidebar-collapsed .logout-btn {
   border-color: #ef4444;
 }
 
-/* Seamless full-bleed layout for Schedule View (No card gaps / margins) */
+/* Seamless full-bleed layout for Schedule View & AI Chatbot View (No card gaps / margins) */
 body.view-schedule-active .page,
-.page:has(#viewSchedule:not([hidden])) {
+body.view-chat-active .page,
+.page:has(#viewSchedule:not([hidden])),
+.page:has(#sectionChat:not([hidden])) {
   padding: 0 !important;
   max-width: 100% !important;
   width: 100% !important;
   margin: 0 !important;
+}
+
+body.canvas-docked-open.view-chat-active .page,
+body.canvas-docked-open .page:has(#sectionChat:not([hidden])) {
+  padding: 0 !important;
 }
