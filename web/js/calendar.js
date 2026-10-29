@@ -346,10 +346,10 @@ var schedEditingId = null;
 })();
 
 function authHeaders(){
-  return (loggedInUser && loggedInUser.token) ? { "Authorization": "Bearer " + loggedInUser.token } : {};
+  return (typeof getAuthHeaders === "function") ? getAuthHeaders() : {};
 }
 function apiScheduleGet(){
-  return fetch("/api/schedule", { headers: authHeaders(), cache: "no-store" }).then(function(r){
+  return fetch("/api/schedule", { headers: authHeaders(), credentials: "same-origin", cache: "no-store" }).then(function(r){
     if(r.status === 401){ handleAuthExpired(); return { ok: false, events: [], members: [] }; }
     return r.json();
   });

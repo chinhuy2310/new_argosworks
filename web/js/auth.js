@@ -1,3 +1,16 @@
+// Purge residual tokens on startup to enforce HttpOnly cookie security
+(function(){
+  try {
+    localStorage.removeItem("argosToken");
+    sessionStorage.removeItem("argosToken");
+    localStorage.removeItem("jarvisToken");
+    sessionStorage.removeItem("jarvisToken");
+    localStorage.removeItem("argos_token");
+    sessionStorage.removeItem("argos_token");
+    localStorage.removeItem("argosCsrfToken");
+  } catch(e){}
+})();
+
 // auth.js
 var loginBtn = document.getElementById("loginBtn");
 var userChip = document.getElementById("userChip");
@@ -268,6 +281,8 @@ function applyLogout(){
   try{ sessionStorage.removeItem("argos_token"); }catch(e){}
   try{ localStorage.removeItem("argosToken"); }catch(e){}
   try{ sessionStorage.removeItem("argosToken"); }catch(e){}
+  try{ localStorage.removeItem("jarvisToken"); }catch(e){}
+  try{ sessionStorage.removeItem("jarvisToken"); }catch(e){}
   try{ localStorage.removeItem("argosCsrfToken"); }catch(e){}
   try{ sessionStorage.removeItem("argosCsrfToken"); }catch(e){}
   try{ document.cookie = "argos_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;"; }catch(e){}
@@ -411,13 +426,9 @@ idForm.addEventListener("submit", function(e){
       isAdmin: res.user.isAdmin
     };
     try {
-      if(res.token){
-        sessionStorage.setItem("argosToken", res.token);
-        localStorage.setItem("argosToken", res.token);
-      }
       if(res.csrfToken){
         sessionStorage.setItem("argosCsrfToken", res.csrfToken);
-        localStorage.setItem("argosCsrfToken", res.csrfToken);
+        try { localStorage.removeItem("argosCsrfToken"); } catch(e){}
       }
       sessionStorage.setItem("argosUser", JSON.stringify(userData));
       localStorage.setItem("argosUser", JSON.stringify(userData));
@@ -691,7 +702,7 @@ updateTopbarUserUI(null);
     if (res && res.ok && res.user) {
       if (res.csrfToken) {
         sessionStorage.setItem("argosCsrfToken", res.csrfToken);
-        localStorage.setItem("argosCsrfToken", res.csrfToken);
+        try { localStorage.removeItem("argosCsrfToken"); } catch(e){}
       }
       applyLogin(res.user);
     } else {

@@ -251,10 +251,11 @@ def handle_account_login(handler, raw_body, ip):
     cookie_hdr = handler._make_auth_cookie_header(token)
     from middleware_security import generate_csrf_token
     csrf_token = generate_csrf_token(token)
-    csrf_cookie = ("Set-Cookie", f"argos_csrf={csrf_token}; Path=/; SameSite=Lax; Max-Age=86400")
-    handler._send_json(200, {
+    secure_suffix = "; Secure" if (hasattr(handler, "_is_secure") and handler._is_secure()) else ""
+    csrf_cookie = ("Set-Cookie", f"argos_csrf={csrf_token}; Path=/; SameSite=Lax; Max-Age=86400{secure_suffix}")
+
+    resp_body = {
         "ok": True,
-        "token": token,
         "csrfToken": csrf_token,
         "user": {
             "name": name,
@@ -266,7 +267,11 @@ def handle_account_login(handler, raw_body, ip):
             "isAdmin": is_adm,
             "role": user_role
         }
-    }, extra_headers=[cookie_hdr, csrf_cookie])
+    }
+    if os.environ.get("ARGOS_LOGIN_RETURN_TOKEN") in ("1", "true", "yes", "on"):
+        resp_body["token"] = token
+
+    handler._send_json(200, resp_body, extra_headers=[cookie_hdr, csrf_cookie])
 
 # ---- /api/account/logout (POST) — 세션 삭제 ----
 def handle_account_logout(handler, raw_body, ip):

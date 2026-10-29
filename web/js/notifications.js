@@ -661,9 +661,8 @@
 
     // Realtime SSE Notification Stream (Tức thì thay vì chờ 45 giây)
     function connectNotificationSSE(){
-      var token = (typeof getSessionToken === "function" ? getSessionToken() : "") ||
-                  (sessionStorage.getItem("argosToken") || localStorage.getItem("argosToken") || sessionStorage.getItem("jarvisToken") || localStorage.getItem("jarvisToken"));
-      if(!token) return;
+      var curUser = (typeof getCurrentUser === "function" ? getCurrentUser() : null) || window.loggedInUser;
+      if(!curUser) return;
 
       var url = "/api/notifications/stream";
       var evtSource = new EventSource(url);

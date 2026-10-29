@@ -3,6 +3,11 @@
   try {
     localStorage.removeItem("argos_token");
     sessionStorage.removeItem("argos_token");
+    localStorage.removeItem("argosToken");
+    sessionStorage.removeItem("argosToken");
+    localStorage.removeItem("jarvisToken");
+    sessionStorage.removeItem("jarvisToken");
+    localStorage.removeItem("argosCsrfToken");
     ["jarvisUser", "batonUser", "argosUser"].forEach(function(k) {
       var item = localStorage.getItem(k) || sessionStorage.getItem(k);
       if (item) {
@@ -69,7 +74,13 @@ function apiPostJson(path, body){
     "Content-Type": "application/json",
     "Cache-Control": "no-store"
   };
-  var csrfToken = sessionStorage.getItem("argosCsrfToken") || localStorage.getItem("argosCsrfToken");
+  var csrfToken = sessionStorage.getItem("argosCsrfToken");
+  if(!csrfToken){
+    try {
+      var match = document.cookie.match(/argos_csrf=([^;]+)/);
+      if(match) csrfToken = decodeURIComponent(match[1]);
+    } catch(e){}
+  }
   if(!csrfToken){
     try {
       var match = document.cookie.match(/argos_csrf=([^;]+)/);
@@ -95,7 +106,7 @@ function apiPostJson(path, body){
           var csrfData = await csrfRes.json();
           if (csrfData && csrfData.ok && csrfData.csrfToken) {
             sessionStorage.setItem("argosCsrfToken", csrfData.csrfToken);
-            localStorage.setItem("argosCsrfToken", csrfData.csrfToken);
+            try { localStorage.removeItem("argosCsrfToken"); } catch(e){}
             headers["X-CSRF-Token"] = csrfData.csrfToken;
             var retryRes = await fetch(path, {
               method: "POST",
