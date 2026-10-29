@@ -9,6 +9,7 @@ from datetime import datetime
 
 from db import query, get_one, execute, transaction
 from config import DEFAULT_DEPARTMENTS
+from utils.logging import log_line
 
 _id_lock = threading.Lock()
 _save_lock = threading.Lock()
@@ -251,8 +252,8 @@ def find_record_by_key_or_code(key_or_code):
             )
             if jira_row and jira_row.get("raw_json"):
                 return json.loads(jira_row["raw_json"])
-        except Exception:
-            pass
+        except Exception as e:
+            log_line("[data_store] Error loading cached Jira issue raw_json:", e)
         return None
     r = rows[0]
     rec = {
@@ -687,8 +688,8 @@ def write_schedule(events):
                     # uses tuples. row[0] would raise KeyError on Postgres and the
                     # except below would silently drop the owner link.
                     owner_id = row["id"] if isinstance(row, dict) else row[0]
-            except Exception:
-                pass
+            except Exception as e:
+                log_line("[data_store] Error looking up schedule event owner_id:", e)
 
             cur.execute(
                 """INSERT INTO schedule_events(id, owner_id, owner_name, owner_dept_id, owner_email,

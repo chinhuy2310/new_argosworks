@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Logging & Observability — Unhandled Exception Logging (5.2)
+
+- Replaced silent `except Exception: pass` blocks across `server/services/auth.py`, `server/services/data_store.py`, `server/services/jira_client.py`, `server/handlers/auth_handlers.py`, and `server/handlers/chat_handler.py` with structured `log_line` error messages, eliminating silent failure swallowing while keeping normal control flow intact.
+
 ### Concurrency — Multi-Worker Unique Record ID Allocator (5.1)
 
 - Added `id_allocator` table and migration v7 across SQLite and PostgreSQL schemas to ensure globally unique, monotonic 64-bit integer record IDs in multi-worker production deployments (e.g. Gunicorn / Uvicorn).
