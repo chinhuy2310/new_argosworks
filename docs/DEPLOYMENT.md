@@ -82,8 +82,9 @@ curl -k https://localhost/api/health        # through Caddy
 
 Only Caddy publishes reachable host ports (80/443); PostgreSQL is bound to
 `127.0.0.1:5432` and the app container is only reachable on the internal network
-as `argos-works:8080`. That is why `TRUSTED_PROXIES` defaults to the Docker bridge
-range — the app only honours `X-Forwarded-For` from the proxy.
+as `argos-works:8080`. That is why `docker-compose.yml` isolates services in an `argos_net` network
+(`172.28.0.0/24`) and sets `TRUSTED_PROXIES` to this dedicated subnet — the app only honours
+`X-Forwarded-For` from the proxy, preventing IP spoofing from other containers or host networks.
 
 Then open `https://localhost` (`https://<DOMAIN>` when `DOMAIN` is set). A fresh
 instance redirects to `/setup`, which needs:

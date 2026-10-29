@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security & Deployment — Narrow Default Trusted Proxies & Compose Network Isolation (7.3)
+
+- **BREAKING**: Narrowed `DEFAULT_TRUSTED_PROXIES` in `server/handler.py` from `127.0.0.1,::1,172.16.0.0/12` to loopback only (`127.0.0.1,::1`). Upgrading deployments running behind an external reverse proxy on a non-loopback IP must explicitly set `TRUSTED_PROXIES` in `.env` to their reverse proxy's IP.
+- Isolated all Docker Compose services (`argos-works`, `caddy`, `postgres`) into a dedicated `argos_net` network with subnet `${ARGOS_NET_SUBNET:-172.28.0.0/24}`, preventing IP spoofing from adjacent Docker containers or enterprise LAN hosts.
+- Added startup validation warning if `TRUSTED_PROXIES` contains `0.0.0.0` or an overly broad CIDR range (prefix length <= 12).
+
 ### Maintenance & Dual-Engine Reliability — Clean Dead Regex and Enforce Replace PK Mapping Contract (7.2)
 
 - Removed dead unused _RE_INSERT_OR_REPLACE regex in server/db.py, standardizing SQL translation around _RE_INSERT_OR_REPLACE_HEAD.
