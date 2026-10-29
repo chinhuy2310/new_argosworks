@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security — Identifier-Based RBAC Tightening (2.4)
+
+- Removed dangerous username matching against assignee display name (`u_username == rec_assignee`) in `can_view_record` and `can_modify_record`. Access is strictly bound to immutable user IDs, emails, or same-department name matching.
+- Added migration/maintenance script `scripts/backfill_assignee_ids.py` to safely backfill missing `assignee_id`s in `records`.
+
 ### Security — Department-Isolated Assignee Resolution (2.3)
 
 - Fixed cross-department assignee leakage in `server/services/data_store.py::append_record`. If an assignee does not match within the target department, global fallback requires an unambiguous single candidate (`LIMIT 2`). If multiple users share the same name across other departments, `assignee_id` is left `NULL` to prevent unauthorized cross-department access to private records.

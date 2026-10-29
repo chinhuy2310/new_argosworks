@@ -110,3 +110,42 @@ def test_assignee_department_isolation_and_ambiguity(tmp_db):
     append_record(rec_unique)
     saved_unique = get_record_by_id(9002)
     assert saved_unique["assignee_id"] == 203
+
+
+def test_username_cannot_impersonate_display_name_in_rbac(tmp_db):
+    from services.auth import can_view_record, can_modify_record
+
+    # Target record owned by User A whose display name is 'Kim' (id=301) in dept1
+    rec_private = {
+        "id": 8888,
+        "dept_id": "dept1",
+        "title": "Private record for display name Kim",
+        "assignee_name": "Kim",
+        "assignee_id": 301,
+        "is_private": 1
+    }
+
+    # Impersonator user B in dept2 whose USERNAME is 'kim' (display name 'Attacker', id=302)
+    attacker_session = {
+        "id": 302,
+        "name": "Attacker",
+        "username": "kim",
+        "org": "dept2",
+        "role": "member"
+    }
+
+    # Legitimate user A in dept1
+    legit_session = {
+        "id": 301,
+        "name": "Kim",
+        "username": "kim_user",
+        "org": "dept1",
+        "role": "member"
+    }
+
+    assert can_view_record(legit_session, rec_private) is True
+    assert can_modify_record(legit_session, rec_private) is True
+
+    # Attacker with username == 'kim' MUST NOT be allowed to view or modify
+    assert can_view_record(attacker_session, rec_private) is False
+    assert can_modify_record(attacker_session, rec_private) is False
