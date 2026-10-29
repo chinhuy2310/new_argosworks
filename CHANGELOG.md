@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security — SSRF DNS Rebinding & CGNAT Protection (Phase 4)
+
+- Added `resolve_and_validate` and `safe_urlopen` in `server/utils/ssrf.py` to eliminate Time-of-Check to Time-of-Use (TOCTOU) DNS rebinding attacks. Outgoing requests connect directly to pre-validated IP addresses while preserving original hostname SNI and strict TLS certificate verification.
+- Intercepted all HTTP redirects via custom `_SafeRedirectHandler` ensuring redirect locations undergo recursive SSRF validation before follow-through.
+- Upgraded IP validation logic to use `not ip.is_global`, effectively closing gaps for Carrier-Grade NAT (CGNAT `100.64.0.0/10`) and special routing ranges.
+- Applied `safe_urlopen` across user/admin-controlled URL handlers in `server/services/webhook_dispatcher.py` and `server/handlers/settings_handler.py`.
+
 ### Tests — Offline SSRF Validator Mocking (3.6)
 
 - Mocked `socket.getaddrinfo` in `tests/test_unit_utils.py::TestSSRFValidator::test_valid_https_url` to allow the test suite to execute reliably in offline and air-gapped environments without external DNS dependencies.

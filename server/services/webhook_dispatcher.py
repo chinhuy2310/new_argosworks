@@ -10,7 +10,7 @@ import urllib.request
 import urllib.parse
 from typing import Dict, Any, Optional
 
-from utils.ssrf import validate_external_url
+from utils.ssrf import validate_external_url, safe_urlopen
 
 _ALLOWED_SCHEMES = ("http", "https")
 
@@ -76,7 +76,7 @@ def _send_http_post(url: str, payload: Dict[str, Any], timeout: int = 5) -> Opti
             },
             method="POST"
         )
-        with _OPENER.open(req, timeout=timeout) as resp:
+        with safe_urlopen(req, timeout=timeout, allow_private=False, require_https=False) as resp:
             pass
         return None
     except Exception as e:
