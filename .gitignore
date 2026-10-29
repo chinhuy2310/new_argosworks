@@ -40,7 +40,7 @@ logs/
 scratch/
 filelist.txt
 dist/
-vendor/
+/vendor/
 
 # Python Cache & Virtual Environments
 __pycache__/
