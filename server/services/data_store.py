@@ -535,6 +535,14 @@ def delete_record(record_id):
     """로컬 레코드 및 관련 댓글, 첨부파일, Jira 매핑 데이터를 삭제한다."""
     def _do_delete(conn):
         cur = conn.cursor()
+        # Detach sub-tasks first: a dangling parent_key would make the hierarchy
+        # chain render a phantom "Jira 이슈" node for a card that no longer exists.
+        cur.execute(
+            "UPDATE records SET parent_key = '' WHERE parent_key = "
+            "(SELECT card_code FROM records WHERE id = ?)",
+            (record_id,),
+        )
+        cur.execute("UPDATE records SET parent_key = '' WHERE parent_key = ?", (str(record_id),))
         cur.execute("DELETE FROM record_comments WHERE record_id = ?", (record_id,))
         cur.execute("DELETE FROM record_attachments WHERE record_id = ?", (record_id,))
         cur.execute("DELETE FROM record_jira WHERE record_id = ?", (record_id,))

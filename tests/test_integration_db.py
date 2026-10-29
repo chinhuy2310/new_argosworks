@@ -262,3 +262,25 @@ class TestSQLTranslation:
         # '?' in string literal should be preserved, only bare ? replaced
         assert "'?'" in result
         assert result.count("%s") == 1
+
+
+def test_delete_record_detaches_children(tmp_db):
+    """Audit F-0008: deleting a parent must clear children's parent_key."""
+    from services.data_store import delete_record
+
+    tmp_db.execute(
+        """INSERT INTO records (id, dept_id, category, title, assignee_name, card_code, status)
+           VALUES (88001, 'dev', '개발', 'Parent', 'A', 'DEV-88001', '진행')"""
+    )
+    tmp_db.execute(
+        """INSERT INTO records (id, dept_id, category, title, assignee_name, card_code, status, parent_key)
+           VALUES (88002, 'dev', '개발', 'Child', 'B', 'DEV-88002', '진행', 'DEV-88001')"""
+    )
+
+    delete_record(88001)
+
+    child = tmp_db.get_one("SELECT parent_key FROM records WHERE id = 88002")
+    assert child is not None
+    assert (child["parent_key"] or "") == ""
+    assert tmp_db.get_one("SELECT id FROM records WHERE id = 88001") is None
+

@@ -154,7 +154,7 @@ def encrypt_secret(val: str) -> str:
     """
     if not val or not isinstance(val, str):
         return val or ""
-    val_str = val.strip()
+    val_str = val
     if not val_str:
         return ""
     if is_encrypted(val_str):
@@ -181,7 +181,7 @@ def decrypt_secret(val: str) -> str:
     """
     if not val or not isinstance(val, str):
         return val or ""
-    val_str = val.strip()
+    val_str = val
     if not is_encrypted(val_str):
         return val_str
 

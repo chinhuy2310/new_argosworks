@@ -153,6 +153,12 @@ def handle_post_report_template_upload(handler, raw_body, ip):
         handler._send_json(400, {"ok": False, "error": "업로드된 엑셀 파일 데이터가 없습니다."})
         return
 
+    # .xlsx is a ZIP container; reject anything else before handing it to openpyxl
+    # (junk bodies otherwise burn seconds inside the parser, audit F-0003).
+    if len(file_bytes) < 4 or not file_bytes.startswith(b"PK\x03\x04"):
+        handler._send_json(400, {"ok": False, "error": "유효한 .xlsx 파일이 아닙니다."})
+        return
+
     from services.sheets_reporter import save_custom_template
     res = save_custom_template(file_bytes)
     status_code = 200 if res.get("ok") else 400

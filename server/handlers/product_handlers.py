@@ -5,6 +5,7 @@ from datetime import datetime
 from services.data_store import read_products, write_products, _save_lock
 from utils.logging import access_log
 from config import PRODUCT_ATTACH_DIR
+from utils.http_body import parse_json_dict, as_text
 
 def handle_product_save(handler, raw_body, ip):
     session = handler._get_session_or_401()
@@ -22,11 +23,14 @@ def handle_product_save(handler, raw_body, ip):
         return
 
     try:
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
+        payload, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청 본문"})
         return
-    mode = (payload.get("mode") or "").strip()
+    mode = as_text(payload.get("mode"))
     if mode not in ("create", "edit"):
         handler._send_json(400, {"ok": False, "error": "mode는 create 또는 edit이어야 합니다."})
         return
@@ -188,12 +192,15 @@ def handle_product_attachment_delete(handler, raw_body, ip):
         return
 
     try:
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
+        payload, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청 본문"})
         return
-    pid = (payload.get("id") or "").strip()
-    fname = (payload.get("name") or "").strip()
+    pid = as_text(payload.get("id"))
+    fname = as_text(payload.get("name"))
     with _save_lock:
         products = read_products()
         product = next((p for p in products if p.get("id") == pid), None)
@@ -258,13 +265,16 @@ def handle_product_category_save(handler, raw_body, ip):
     if session is None:
         return
     try:
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
+        payload, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청 본문"})
         return
     
-    cat_id = (payload.get("id") or "").strip()
-    name = (payload.get("name") or "").strip()
+    cat_id = as_text(payload.get("id"))
+    name = as_text(payload.get("name"))
     spec_template = payload.get("spec_template") or []
     
     if not isinstance(spec_template, list):
@@ -298,12 +308,15 @@ def handle_product_category_delete(handler, raw_body, ip):
     if session is None:
         return
     try:
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
+        payload, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청 본문"})
         return
     
-    cat_id = (payload.get("id") or "").strip()
+    cat_id = as_text(payload.get("id"))
     if not cat_id:
         handler._send_json(400, {"ok": False, "error": "카테고리 ID가 필요합니다."})
         return

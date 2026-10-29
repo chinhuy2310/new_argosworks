@@ -24,6 +24,7 @@ from services.vector_store import (
 from services.auth import is_admin_user
 from services.jira_client import _urlopen as jira_urlopen
 from utils.crypto import encrypt_secret, decrypt_secret
+from utils.http_body import parse_json_dict
 
 ENV_PATH = os.path.join(BASE_DIR, ".env")
 
@@ -265,7 +266,10 @@ def handle_post_settings(handler, raw_body, ip):
         return
 
     try:
-        body = json.loads(raw_body.decode("utf-8"))
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 JSON 형식입니다."})
         return
@@ -274,6 +278,18 @@ def handle_post_settings(handler, raw_body, ip):
     if not isinstance(updates, dict):
         handler._send_json(400, {"ok": False, "error": "설정 데이터는 객체 형태여야 합니다."})
         return
+
+    # Environment values must be NUL-free and bounded: os.environ raises
+    # ValueError for both, which would surface as an unhandled 500 (audit F-0003).
+    for _key, _value in updates.items():
+        _text_key = str(_key)
+        _text_val = _value if isinstance(_value, str) else str(_value)
+        if "\x00" in _text_key or "\x00" in _text_val or len(_text_val) > 20000:
+            handler._send_json(400, {
+                "ok": False,
+                "error": f"설정 값이 올바르지 않습니다: {_text_key}",
+            })
+            return
 
     cfg = handler.cfg
 
@@ -831,7 +847,10 @@ def handle_jira_inspect(handler, raw_body, ip):
         return
 
     try:
-        body = json.loads(raw_body.decode("utf-8") or "{}")
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
 

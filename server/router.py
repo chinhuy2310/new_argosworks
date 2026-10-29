@@ -41,6 +41,7 @@ from services.vector_store import (
 )
 from utils.logging import log_line
 from services.audit_logger import get_audit_failure_count, _record_audit_failure
+from utils.http_body import parse_json_dict
 
 
 def _audit(session, ip, action, target_type, target_id, details=None):
@@ -551,7 +552,10 @@ def handle_post_notification_read(handler, raw_body, ip):
     if not session:
         return
     try:
-        body = json.loads(raw_body.decode('utf-8')) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
     notif_id = body.get("id", "")
@@ -610,7 +614,10 @@ def handle_post_vector_sync(handler, raw_body, ip):
     body = {}
     if raw_body:
         try:
-            body = json.loads(raw_body.decode('utf-8'))
+            body, body_err = parse_json_dict(raw_body)
+            if body_err:
+                handler._send_json(400, {"ok": False, "error": body_err})
+                return
         except Exception:
             body = {}
 
@@ -882,7 +889,10 @@ def handle_assign_schedule_task(handler, raw_body, ip):
     if session is None:
         return
     try:
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
+        payload, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청"})
         return
@@ -990,7 +1000,10 @@ def handle_unassign_schedule_task(handler, raw_body, ip):
     if session is None:
         return
     try:
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
+        payload, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청"})
         return
@@ -1377,7 +1390,10 @@ def handle_post_issue_comment(handler, raw_body, ip):
         handler._send_json(403, {"ok": False, "error": "읽기 전용(Viewer) 권한 사용자는 댓글을 작성할 수 없습니다."})
         return
     try:
-        body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
     issue_key = (body.get("issue_key") or body.get("key") or "").strip()
@@ -1477,7 +1493,10 @@ def handle_post_issue_transition(handler, raw_body, ip):
     if not session:
         return
     try:
-        body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
     issue_key = (body.get("issue_key") or body.get("key") or "").strip()
@@ -1526,6 +1545,11 @@ def handle_post_issue_transition(handler, raw_body, ip):
         except Exception:
             pass
         handler._send_json(200, {"ok": True, "issue_key": issue_key, "status": status, "note": "로컬 이슈 상태가 변경되었습니다."})
+        return
+
+    from services.auth import can_write_data
+    if not can_write_data(session):
+        handler._send_json(403, {"ok": False, "error": "조회 전용(Viewer) 권한의 사용자는 상태를 변경할 수 없습니다."})
         return
 
     ok, note = transition_jira_issue(handler.cfg, issue_key, status)
@@ -1721,7 +1745,10 @@ def handle_delete_record_attachment(handler, raw_body, ip):
     if not session:
         return
     try:
-        body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
     key = (body.get("key") or body.get("issue_key") or body.get("card_code") or "").strip()
@@ -1738,7 +1765,12 @@ def handle_delete_record_attachment(handler, raw_body, ip):
         handler._send_json(403, {"ok": False, "error": "작업 카드 삭제 권한이 없습니다. 관리자(Admin) 또는 소속 부서 관리자(Manager)만 삭제할 수 있습니다."})
         return
     from services.data_store import delete_record_attachment
-    ok, err = delete_record_attachment(rec["id"], int(attach_id))
+    try:
+        attach_int = int(attach_id)
+    except (TypeError, ValueError):
+        handler._send_json(400, {"ok": False, "error": "올바른 첨부파일 ID가 아닙니다."})
+        return
+    ok, err = delete_record_attachment(rec["id"], attach_int)
     if not ok:
         handler._send_json(400, {"ok": False, "error": err or "첨부파일 삭제 실패"})
         return
@@ -1757,7 +1789,10 @@ def handle_post_record_update(handler, raw_body, ip):
         return
 
     try:
-        body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
 
@@ -1887,7 +1922,10 @@ def handle_delete_record(handler, raw_body, ip):
         return
 
     try:
-        body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
     record_id_raw = body.get("id") or body.get("record_id") or body.get("key") or ""
@@ -2195,7 +2233,10 @@ def handle_push_record_jira(handler, raw_body, ip):
     if not session:
         return
     try:
-        body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
     record_id_raw = body.get("id") or body.get("record_id") or body.get("key") or ""
@@ -2305,6 +2346,22 @@ def handle_push_record_jira(handler, raw_body, ip):
 
 
 # --- Admin Backup & Disaster Recovery Handlers ---
+def _safe_backup_filename(name):
+    """Backup filenames are server-generated: printable ASCII, no separators.
+
+    Rejecting control characters here prevents ValueError ("embedded null byte")
+    from bubbling out of os/tarfile as an unhandled 500 (audit F-0003).
+    """
+    name = (name or "").strip() if isinstance(name, str) else ""
+    if not name or len(name) > 255:
+        return ""
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in name):
+        return ""
+    if "/" in name or "\\" in name or ".." in name:
+        return ""
+    return name
+
+
 def handle_get_admin_backups(handler, parsed, ip):
     session = handler._get_session_or_401()
     if not session:
@@ -2325,11 +2382,9 @@ def handle_get_admin_backups(handler, parsed, ip):
             "https_active": handler._is_secure(),
             "http_only_cookie": True,
             "optimistic_locking": True,
-            "db_path": db_path,
             "db_size": db_size,
             "backup_count": len(backups),
             "backup_dir": current_bdir,
-            "default_backup_dir": default_bdir,
             "is_custom_backup_dir": (current_bdir != default_bdir)
         }
         handler._send_json(200, {"ok": True, "backups": backups, "security": security_info})
@@ -2345,7 +2400,10 @@ def handle_post_admin_backup_config(handler, raw_body, ip):
         handler._send_json(403, {"ok": False, "error": "관리자(Admin) 권한이 필요합니다."})
         return
     try:
-        body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
     new_dir = (body.get("backup_dir") or "").strip()
@@ -2396,7 +2454,10 @@ def handle_post_admin_backup_create(handler, raw_body, ip):
         handler._send_json(403, {"ok": False, "error": "관리자(Admin) 권한이 필요합니다."})
         return
     try:
-        body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
     note = (body.get("note") or f"{session.get('name', '관리자')} 수동 백업").strip()
@@ -2418,12 +2479,15 @@ def handle_post_admin_backup_restore(handler, raw_body, ip):
         handler._send_json(403, {"ok": False, "error": "관리자(Admin) 권한이 필요합니다."})
         return
     try:
-        body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
-    filename = (body.get("filename") or "").strip()
+    filename = _safe_backup_filename(body.get("filename"))
     if not filename:
-        handler._send_json(400, {"ok": False, "error": "복원할 백업 파일명이 필요합니다."})
+        handler._send_json(400, {"ok": False, "error": "올바른 백업 파일명이 필요합니다."})
         return
     try:
         from services.backup_manager import restore_backup
@@ -2443,9 +2507,9 @@ def handle_get_admin_backup_download(handler, parsed, ip):
         handler._send_json(403, {"ok": False, "error": "관리자(Admin) 권한이 필요합니다."})
         return
     qs = parse_qs(parsed.query)
-    filename = (qs.get("filename", [""])[0] or "").strip()
+    filename = _safe_backup_filename(qs.get("filename", [""])[0])
     if not filename:
-        handler._send_json(400, {"ok": False, "error": "다운로드할 파일명이 필요합니다."})
+        handler._send_json(400, {"ok": False, "error": "올바른 백업 파일명이 필요합니다."})
         return
     from services.backup_manager import get_backup_file_path
     fpath = get_backup_file_path(filename)
@@ -2580,7 +2644,10 @@ def handle_post_admin_license_activate(handler, raw_body, ip):
         handler._send_json(403, {"ok": False, "error": "관리자(Admin) 권한이 필요합니다."})
         return
     try:
-        body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
     key = (body.get("license_key") or body.get("key") or "").strip()
@@ -2656,7 +2723,10 @@ def handle_post_admin_user_create(handler, raw_body, ip):
         return
 
     try:
-        body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
 
@@ -2714,7 +2784,10 @@ def handle_post_admin_user_update(handler, raw_body, ip):
         handler._send_json(403, {"ok": False, "error": "관리자(Admin) 권한이 필요합니다."})
         return
     try:
-        body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
     user_id = body.get("id")
@@ -2803,9 +2876,10 @@ def handle_post_admin_user_update(handler, raw_body, ip):
         execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", tuple(params))
         from services.auth import delete_all_user_sessions
         role_changed = (role is not None and role != target_user.get("role"))
+        dept_changed = bool(dept_id) and dept_id != (target_user.get("dept_id") or "")
         disabled_changed = (disabled_flag is not None and disabled_flag != int(target_user.get("disabled") or 0))
         pwd_changed = bool(new_password)
-        if role_changed or disabled_changed or pwd_changed:
+        if role_changed or disabled_changed or pwd_changed or dept_changed:
             if is_self:
                 cur_token = handler._extract_token() if hasattr(handler, "_extract_token") else None
                 if cur_token:
@@ -2829,7 +2903,10 @@ def handle_post_admin_user_delete(handler, raw_body, ip):
         handler._send_json(403, {"ok": False, "error": "관리자(Admin) 권한이 필요합니다."})
         return
     try:
-        body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
     user_id = body.get("id")
@@ -2872,7 +2949,10 @@ def handle_post_admin_user_approve(handler, raw_body, ip):
         return
 
     try:
-        body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
 
@@ -2911,7 +2991,10 @@ def handle_post_admin_user_reject(handler, raw_body, ip):
         return
 
     try:
-        body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         body = {}
 

@@ -182,9 +182,20 @@ python tools/vendor/license_tool.py issue \
     --customer "ACME" --seats 40 --expiry 2027-12-31 \
     --modules canvas,pim,jira,rag,schedule,audit --out licenses/ACME-2027.lic
 
+# [Vendor 전용] 60일 체험판 (최초 활성화일부터 기산, 기본적으로 절대 만료일 없음)
+python tools/vendor/license_tool.py issue \
+    --trial --days 60 --customer "ACME" --seats 50 \
+    --modules canvas,pim,jira,rag,schedule,audit --out licenses/ACME-trial.lic
+
 # [고객] 오프라인 활성화 (UI 미사용 시)
 python scripts/apply_license.py licenses/trial-50.lic --db data/argos.db
 ```
+
+- 체험판(trial)은 payload에 `trial: true` + `term_days: N`이 서명되어 있으며, 실제 만료일은
+  **최초 활성화일 + N일**입니다(키에 `expiry`가 함께 서명된 경우에만 그 날짜가 상한이 됩니다).
+  같은 키를 다시 활성화해도 기간이 연장되지 않고, 시스템 시계를 되돌려도
+  마지막으로 확인된 시각(`license_info.last_seen_ts`)을 기준으로 계산되어 연장되지 않습니다.
+  자세한 내용은 `docs/ADMIN_GUIDE.md` §5.2b 참고.
 
 ## 테스트 & CI
 

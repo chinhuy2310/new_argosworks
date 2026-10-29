@@ -162,6 +162,7 @@ Cách dùng: tick từng mục khi hoàn thành. Ưu tiên **P0 → P1 → P2**.
 - [x] Chặn tạo/duyệt user khi vượt số ghế hoặc license không hợp lệ.
 - [x] Kích hoạt **offline**: dán key trong UI hoặc `python scripts/apply_license.py <file>.lic`.
 - [x] Cảnh báo trước ngày hết hạn (30 ngày); hết hạn chuyển chỉ-đọc, **không** khoá/xoá dữ liệu.
+- [x] Trial licence có thời hạn `term_days` (mặc định 60 ngày) tính **từ lần kích hoạt đầu tiên**, neo `license_info.activated_at`, không cần hạn cứng; kích hoạt lại cùng key hoặc lùi đồng hồ hệ thống đều **không** kéo dài (`last_seen_ts` high-water mark).
 
 ### P2.3 White-label và i18n
 

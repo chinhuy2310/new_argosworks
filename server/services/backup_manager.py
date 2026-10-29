@@ -114,10 +114,11 @@ def update_backup_config(new_dir):
 
     active_dir = get_backup_dir()
     default_dir = os.path.normpath(os.path.join(DATA_DIR, "backups"))
+    # Only the admin-configured value is returned; the resolved default path and
+    # any absolute server layout stay server-side (F-0006).
     return {
         "ok": True,
         "backup_dir": active_dir,
-        "default_dir": default_dir,
         "is_custom": (active_dir != default_dir)
     }
 

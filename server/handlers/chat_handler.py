@@ -12,6 +12,7 @@ from services.chat_store import (
 from services.chat_agent import run_agent_conversation
 from services.chat_tools import execute_tool
 from services.jira_client import jira_ongoing_records_for, get_cached_jira_records
+from utils.http_body import parse_json_dict
 
 
 def _chat_session_owned(chat_sess, session):
@@ -400,7 +401,10 @@ def handle_chat_stream(handler, raw_body, ip):
     user_org = session.get("org", "lab")
     
     try:
-        body = json.loads(raw_body.decode('utf-8')) if raw_body else {}
+        body, body_err = parse_json_dict(raw_body)
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
+            return
     except Exception:
         handler._send_json(400, {"ok": False, "error": "잘못된 요청 형식"})
         return
@@ -633,7 +637,10 @@ def handle_create_session(handler, raw_body, ip):
     body = {}
     if raw_body:
         try:
-            body = json.loads(raw_body.decode('utf-8'))
+            body, body_err = parse_json_dict(raw_body)
+            if body_err:
+                handler._send_json(400, {"ok": False, "error": body_err})
+                return
         except Exception as e:
             log_line("[Chat] Failed to parse request body in create_session:", e)
     title = body.get("title", "새로운 대화")
@@ -650,7 +657,10 @@ def handle_delete_session(handler, raw_body, ip):
     body = {}
     if raw_body:
         try:
-            body = json.loads(raw_body.decode('utf-8'))
+            body, body_err = parse_json_dict(raw_body)
+            if body_err:
+                handler._send_json(400, {"ok": False, "error": body_err})
+                return
         except Exception as e:
             log_line("[Chat] Failed to parse request body in create_session:", e)
     session_id = body.get("sessionId", "")
@@ -711,7 +721,10 @@ def handle_execute_action(handler, raw_body, ip):
     body = {}
     if raw_body:
         try:
-            body = json.loads(raw_body.decode('utf-8'))
+            body, body_err = parse_json_dict(raw_body)
+            if body_err:
+                handler._send_json(400, {"ok": False, "error": body_err})
+                return
         except Exception:
             handler._send_json(400, {"ok": False, "error": "잘못된 요청"})
             return
@@ -806,7 +819,10 @@ def handle_cancel_action(handler, raw_body, ip):
     body = {}
     if raw_body:
         try:
-            body = json.loads(raw_body.decode('utf-8'))
+            body, body_err = parse_json_dict(raw_body)
+            if body_err:
+                handler._send_json(400, {"ok": False, "error": body_err})
+                return
         except Exception:
             handler._send_json(400, {"ok": False, "error": "잘못된 요청"})
             return

@@ -276,6 +276,8 @@
       "canvas.due_date_invalid": "마감일은 시작일보다 빠를 수 없습니다.",
       // Schedule & Calendar
       "sched.sidebar_title": "캘린더",
+      "sched.login_required": "로그인 후 일정을 확인할 수 있습니다.",
+      "sched.search_no_results": "검색 결과가 없습니다.",
       "sched.btn_create": "일정등록",
       "sched.quick_my": "내 캘린더",
       "sched.quick_all": "전체",
@@ -707,6 +709,8 @@
       "canvas.due_date_invalid": "Due date cannot be earlier than start date.",
       // Schedule & Calendar
       "sched.sidebar_title": "Calendar",
+      "sched.login_required": "Please sign in to view the calendar.",
+      "sched.search_no_results": "No results found.",
       "sched.btn_create": "New Event",
       "sched.quick_my": "My Calendar",
       "sched.quick_all": "All",

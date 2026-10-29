@@ -281,3 +281,48 @@ class TestSQLInjectionDefense:
         # DB should still be intact
         from db import list_tables
         assert "users" in list_tables()
+
+
+# ============================================================================
+# 6. Governance regression tests (audit F-0011)
+# ============================================================================
+class TestGovernanceRegressionGaps:
+    """Mutations in admin delete rights and the rate-limit boundary must fail CI."""
+
+    def test_admin_can_delete_any_record(self, tmp_db):
+        from services.auth import can_delete_record
+
+        admin = {"id": 1, "name": "Root Admin", "role": "admin", "org": "mgmt"}
+        foreign_private = {
+            "id": 9001, "dept_id": "sales", "assignee_name": "Someone Else", "is_private": 1,
+        }
+
+        assert can_delete_record(admin, foreign_private) is True, "admin must delete any record"
+        assert can_delete_record({"id": 2, "name": "Member", "role": "member", "org": "dev"},
+                                 foreign_private) is False
+        assert can_delete_record({"id": 3, "name": "Viewer", "role": "viewer", "org": "sales"},
+                                 foreign_private) is False
+
+    def test_rate_limit_exact_boundary(self, tmp_db, monkeypatch):
+        import time as _time
+
+        from db import execute
+        from services.auth import check_login_rate_limit
+
+        monkeypatch.setenv("LOGIN_MAX_FAILURES_PER_IP_USER", "5")
+        monkeypatch.setenv("LOGIN_MAX_FAILURES_PER_ACCOUNT", "20")
+        monkeypatch.setenv("LOGIN_MAX_FAILURES_PER_IP", "30")
+
+        ip, ident = "203.0.113.77", "boundary_user"
+        now = _time.time()
+        insert = "INSERT INTO login_attempts (ip, identifier, failed_at) VALUES (?, ?, ?)"
+        for _ in range(4):
+            execute(insert, (ip, ident, now - 5))
+
+        allowed, _msg = check_login_rate_limit(ip, ident)
+        assert allowed is True, "4 failures (limit 5) must not be locked"
+
+        execute(insert, (ip, ident, now - 5))
+        allowed, _msg = check_login_rate_limit(ip, ident)
+        assert allowed is False, "the 5th failure must lock exactly at the >= boundary"
+

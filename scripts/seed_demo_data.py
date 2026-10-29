@@ -288,10 +288,10 @@ def run_seed():
         print(f"  [WARN] trial license not found ({trial_license_path}): {e}")
 
     cur.execute(
-        """INSERT INTO license_info (id, customer_name, license_key, max_seats, expiry_date, modules_json, is_active, updated_at)
-           VALUES (1, 'Argos Enterprise Trial', ?, 50, '2027-12-31',
-                   '[\"canvas\",\"pim\",\"jira\",\"rag\",\"schedule\",\"audit\"]', 1, ?)""",
-        (trial_license_key, now_iso)
+        """INSERT INTO license_info (id, customer_name, license_key, max_seats, expiry_date, modules_json, is_active, activated_at, updated_at)
+           VALUES (1, 'Argos Enterprise Trial', ?, 50, '',
+                   '[\"canvas\",\"pim\",\"jira\",\"rag\",\"schedule\",\"audit\"]', 1, ?, ?)""",
+        (trial_license_key, now_iso, now_iso)
     )
 
     audit_logs = [
