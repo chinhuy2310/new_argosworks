@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Reliability & Security — Database Engine Detection and Fail-Closed Scheme Validation (7.1)
+
+- Added _detect_engine() in server/db.py to parse DATABASE_URL via URL scheme, correctly recognizing postgres://, postgresql://, and postgresql+psycopg2:// as PostgreSQL, and normalising legacy postgres:// URLs for database drivers.
+- Enforced fail-closed behavior on unsupported database schemes (e.g. mysql://) by raising RuntimeError while strictly preventing connection strings, hosts, and database passwords from leaking into exception messages or logs.
+
 ### Security & Privacy — Failed Login Identifier Sanitization (6.3)
 
 - Implemented utils.text.login_label() to pseudonymize unknown login identifiers using keyed HMAC-SHA256 (non:<8 hex>/len=<len>) across ccess_log and udit_logs. This guarantees that if a user accidentally types or pastes their password into the username field, the plaintext password is never recorded in logs, audit tables, or SIEM systems.
