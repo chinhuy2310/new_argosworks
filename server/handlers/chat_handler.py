@@ -575,8 +575,8 @@ def handle_chat_stream(handler, raw_body, ip):
         # Track AI Token Usage per user & session
         try:
             from services.ai_usage_service import record_ai_usage
-            # Estimate prompt tokens from system_prompt + user_msg
-            p_tok = (len(system_prompt) + len(user_msg)) // 3
+            # Estimate prompt tokens from system_prompt + message
+            p_tok = (len(system_prompt) + len(message)) // 3
             c_tok = len(answer) // 3
             t_tok = p_tok + c_tok
             ai_prov = (custom_ai or {}).get("provider") or cfg.get("ai", {}).get("provider", "gemini")
@@ -592,8 +592,8 @@ def handle_chat_stream(handler, raw_body, ip):
                 session_id=session_id,
                 feature="chat"
             )
-        except Exception as _e:
-            pass
+        except Exception as e:
+            log_line("[AI Usage] record failed:", e)
 
         # Send completion event
         handler._send_sse_event({

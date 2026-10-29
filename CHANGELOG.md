@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Undefined name in chat_handler (1.3)
+
+- Renamed undefined `user_msg` to `message` in `server/handlers/chat_handler.py` so AI token metrics are correctly recorded into `ai_usage`. Replaced empty `except: pass` with `log_line` error reporting.
+
 ### Fixed — Undefined name in data_store (1.2)
 
 - Added missing `import os` in `server/services/data_store.py` and wrapped `delete_record_attachment` file removal with `safe_join` to prevent path traversal, with proper `log_line` error logging instead of empty pass.

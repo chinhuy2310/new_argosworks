@@ -71,3 +71,43 @@ def test_delete_record_attachment_removes_file_and_protects_traversal(tmp_path, 
     assert ok is True
     assert outside_file.exists()  # MUST NOT be removed
     assert len(query("SELECT * FROM record_attachments WHERE id = 2")) == 0
+
+
+def test_chat_stream_records_ai_usage_without_nameerror(tmp_db, monkeypatch):
+    from handlers.chat_handler import handle_chat_stream
+    from db import query
+
+    class MockChatHandler:
+        def __init__(self):
+            self.session = {"id": 1, "name": "alice", "org": "dev", "role": "member", "email": "alice@test.com"}
+            self.cfg = {"ai": {"provider": "gemini", "model": "gemini-1.5-flash"}}
+            self.events = []
+            self.wfile = MagicMock()
+
+        def _get_session_or_401(self):
+            return self.session
+
+        def _send_sse_headers(self):
+            pass
+
+        def _start_sse(self):
+            pass
+
+        def _end_sse(self):
+            pass
+
+        def _send_sse_event(self, data):
+            self.events.append(data)
+            return True
+
+    handler = MockChatHandler()
+    payload = json.dumps({"message": "Tell me a joke", "sessionId": ""}).encode()
+
+    with patch("handlers.chat_handler.run_agent_conversation", return_value="Why did the chicken cross the road?"):
+        handle_chat_stream(handler, payload, "127.0.0.1")
+
+    # In the bugged state, NameError on user_msg is swallowed by except: pass, so ai_usage table is EMPTY!
+    rows = query("SELECT * FROM ai_usage")
+    assert len(rows) == 1, "Expected ai_usage to record 1 row for chat completion"
+    assert rows[0]["total_tokens"] > 0
+    assert rows[0]["user_name"] == "alice"
