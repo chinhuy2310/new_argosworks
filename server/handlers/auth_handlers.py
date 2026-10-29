@@ -9,7 +9,7 @@ from services.auth import (
 from services.data_store import _save_lock, read_departments
 from db import get_one, transaction
 from utils.text import dept_by_id
-from utils.logging import access_log
+from utils.logging import access_log, log_line
 
 # ---- /api/account/check (POST) — 이름+소속이 이미 계정이 있는지(비번 물어볼지,
 # 새로 만들지) 로그인 폼이 미리 확인할 때 씀 ----

@@ -111,3 +111,27 @@ def test_chat_stream_records_ai_usage_without_nameerror(tmp_db, monkeypatch):
     assert len(rows) == 1, "Expected ai_usage to record 1 row for chat completion"
     assert rows[0]["total_tokens"] > 0
     assert rows[0]["user_name"] == "alice"
+
+
+def test_handle_account_register_handles_db_error_cleanly(monkeypatch, tmp_db):
+    from handlers.auth_handlers import handle_account_register
+    import config
+
+    handler = DummyHandler()
+    payload = json.dumps({
+        "username": "newuser123",
+        "name": "New User",
+        "org": "dev",
+        "email": "newuser@example.com",
+        "password": "Password123!"
+    }).encode()
+
+    monkeypatch.setattr(config, "load_config", lambda: {"allow_public_register": True})
+    with patch("services.license_manager.check_seat_available", return_value=(True, None)):
+        with patch("handlers.auth_handlers.create_user", side_effect=RuntimeError("unexpected DB crash")):
+            handle_account_register(handler, payload, "127.0.0.1")
+
+    assert len(handler.responses) == 1
+    status, data = handler.responses[0]
+    assert status == 500
+    assert "계정 등록 처리 중 오류가 발생했습니다" in data["error"]

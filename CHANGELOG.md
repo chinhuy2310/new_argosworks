@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Undefined name in auth_handlers (1.4)
+
+- Added missing `log_line` import to `server/handlers/auth_handlers.py` to ensure unhandled registration errors return a clean JSON 500 without crashing with `NameError`.
+
 ### Fixed — Undefined name in chat_handler (1.3)
 
 - Renamed undefined `user_msg` to `message` in `server/handlers/chat_handler.py` so AI token metrics are correctly recorded into `ai_usage`. Replaced empty `except: pass` with `log_line` error reporting.
