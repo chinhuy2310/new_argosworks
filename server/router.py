@@ -40,6 +40,7 @@ from services.vector_store import (
     get_vector_stats, check_vector_sync_status, delete_vector_document
 )
 from utils.logging import log_line
+from services.audit_logger import get_audit_failure_count, _record_audit_failure
 
 
 def _audit(session, ip, action, target_type, target_id, details=None):
@@ -47,8 +48,8 @@ def _audit(session, ip, action, target_type, target_id, details=None):
     try:
         from services.audit_logger import log_audit
         log_audit(session, ip, action, target_type, target_id, details=details)
-    except Exception:
-        pass
+    except Exception as e:
+        _record_audit_failure(action=action, target_type=target_type, target_id=target_id, err=e)
 
 
 # --- GET Handlers ---
