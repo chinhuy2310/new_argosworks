@@ -24,3 +24,35 @@ def test_pass_the_hash_prevented(tmp_db):
     # In secure state, passing stored_hash MUST return None because get_session hashes it again.
     sess_by_hash = get_session(stored_hash)
     assert sess_by_hash is None, "Pass-the-hash vulnerability: database token hash was accepted as a valid session token!"
+
+
+def test_session_absolute_timeout_enforced(tmp_db, monkeypatch):
+    import time
+    from services.auth import create_session, get_session, get_session_max_age_seconds
+    from db import get_one, execute
+
+    execute("INSERT OR IGNORE INTO departments(id, name) VALUES ('dev', 'Development')")
+    execute("INSERT OR IGNORE INTO users(id, name, username, dept_id, email, password_hash, salt, role, is_admin, disabled, status) "
+            "VALUES (101, 'Bob', 'bob', 'dev', 'bob@test.com', 'h', 's', 'member', 0, 0, 'active')")
+
+    current_time = 1700000000.0
+    monkeypatch.setattr(time, "time", lambda: current_time)
+
+    token = create_session(user_id=101, name_or_user_id="Bob", org="dev", email="bob@test.com")
+    assert token is not None
+
+    # Step 1: 1 day later (active session within sliding TTL and within max age)
+    current_time += 86400.0
+    sess = get_session(token)
+    assert sess is not None
+    assert sess["id"] == 101
+
+    # Step 2: 8 days from creation (exceeds default 7 days max age = 168 hours = 604800s)
+    # Even though last_active was just updated to 1 day ago (less than sliding TTL 24h if we set it recent):
+    current_time = 1700000000.0 + (8 * 86400.0)  # 8 days after created_at
+    # Fake last_active to be 5 minutes ago so sliding expiration does NOT trigger
+    execute("UPDATE sessions SET last_active_at = ? WHERE user_id = 101", (current_time - 300,))
+
+    # In fixed state, absolute max age MUST expire the session
+    sess_expired = get_session(token)
+    assert sess_expired is None, "Session exceeded max age (absolute TTL) but was not expired!"
