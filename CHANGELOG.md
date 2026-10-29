@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security — Static Path Traversal Prevention via safe_join (3.5)
+
+- Replaced `os.path.normpath` and `startswith(WEB_DIR)` static file routing check in `server/router.py` with `utils.file_ops.safe_join(WEB_DIR, clean)`, preventing sibling folder traversal attacks (e.g. `web_private`).
+
 ### Reliability — Atomic Transaction in append_record (3.4)
 
 - Wrapped record creation, attachments insertion, and Jira linkage in `server/services/data_store.py::append_record` inside a single atomic database transaction. Any failure during attachment or Jira insertion guarantees a complete rollback without leaving orphaned partial records.

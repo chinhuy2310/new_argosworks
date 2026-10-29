@@ -168,3 +168,33 @@ def test_notification_backfill_handles_first_block_error_without_nameerror(tmp_d
     # In fixed state: block 2 runs successfully and inserts the activity notification
     notifs = query("SELECT * FROM notifications WHERE type = 'comment'")
     assert len(notifs) >= 1
+
+
+def test_static_file_routing_blocks_sibling_traversal(tmp_path, monkeypatch):
+    from router import match_get
+    import router
+
+    base_dir = tmp_path
+    web_dir = base_dir / "web"
+    css_dir = web_dir / "css"
+    css_dir.mkdir(parents=True)
+    valid_file = css_dir / "main.css"
+    valid_file.write_text("body { color: black; }", encoding="utf-8")
+
+    sibling_dir = base_dir / "web_private"
+    sibling_dir.mkdir(parents=True)
+    secret_file = sibling_dir / "x.txt"
+    secret_file.write_text("SUPER_SECRET_DATA", encoding="utf-8")
+
+    monkeypatch.setattr(router, "WEB_DIR", str(web_dir))
+
+    # 1. Valid file returns ("file", path, mime)
+    res_type, path, mime = match_get("/css/main.css")
+    assert res_type == "file"
+    assert path == str(valid_file)
+
+    # 2. Path traversal to sibling directory web_private MUST be blocked and return "notfound"
+    # Even though /web_private starts with /web string prefix, safe_join detects escape from web_dir!
+    res_type_traversal, path_t, mime_t = match_get("/css/../../web_private/x.txt")
+    assert res_type_traversal == "notfound"
+    assert path_t is None

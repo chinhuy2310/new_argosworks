@@ -3077,8 +3077,9 @@ def match_get(path):
         # Security: prevent directory traversal
         clean = urllib.parse.unquote(path).lstrip("/")
         if clean.startswith(("css/", "js/", "assets/", "images/")):
-            safe_path = os.path.normpath(os.path.join(WEB_DIR, clean))
-            if safe_path.startswith(os.path.normpath(WEB_DIR)) and os.path.isfile(safe_path):
+            from utils.file_ops import safe_join
+            safe_path = safe_join(WEB_DIR, clean)
+            if safe_path and os.path.isfile(safe_path):
                 ct, _ = mimetypes.guess_type(safe_path)
                 return ("file", safe_path, ct or "application/octet-stream")
         return ("notfound", None, None)
