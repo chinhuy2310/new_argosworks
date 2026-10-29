@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Concurrency — Multi-Worker Unique Record ID Allocator (5.1)
+
+- Added `id_allocator` table and migration v7 across SQLite and PostgreSQL schemas to ensure globally unique, monotonic 64-bit integer record IDs in multi-worker production deployments (e.g. Gunicorn / Uvicorn).
+- Implemented atomic transaction allocation using `GREATEST` on PostgreSQL and `BEGIN IMMEDIATE` on SQLite, completely preventing primary key collision errors between concurrent workers.
+
 ### Security — SSRF DNS Rebinding & CGNAT Protection (Phase 4)
 
 - Added `resolve_and_validate` and `safe_urlopen` in `server/utils/ssrf.py` to eliminate Time-of-Check to Time-of-Use (TOCTOU) DNS rebinding attacks. Outgoing requests connect directly to pre-validated IP addresses while preserving original hostname SNI and strict TLS certificate verification.

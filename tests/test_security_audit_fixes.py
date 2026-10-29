@@ -244,3 +244,27 @@ def test_append_record_atomic_transaction_rollback(tmp_db):
 
     assert get_one("SELECT * FROM records WHERE id = ?", (rec_id,)) is not None
     assert get_one("SELECT * FROM record_jira WHERE record_id = ?", (rec_id,)) is not None
+
+
+def test_concurrent_multi_worker_id_allocator_no_collision(tmp_db):
+    import threading
+    from services.data_store import next_record_id
+
+    ids_t1 = []
+    ids_t2 = []
+
+    def worker(target_list, count):
+        for _ in range(count):
+            target_list.append(next_record_id())
+
+    t1 = threading.Thread(target=worker, args=(ids_t1, 500))
+    t2 = threading.Thread(target=worker, args=(ids_t2, 500))
+
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    total_allocated = ids_t1 + ids_t2
+    assert len(total_allocated) == 1000
+    assert len(set(total_allocated)) == 1000, "Collision detected in concurrently allocated record IDs!"

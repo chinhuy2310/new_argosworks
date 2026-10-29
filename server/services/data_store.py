@@ -542,14 +542,44 @@ def delete_record(record_id):
 
 
 def next_record_id():
-    """유일한 레코드 ID(밀리초 타임스탬프)를 반환한다."""
+    """유일한 레코드 ID(밀리초 타임스탬프)를 반환한다. 멀티 워커 환경에서도 DB 트랜잭션을 통해 전역 고유성을 보장한다."""
     global _last_record_id
     with _id_lock:
         now_ms = int(time.time() * 1000)
-        if now_ms <= _last_record_id:
-            now_ms = _last_record_id + 1
-        _last_record_id = now_ms
-        return now_ms
+
+        def _allocate(conn):
+            from db import ENGINE
+            cur = conn.cursor()
+            if ENGINE == "postgres":
+                cur.execute(
+                    "UPDATE id_allocator SET last_value = GREATEST(last_value + 1, ?::bigint) WHERE name = 'records' RETURNING last_value",
+                    (now_ms,)
+                )
+                row = cur.fetchone()
+                if row:
+                    return row[0] if isinstance(row, (list, tuple)) else row.get("last_value")
+                cur.execute("INSERT INTO id_allocator(name, last_value) VALUES ('records', ?) ON CONFLICT (name) DO NOTHING", (now_ms,))
+                return now_ms
+            else:
+                row = cur.execute("SELECT last_value FROM id_allocator WHERE name = 'records'").fetchone()
+                if row is None:
+                    cur.execute("INSERT OR IGNORE INTO id_allocator (name, last_value) VALUES ('records', ?)", (now_ms,))
+                    last_val = now_ms
+                else:
+                    last_val = row[0] if isinstance(row, (list, tuple)) else row["last_value"]
+                new_id = max(last_val + 1, now_ms)
+                cur.execute("UPDATE id_allocator SET last_value = ? WHERE name = 'records'", (new_id,))
+                return new_id
+
+        try:
+            allocated = transaction(_allocate)
+            _last_record_id = allocated
+            return allocated
+        except Exception:
+            if now_ms <= _last_record_id:
+                now_ms = _last_record_id + 1
+            _last_record_id = now_ms
+            return now_ms
 
 
 def get_next_card_code(dept_id, dept_prefix="REC"):

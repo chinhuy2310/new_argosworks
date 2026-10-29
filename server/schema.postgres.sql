@@ -421,6 +421,11 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 );
 CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_ident ON login_attempts(ip, identifier, failed_at);
 
+CREATE TABLE IF NOT EXISTS id_allocator (
+    name VARCHAR(64) PRIMARY KEY,
+    last_value BIGINT NOT NULL
+);
+
 -- Baseline Department & License Seeds for PostgreSQL (Korean Native B2B)
 INSERT INTO departments (id, name, color_index, local_prefix, jira_key, custom_categories) VALUES
 ('mgmt', '경영지원·기획실', 1, 'MGMT', 'MGMT', '["경영전략","예산승인","주간보고","대외협력"]'),
