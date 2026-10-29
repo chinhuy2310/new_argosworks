@@ -484,8 +484,8 @@ def handle_account_update_profile(handler, raw_body, ip):
                 cur.execute(
                     """UPDATE sessions
                        SET user_name = ?, user_dept_id = ?, user_email = ?
-                       WHERE token = ? OR token = ?""",
-                    (new_name, new_org, new_email, token_hash, token)
+                       WHERE token = ?""",
+                    (new_name, new_org, new_email, token_hash)
                 )
             if new_password:
                 # A changed password must invalidate every other device: otherwise a
@@ -495,8 +495,8 @@ def handle_account_update_profile(handler, raw_body, ip):
                 cur.execute(
                     """DELETE FROM sessions
                        WHERE (user_id = ? OR user_name = ? OR user_name = ?)
-                         AND token NOT IN (?, ?)""",
-                    (user_id, cur_name, new_name, token or "", token_hash or "")
+                         AND token != ?""",
+                    (user_id, cur_name, new_name, token_hash or "")
                 )
                 revoked["sessions"] = cur.rowcount if (cur.rowcount or 0) > 0 else 0
         transaction(_update)

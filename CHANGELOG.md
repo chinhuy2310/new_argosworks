@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security — Eliminate Pass-the-Hash in session tokens (2.1)
+
+- Removed legacy plaintext fallback `OR s.token = ?` from all session queries in `server/services/auth.py`, `server/handlers/auth_handlers.py`, and `server/router.py`. All session lookups, updates, and deletions now strictly match SHA-256 token hashes, completely preventing hash-equivalence authentication bypass.
+
 ### Fixed — Undefined name in notification_service (1.5)
 
 - Moved `import sys` to module level in `server/services/notification_service.py` to prevent `NameError` in exception handlers during notification backfill.

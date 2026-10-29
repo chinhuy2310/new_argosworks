@@ -1074,8 +1074,8 @@ def get_session(token):
            FROM sessions s
            LEFT JOIN users u ON (s.user_id IS NOT NULL AND s.user_id = u.id)
                              OR (s.user_id IS NULL AND LOWER(s.user_name) = LOWER(u.name) AND LOWER(s.user_dept_id) = LOWER(u.dept_id))
-           WHERE s.token = ? OR s.token = ?""",
-        (token_hash, token)
+           WHERE s.token = ?""",
+        (token_hash,)
     )
     if not row:
         return None
@@ -1088,7 +1088,7 @@ def get_session(token):
     # 슬라이딩 유효기간(Sliding Expiration): 마지막 활동 후 ttl 경과 시 만료
     if now - last_active > ttl:
         try:
-            execute("DELETE FROM sessions WHERE token = ? OR token = ?", (token_hash, token))
+            execute("DELETE FROM sessions WHERE token = ?", (token_hash,))
         except Exception:
             pass
         return None
@@ -1096,7 +1096,7 @@ def get_session(token):
     # 활동 중인 세션은 5분마다 last_active_at 슬라이딩 갱신
     if now - last_active > 300:
         try:
-            execute("UPDATE sessions SET last_active_at = ? WHERE token = ? OR token = ?", (now, token_hash, token))
+            execute("UPDATE sessions SET last_active_at = ? WHERE token = ?", (now, token_hash))
         except Exception:
             pass
 
@@ -1133,7 +1133,7 @@ def delete_session(token):
     if token:
         token_hash = hash_session_token(token)
         try:
-            execute("DELETE FROM sessions WHERE token = ? OR token = ?", (token_hash, token))
+            execute("DELETE FROM sessions WHERE token = ?", (token_hash,))
         except Exception:
             pass
 
