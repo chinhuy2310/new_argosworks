@@ -716,19 +716,20 @@ function renderAssigneeTable(){
       ? ('<span class="fcr-delayed-tag" style="font-size:11px;color:var(--stat-critical);font-weight:600;white-space:nowrap;">⚠️ ' + a.delayed + '건 지연</span>')
       : '';
 
+    var catsHtml = (shown || overflow)
+      ? ('<div class="assignee-cat-tags">' + shown + overflow + '</div>')
+      : '';
+
     return (
       '<div class="fluid-compact-row' + (isSelected ? " selected" : "") + '" data-assignee="' + escapeHtml(a.name) + '" title="' + escapeHtml(tooltip) + '">' +
         '<div class="fcr-left">' +
-          '<div class="fcr-avatar" style="background:' + avatarColor + ';">' +
-            (isCustomAvatar ? '<img src="' + escapeHtml(avatarUrl) + '" alt="" class="fcr-avatar-img" onerror="this.remove();">' : '') +
-            '<span class="fcr-avatar-initial">' + escapeHtml(initial) + '</span>' +
-          '</div>' +
           '<div class="fcr-meta">' +
             '<div class="fcr-name-row">' +
-              '<span class="fcr-name">' + escapeHtml(a.name) + '</span>' +
+              '<span class="assignee-name">' + escapeHtml(a.name) + '</span>' +
               deptTag +
               delayedTag +
             '</div>' +
+            catsHtml +
           '</div>' +
         '</div>' +
         '<div class="fcr-right">' +
