@@ -15,7 +15,7 @@ class DummyHandler:
         self.responses.append((status, data))
 
 
-def test_handle_post_vector_sync_has_time_and_rate_limits():
+def test_handle_post_vector_sync_has_time_and_rate_limits(tmp_db):
     from router import handle_post_vector_sync, _vector_sync_rate_limits, _vector_sync_rate_lock
     
     handler = DummyHandler(session={"id": 999, "name": "mgr", "role": "manager"})
@@ -126,7 +126,7 @@ def test_handle_account_register_handles_db_error_cleanly(monkeypatch, tmp_db):
         "password": "Password123!"
     }).encode()
 
-    monkeypatch.setattr(config, "load_config", lambda: {"allow_public_register": True})
+    monkeypatch.setenv("ALLOW_PUBLIC_REGISTER", "1")
     with patch("services.license_manager.check_seat_available", return_value=(True, None)):
         with patch("handlers.auth_handlers.create_user", side_effect=RuntimeError("unexpected DB crash")):
             handle_account_register(handler, payload, "127.0.0.1")

@@ -149,3 +149,56 @@ def test_username_cannot_impersonate_display_name_in_rbac(tmp_db):
     # Attacker with username == 'kim' MUST NOT be allowed to view or modify
     assert can_view_record(attacker_session, rec_private) is False
     assert can_modify_record(attacker_session, rec_private) is False
+
+
+def test_login_does_not_leak_token_in_json_by_default(tmp_db, monkeypatch):
+    import json
+    import os
+    from handlers.auth_handlers import handle_account_login
+    from services.auth import create_user, hash_password
+
+    class LoginMockHandler:
+        def __init__(self, secure=False):
+            self.secure = secure
+            self.status = None
+            self.data = None
+            self.extra_headers = []
+
+        def _is_secure(self):
+            return self.secure
+
+        def _make_auth_cookie_header(self, token):
+            return ("Set-Cookie", f"argos_token={token}; Path=/; HttpOnly; SameSite=Lax")
+
+        def _send_json(self, status, data, extra_headers=None):
+            self.status = status
+            self.data = data
+            self.extra_headers = extra_headers or []
+
+    salt, hpwd = hash_password("Password123!")
+    create_user("UserSecure", "usersec", "dev", "usersec@test.com", salt, hpwd, status="active", role="member")
+
+    payload = json.dumps({"username": "usersec", "password": "Password123!"}).encode()
+
+    # 1. Default mode: NO token returned in JSON body
+    monkeypatch.delenv("ARGOS_LOGIN_RETURN_TOKEN", raising=False)
+    handler = LoginMockHandler(secure=True)
+    handle_account_login(handler, payload, "127.0.0.1")
+
+    assert handler.status == 200
+    assert handler.data["ok"] is True
+    assert "token" not in handler.data, "Security violation: plaintext token leaked in JSON body by default!"
+
+    # Verify HttpOnly auth cookie and Secure flag on csrf cookie
+    headers_dict = dict(handler.extra_headers)
+    cookie_str = headers_dict.get("Set-Cookie", "")
+    csrf_cookies = [h[1] for h in handler.extra_headers if h[0] == "Set-Cookie" and "argos_csrf=" in h[1]]
+    assert len(csrf_cookies) == 1
+    assert "; Secure" in csrf_cookies[0]
+
+    # 2. Opt-in compatibility mode via ARGOS_LOGIN_RETURN_TOKEN=1
+    monkeypatch.setenv("ARGOS_LOGIN_RETURN_TOKEN", "1")
+    handler_compat = LoginMockHandler()
+    handle_account_login(handler_compat, payload, "127.0.0.1")
+    assert handler_compat.status == 200
+    assert "token" in handler_compat.data

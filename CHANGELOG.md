@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security — Remove session token from JS client storage (2.5)
+
+- Removed token storage in `localStorage` and `sessionStorage` in frontend JS (`web/js/auth.js`, `api.js`, `calendar.js`, `notifications.js`, `settings.js`), adhering to strict HttpOnly cookie security.
+- Stopped returning raw `token` in login JSON response by default (opt-in via `ARGOS_LOGIN_RETURN_TOKEN=1` for testing/CLI).
+- Ensured `argos_csrf` cookie receives `; Secure` flag when accessed over HTTPS.
+
 ### Security — Identifier-Based RBAC Tightening (2.4)
 
 - Removed dangerous username matching against assignee display name (`u_username == rec_assignee`) in `can_view_record` and `can_modify_record`. Access is strictly bound to immutable user IDs, emails, or same-department name matching.

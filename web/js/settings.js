@@ -977,8 +977,6 @@ function initReportTemplateEngine() {
 
   if (btnDownloadSample) {
     btnDownloadSample.addEventListener("click", function(){
-      var authH = (typeof getAuthHeaders === "function") ? getAuthHeaders() : {};
-      var token = (authH["Authorization"] || "").replace(/^Bearer\s+/i, "");
       window.open("/api/reports/template/sample", "_blank");
     });
   }
@@ -1853,8 +1851,6 @@ async function triggerRestoreBackup(filename) {
 }
 
 function downloadBackupFile(filename) {
-  var authH = (typeof getAuthHeaders === "function") ? getAuthHeaders() : {};
-  var token = (authH["Authorization"] || "").replace(/^Bearer\s+/i, "");
   window.open("/api/admin/backups/download?filename=" + encodeURIComponent(filename), "_blank");
 }
 
