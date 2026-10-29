@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security — Explicit Department Validation on Registration (3.3)
+
+- Rejected registration requests with invalid or missing department IDs with HTTP 400 (`유효하지 않은 부서입니다.`), eliminating dangerous implicit fallbacks to default or demo departments.
+- Returned HTTP 400 with Korean error message when the system has no registered departments.
+
 ### Security — Case-Insensitive Unique User Identities & Username Validation (3.2)
 
 - Added case-insensitive unique indexes on `LOWER(username)` and `LOWER(email)` for users table in SQLite and PostgreSQL schemas and migration v6.

@@ -142,3 +142,38 @@ def test_migration_graceful_on_duplicate_identities(tmp_path):
     mig_rows = conn.execute("SELECT version FROM schema_migrations WHERE version = 6").fetchall()
     assert len(mig_rows) == 0, "Migration 6 should have been skipped when duplicates exist"
     conn.close()
+
+
+def test_registration_department_validation(tmp_db, monkeypatch):
+    from handlers.auth_handlers import handle_account_register
+    monkeypatch.setenv("ALLOW_PUBLIC_REGISTER", "1")
+
+    # 1. Invalid department ID
+    h_bad_dept = MockLoginHandler()
+    payload_bad_dept = json.dumps({
+        "username": "user_bad_dept",
+        "name": "User Bad Dept",
+        "org": "nonexistent_dept_xyz",
+        "password": "ValidPassword123!"
+    }).encode()
+    handle_account_register(h_bad_dept, payload_bad_dept, "192.168.1.100")
+    assert h_bad_dept.status == 400
+    assert h_bad_dept.data.get("error") == "유효하지 않은 부서입니다."
+
+    # 2. Missing department ID
+    h_no_dept = MockLoginHandler()
+    payload_no_dept = json.dumps({
+        "username": "user_no_dept",
+        "name": "User No Dept",
+        "password": "ValidPassword123!"
+    }).encode()
+    handle_account_register(h_no_dept, payload_no_dept, "192.168.1.100")
+    assert h_no_dept.status == 400
+    assert h_no_dept.data.get("error") == "유효하지 않은 부서입니다."
+
+    # 3. Empty departments in system
+    with patch("handlers.auth_handlers.read_departments", return_value=[]):
+        h_empty_depts = MockLoginHandler()
+        handle_account_register(h_empty_depts, payload_bad_dept, "192.168.1.100")
+        assert h_empty_depts.status == 400
+        assert "등록 가능한 부서가 없습니다" in h_empty_depts.data.get("error", "")

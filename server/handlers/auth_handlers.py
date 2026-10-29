@@ -74,7 +74,7 @@ def handle_account_register(handler, raw_body, ip):
 
     username = (payload.get("username") or "").strip()
     name = (payload.get("name") or "").strip()
-    org = (payload.get("org") or payload.get("department") or "").strip()
+    org = (payload.get("org") or payload.get("department") or payload.get("dept_id") or "").strip()
     email = (payload.get("email") or "").strip()
     password = payload.get("password") or ""
 
@@ -94,13 +94,12 @@ def handle_account_register(handler, raw_body, ip):
         return
 
     depts = read_departments()
-    if not org and depts:
-        org = depts[0]["id"]
-    elif not dept_by_id(depts, org):
-        if depts:
-            org = depts[0]["id"]
-        else:
-            org = "dev"
+    if not depts:
+        handler._send_json(400, {"ok": False, "error": "등록 가능한 부서가 없습니다. 관리자에게 부서 생성을 요청하세요."})
+        return
+    if not org or not dept_by_id(depts, org):
+        handler._send_json(400, {"ok": False, "error": "유효하지 않은 부서입니다."})
+        return
 
     with _save_lock:
         salt_hex, hash_hex = hash_password(password)
