@@ -13,7 +13,8 @@ import os
 import re
 import threading
 import logging
-from urllib.parse import quote
+import urllib.parse
+from urllib.parse import quote, urlsplit
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +50,23 @@ def _check_sql_params_debug():
 # ---------------------------------------------------------------------------
 # Engine Detection
 # ---------------------------------------------------------------------------
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
-ENGINE = "postgres" if DATABASE_URL and DATABASE_URL.startswith("postgresql") else "sqlite"
+def _detect_engine(url: str) -> str:
+    """Detects database engine from DATABASE_URL scheme, failing closed on unsupported schemes."""
+    if not url or not url.strip():
+        return "sqlite"
+    parsed = urllib.parse.urlsplit(url.strip())
+    scheme = parsed.scheme.lower()
+    if scheme in ("postgres", "postgresql", "postgresql+psycopg2"):
+        return "postgres"
+    if scheme == "sqlite":
+        return "sqlite"
+    # Never echo the raw URL in exception messages because it may contain passwords
+    raise RuntimeError(f"Unsupported DATABASE_URL scheme: {scheme}")
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+ENGINE = _detect_engine(DATABASE_URL)
+if ENGINE == "postgres" and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
 
 logger.info(f"[db] Database engine: {ENGINE.upper()}")
 
