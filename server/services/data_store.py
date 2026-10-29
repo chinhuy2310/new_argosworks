@@ -1,6 +1,7 @@
 """data_store.py — JARVIS 데이터 저장소 (SQLite 버전)
 기존 JSON 파일 대신 SQLite DB를 사용하며, 기존 함수 시그니처와 반환 형식을 100% 유지한다.
 """
+import os
 import json
 import time
 import threading
@@ -403,12 +404,18 @@ def delete_record_attachment(record_id, attachment_id):
         (attachment_id, record_id)
     )
     from config import ATTACH_DIR
-    fpath = os.path.join(ATTACH_DIR, str(record_id), fname)
-    if os.path.isfile(fpath):
+    from utils.file_ops import safe_join
+    from utils.logging import log_line
+
+    rec_dir = safe_join(ATTACH_DIR, str(record_id))
+    fpath = safe_join(rec_dir, fname) if rec_dir else None
+    if not fpath:
+        log_line(f"[Attachment] Invalid attachment path or traversal attempt: record_id={record_id}, fname={fname}")
+    elif os.path.isfile(fpath):
         try:
             os.remove(fpath)
-        except Exception:
-            pass
+        except OSError as e:
+            log_line(f"[Attachment] Failed to remove file from disk ({fpath}): {e}")
     return True, None
 
 
