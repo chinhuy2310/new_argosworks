@@ -89,6 +89,8 @@ def init_app():
         JarvisHandler.cfg = cfg
         from handler import check_trusted_proxies_warning
         check_trusted_proxies_warning()
+        from middleware_security import _get_csrf_secret
+        _get_csrf_secret()
 
         # Backup scheduler
         from services.backup_manager import start_backup_scheduler
