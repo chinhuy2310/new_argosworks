@@ -61,7 +61,7 @@ PACKAGE_ENV_EXAMPLE = """\
 # ARGOS_NO_BROWSER=1
 
 # Allow staff to self-register (true/false). Default false: only admins create accounts.
-# ALLOW_PUBLIC_REGISTER=false
+# ALLOW_PUBLIC_REGISTER=true
 
 # Folder for automatic database backups (default: data\\backups).
 # BACKUP_DIR=

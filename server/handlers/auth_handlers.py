@@ -34,7 +34,7 @@ def handle_account_check(handler, raw_body, ip):
     # always direct caller to standard password verification stage
     from config import load_config
     cfg = load_config()
-    allow_pub = cfg.get("allow_public_register", False)
+    allow_pub = cfg.get("allow_public_register", True)
     if os.environ.get("ALLOW_PUBLIC_REGISTER"):
         allow_pub = os.environ.get("ALLOW_PUBLIC_REGISTER", "").strip().lower() in ("1", "true", "yes", "on")
 
@@ -58,7 +58,7 @@ def handle_account_register(handler, raw_body, ip):
     # Check ALLOW_PUBLIC_REGISTER policy: unless enabled, public signups are rejected
     from config import load_config
     cfg = load_config()
-    allow_pub = cfg.get("allow_public_register", False)
+    allow_pub = cfg.get("allow_public_register", True)
     if os.environ.get("ALLOW_PUBLIC_REGISTER"):
         allow_pub = os.environ.get("ALLOW_PUBLIC_REGISTER", "").strip().lower() in ("1", "true", "yes", "on")
 

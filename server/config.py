@@ -98,7 +98,7 @@ DEFAULT_CONFIG = {
         "retention_days": 14,
         "retention_count": 30
     },
-    "allow_public_register": False,
+    "allow_public_register": True,
     "max_upload_mb": 25
 }
 
