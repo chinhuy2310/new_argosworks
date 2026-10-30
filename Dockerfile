@@ -55,6 +55,8 @@ RUN python -m nuitka \
     --include-module=wsgi \
     --include-module=module_gate \
     --include-module=middleware_security \
+    --include-module=instance_guard \
+    --include-module=startup_report \
     --include-package=handlers \
     --include-package=services \
     --include-package=utils \

@@ -134,6 +134,33 @@ curl    https://<domain>/api/version    # {"version":"1.0.0"}
 
 `/api/health` trả **503** khi DB không kết nối được → dùng cho monitoring/load balancer.
 
+### 8.1 Console khởi động, mã thoát và log
+
+Bản đóng gói (`ArgosWorks.exe`) in một banner **100% tiếng Anh** ngay sau khi cổng HTTP đã bind thành công
+(`[READY]`). Mọi giá trị trong banner (đường dẫn dữ liệu, IP LAN, cổng, đường dẫn CA) được tính **lúc chạy**
+nên sang máy khác / thư mục cài khác / user Windows khác vẫn đúng.
+
+- **Mã thoát**: `0` = đang chạy **hoặc** tái dùng instance đang chạy; `1` = lỗi khởi động; `2` = `config.json` sai.
+- **Instance trùng**: mỗi `data/` chỉ do một tiến trình phục vụ (`data/.server.lock`). Chạy lần 2 sẽ mở lại
+  phiên đang chạy thay vì khởi động server thứ hai (tránh 2 scheduler backup/vector cùng ghi DB).
+- **Log**: mọi lần khởi động ghi vào `logs/startup.log`; log Caddy ở `logs/caddy.log`. Khi cửa sổ console
+  đóng ngay, đọc 2 file này để biết nguyên nhân.
+- **Lỗi hay gặp**:
+
+  | Thông báo | Nguyên nhân | Cách xử lý |
+  |---|---|---|
+  | `Port <n> is already in use by another process (PID ...)` | Ứng dụng khác giữ cổng | Đóng ứng dụng đó, hoặc đổi `server.port` |
+  | `Windows rejected the bind on ... (reserved range)` | Hyper-V/WSL/Docker giữ dải cổng | `netsh int ipv4 show excludedportrange protocol=tcp` rồi chọn cổng khác |
+  | `The configured host ... is not assigned to this computer` | `server.host` là IP không thuộc máy | Đổi thành `0.0.0.0` hoặc IP trong `ipconfig` |
+  | `The ARGOS WORKS data directory is already in use` | Instance cũ treo chưa thoát | Đóng tiến trình/PID được in ra rồi chạy lại |
+  | `Caddy did not open port 8443 within 15s` | Caddy lỗi cấu hình/chứng chỉ | Xem `logs/caddy.log`; tạm thời dùng URL HTTP |
+
+- **HTTPS trên LAN (chứng chỉ nội bộ)**: Caddy dùng CA nội bộ lưu tại `data/caddy/pki/authorities/local/root.crt`
+  (theo từng bản cài, không theo từng user). Để máy trạm không báo lỗi chứng chỉ, mở
+  `http://<IP-máy-chủ>:8080/argos-root-ca.crt` trên máy trạm và cài làm **Trusted Root CA** (quyền Administrator).
+  Chỉ làm trên máy công ty; nếu không, dùng URL HTTP. Tuyệt đối **không** sao chép `root.key` ra ngoài.
+- Có thể tắt tự mở trình duyệt bằng `ARGOS_NO_BROWSER=1`; giữ cửa sổ console khi chạy tự động bằng `ARGOS_NO_PAUSE=1`.
+
 ## 9. Xử lý sự cố thường gặp
 
 | Triệu chứng | Nguyên nhân | Cách xử lý |

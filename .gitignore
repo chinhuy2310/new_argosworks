@@ -32,6 +32,10 @@ data/reports/
 data/test_*
 data/Caddyfile*
 
+# Runtime state created by the server (embedded PostgreSQL cluster, attachments,
+# local Caddy CA private key, instance lock) - never commit customer data/secrets.
+data/
+
 # Logs & Temporary Files
 logs/
 *.log
