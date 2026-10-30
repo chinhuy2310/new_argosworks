@@ -12,6 +12,10 @@ import re
 import threading
 import time
 from utils.logging import log_line
+from prompts import (
+    ANSWER_HEAD, ANSWER_MID, ANSWER_TAIL, ANSWER_NO_DATA,
+    CLASSIFY_HEAD
+)
 from utils.text import guess_category, VALID_CATEGORIES
 
 # Concurrency control: Limit simultaneous AI API outbound calls to 32 (out of 128 workers)
@@ -532,13 +536,11 @@ def call_ai_chat_completions(cfg, messages, tools=None, tool_choice="auto",
 def call_ai_classify(cfg, memo, filenames, dept_name):
     """Classify work record category and generate 1-2 sentence Korean summary"""
     prompt = (
-        "다음은 사내 인수인계/업무 기록입니다. 아래 후보 카테고리 중 하나를 고르고, "
-        "한국어로 1~2문장 요약을 만들어주세요. 반드시 마크다운 코드블록 없이 순수 JSON만 출력하세요:\n"
-        '{"category": "...", "summary": "..."}\n\n'
-        "후보 카테고리: " + ", ".join(VALID_CATEGORIES) + "\n"
-        "작성 부서: " + (dept_name or "") + "\n"
-        "메모: " + (memo or "(없음)") + "\n"
-        "첨부파일: " + (", ".join(filenames) if filenames else "(없음)")
+        CLASSIFY_HEAD
+        + "\n후보 목록: " + ", ".join(VALID_CATEGORIES) + "\n"
+        + "작성 부서: " + (dept_name or "") + "\n"
+        + "메모: " + (memo or "(없음)") + "\n"
+        + "첨부파일: " + (", ".join(filenames) if filenames else "(없음)")
     )
 
     text = call_ai_raw(cfg, prompt, max_tokens=300, timeout=20)
@@ -592,24 +594,11 @@ def call_ai_answer(cfg, question, candidates):
             )
         context = "\n\n".join(parts)
     else:
-        context = "(관련 자료를 찾지 못했습니다.)"
+        context = ANSWER_NO_DATA
 
-    prompt = (
-        "당신은 사내 인수인계 및 업무 관리를 돕는 AI 어시스턴트입니다. "
-        "아래는 사내 업무 기록, Jira 티켓, 일정 및 제품 정보에서 검색된 관련 자료입니다.\n"
-        "제공된 자료를 바탕으로 사용자의 질문에 정확하고 구체적으로 답하세요.\n"
-        "규칙:\n"
-        "1. 사용자의 질문 언어(한국어, 베트남어, 영어 등)를 자동으로 감지하여 반드시 **동일한 언어**로 자연스럽게 답변하세요. (예: 질문이 베트남어면 답변도 100% 베트남어로 작성, 영어 질문은 영어로, 한국어 질문은 한국어로 작성)\n"
-        "2. **인사말(안녕하세요 등)이나 자기소개는 일체 생략**하고, 본론(핵심 답변 내용)부터 바로 작성하세요.\n"
-        "3. MAS(다수공급자계약), OTA(무선 펌웨어 업데이트), GIS 등 공공조달 및 기술 용어 질의 시, 용어의 공식적 정의(예: 조달청 나라장터 다수공급자계약 등)와 함께 사내에서 진행 중인 관련 업무(Jira 티켓, 제품군 등)를 유기적으로 연결하여 정확하게 안내하세요.\n"
-        "4. 제품(카메라, 전광판, 녹화기 등)에 대한 질의일 경우:\n"
-        "   - 제품명, 모델명, 분류(예: 열화상&실화상 카메라)를 명시하고, 제품의 주요 용도 및 특징(센서, 해상도, 줌배율 등)을 본문에 상세히 설명하세요.\n"
-        "   - 규격 사양 및 조달 정보를 안내하세요.\n"
-        "5. **답변 본문에 외부 웹 링크(URL), 카탈로그 링크, 첨부파일명 목록을 일체 삽입하지 마세요.** 사용자는 화면 하단의 관련 자료 카드(출처 목록)를 직접 클릭하여 상세 사양, 첨부 카탈로그 PDF 및 원본 페이지를 확인할 수 있으므로, 답변 본문은 제품 및 업무의 핵심 내용 설명에만 집중하세요.\n"
-        "6. 답변 중간에 근거가 되는 자료 번호를 표시하세요 (예: [1], [2]).\n"
-        "7. 자료에 없는 내용은 임의로 지어내지 마세요.\n\n"
-        "관련 자료:\n" + context + "\n\n질문: " + question
-    )
+    company_name = (cfg.get("company") or {}).get("name") or "ARGOS WORKS"
+    head = ANSWER_HEAD.format(company=company_name)
+    prompt = head + context + ANSWER_MID + question + ANSWER_TAIL
 
     # 사용자 검색 시 최대 대기 시간을 7초로 제한하여 초과 시 즉시 검색 결과로 폴백
     text = call_ai_raw(cfg, prompt, max_tokens=1200, timeout=7)

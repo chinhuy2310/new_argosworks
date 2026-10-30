@@ -12,6 +12,10 @@ from openpyxl.cell.cell import MergedCell
 
 from config import DATA_DIR
 from utils.logging import log_line
+from prompts import (
+    REPORT_CLASSIFY_HEAD, REPORT_CATEGORY_GIVEN,
+    REPORT_CATEGORY_FREE, REPORT_CLASSIFY_TAIL
+)
 from services.jira_client import get_cached_jira_records
 
 TEMPLATES_DIR = os.path.join(DATA_DIR, "templates")
@@ -94,23 +98,18 @@ def _classify_jira_records_contextually(cfg, jira_records):
             if custom_prompt_tpl and "{cards}" in custom_prompt_tpl:
                 prompt = custom_prompt_tpl.replace("{cards}", chr(10).join(cards_prompt))
             else:
-                prompt = f"""다음 업무 카드 목록의 문맥(Context)을 심층 분석하여 JSON 배열로 분류하세요.
-
-[유형(Type)] 판정 기준:
-- '일간': 당일 완료된 작업, 긴급 대응, 현장 출동, 점검, 일일 회의 등 하루 단위 작업.
-- '주간': 장기 프로젝트, 지속적인 개발/연구/설계/기획 과제.
-
-[구분(Category)] 후보:
-{categories_str}
-
-[업무명(Task)]:
-실제 제품명 또는 핵심 프로젝트명
-
-카드 목록:
-{chr(10).join(cards_prompt)}
-
-반드시 아래 JSON 배열 형식으로만 응답하세요:
-[{{"id": 1, "category": "...", "task": "...", "type": "일간 또는 주간"}}, ...]"""
+                cat_section = (
+                    REPORT_CATEGORY_GIVEN.format(categories=categories_str)
+                    if custom_categories
+                    else REPORT_CATEGORY_FREE
+                )
+                prompt = (
+                    REPORT_CLASSIFY_HEAD
+                    + "\n"
+                    + cat_section
+                    + "\n"
+                    + REPORT_CLASSIFY_TAIL.format(cards=chr(10).join(cards_prompt))
+                )
 
             ai_resp = call_ai_raw(cfg, prompt, max_tokens=1000)
             if ai_resp:

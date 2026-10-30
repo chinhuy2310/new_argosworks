@@ -40,7 +40,7 @@ EXE_NAME = "ArgosWorks.exe" if IS_WINDOWS else "ArgosWorks"
 # Modules imported by name at runtime or via top-level imports from inside packages.
 TOP_LEVEL_MODULES = [
     "app_paths", "config", "db", "handler", "router", "wsgi",
-    "module_gate", "middleware_security", "embedded_services",
+    "module_gate", "middleware_security", "embedded_services", "prompts",
 ]
 PACKAGES = ["handlers", "services", "utils"]
 

@@ -18,6 +18,7 @@ if errorlevel 1 (
 echo.
 echo [2/2] Kiểm tra trình tạo bộ cài đặt Inno Setup (Setup.exe)...
 set ISCC_PATH=
+if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\iscc.exe" set "ISCC_PATH=%LOCALAPPDATA%\Programs\Inno Setup 6\iscc.exe"
 if exist "%ProgramFiles(x86)%\Inno Setup 6\iscc.exe" set "ISCC_PATH=%ProgramFiles(x86)%\Inno Setup 6\iscc.exe"
 if exist "%ProgramFiles%\Inno Setup 6\iscc.exe" set "ISCC_PATH=%ProgramFiles%\Inno Setup 6\iscc.exe"
 if not defined ISCC_PATH (

@@ -49,6 +49,7 @@ echo ===========================================================================
 echo [BƯỚC 3/3] Kiểm tra trình tạo bộ cài đặt Inno Setup (Setup.exe)...
 echo ==============================================================================
 set ISCC_PATH=
+if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\iscc.exe" set "ISCC_PATH=%LOCALAPPDATA%\Programs\Inno Setup 6\iscc.exe"
 if exist "%ProgramFiles(x86)%\Inno Setup 6\iscc.exe" set "ISCC_PATH=%ProgramFiles(x86)%\Inno Setup 6\iscc.exe"
 if exist "%ProgramFiles%\Inno Setup 6\iscc.exe" set "ISCC_PATH=%ProgramFiles%\Inno Setup 6\iscc.exe"
 if not defined ISCC_PATH (
