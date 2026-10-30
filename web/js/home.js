@@ -517,40 +517,126 @@ function renderHomeQuickActions(){
   });
 }
 
-function getPortalStatusBadge(status){
-  var s = (status || "todo").toLowerCase();
-  var label = "대기";
-  var cls = "status-todo";
-  if(s === "inprogress" || s === "inprog" || s === "doing"){
-    label = "진행중";
-    cls = "status-inprog";
-  } else if(s === "review" || s === "pending"){
-    label = "검토중";
-    cls = "status-review";
-  } else if(s === "delayed"){
-    label = "지연";
-    cls = "status-delayed";
-  } else if(s === "done" || s === "completed"){
-    label = "완료";
-    cls = "status-done";
+function getPortalTaskCategory(r){
+  if(!r) return "todo";
+  if(typeof getRecordProgressCategory === "function"){
+    return getRecordProgressCategory(r);
   }
-  return '<span class="portal-status-pill ' + cls + '">' + label + '</span>';
+  if(r.jira){
+    var rawName = String(r.jira.statusName || "").trim().toLowerCase();
+    var rawStatus = String(r.jira.status || "").toLowerCase();
+    if(rawName.indexOf("완료") !== -1 || rawName === "done" || rawName === "closed" || rawName === "resolved" || rawStatus === "good"){
+      return "done";
+    }
+    if(rawName.indexOf("검토") !== -1 || rawName.indexOf("review") !== -1 || rawName.indexOf("testing") !== -1 || rawName.indexOf("kiểm tra") !== -1){
+      return "review";
+    }
+    if(rawName.indexOf("예정") !== -1 || rawName.indexOf("할 일") !== -1 || rawName.indexOf("대기") !== -1 || rawName.indexOf("todo") !== -1){
+      return "todo";
+    }
+    return "inprog";
+  }
+  var loc = String(r.status || "").trim().toLowerCase();
+  if(loc.indexOf("완료") !== -1 || loc.indexOf("done") !== -1 || loc.indexOf("completed") !== -1 || loc.indexOf("closed") !== -1 || loc.indexOf("resolved") !== -1){
+    return "done";
+  }
+  if(loc.indexOf("검토") !== -1 || loc.indexOf("review") !== -1 || loc.indexOf("kiểm tra") !== -1){
+    return "review";
+  }
+  if(loc.indexOf("진행") !== -1 || loc.indexOf("progress") !== -1 || loc.indexOf("inprog") !== -1 || loc.indexOf("doing") !== -1){
+    return "inprog";
+  }
+  if(loc.indexOf("예정") !== -1 || loc.indexOf("대기") !== -1 || loc.indexOf("todo") !== -1){
+    return "todo";
+  }
+  return "inprog";
+}
+
+function isPortalTaskUrgentOrDelayed(r){
+  if(!r) return false;
+  var cat = getPortalTaskCategory(r);
+  if(cat === "done") return false;
+
+  var prio = String(r.priority || (r.jira && r.jira.priority) || "").toLowerCase();
+  if(prio.indexOf("긴급") !== -1 || prio.indexOf("urgent") !== -1 || prio.indexOf("crit") !== -1 || prio.indexOf("highest") !== -1 || prio.indexOf("높음") !== -1 || prio.indexOf("high") !== -1){
+    return true;
+  }
+  var loc = String(r.status || "").toLowerCase();
+  var jName = String((r.jira && r.jira.statusName) || "").toLowerCase();
+  if(loc.indexOf("지연") !== -1 || loc === "critical" || jName.indexOf("지연") !== -1){
+    return true;
+  }
+  var d = r.dueDate || r.date || "";
+  var today = new Date().toISOString().slice(0, 10);
+  if(d && d < today){
+    return true;
+  }
+  return false;
+}
+
+function getPortalStatusBadge(r){
+  var cat = (typeof r === "object" && r !== null) ? getPortalTaskCategory(r) : null;
+  if(!cat){
+    var s = String(r || "").toLowerCase();
+    if(s.indexOf("완료") !== -1 || s.indexOf("done") !== -1){
+      cat = "done";
+    } else if(s.indexOf("검토") !== -1 || s.indexOf("review") !== -1){
+      cat = "review";
+    } else if(s.indexOf("진행") !== -1 || s.indexOf("inprog") !== -1){
+      cat = "inprog";
+    } else {
+      cat = "todo";
+    }
+  }
+
+  var isDelayed = false;
+  if(typeof r === "object" && r !== null && cat !== "done"){
+    var loc = String(r.status || "").toLowerCase();
+    var pName = String((r.jira && r.jira.statusName) || "").toLowerCase();
+    if(loc.indexOf("지연") !== -1 || loc === "critical" || pName.indexOf("지연") !== -1){
+      isDelayed = true;
+    } else {
+      var d = r.dueDate || r.date || "";
+      var today = new Date().toISOString().slice(0, 10);
+      if(d && d < today){
+        isDelayed = true;
+      }
+    }
+  }
+
+  if(isDelayed){
+    return '<span class="portal-status-pill status-delayed">지연</span>';
+  }
+  if(cat === "done"){
+    return '<span class="portal-status-pill status-done">완료</span>';
+  }
+  if(cat === "review"){
+    return '<span class="portal-status-pill status-review">검토중</span>';
+  }
+  if(cat === "inprog"){
+    return '<span class="portal-status-pill status-inprog">진행중</span>';
+  }
+  return '<span class="portal-status-pill status-todo">대기</span>';
 }
 
 function renderPortalTaskItem(r){
   var taskId = r.id || (r.jira && r.jira.key) || r.cardCode || "";
-  var title = r.title || r.summary || "(제목 없음)";
-  var dept = r.org || "";
+  var title = r.title || r.summary || (r.jira && r.jira.summary) || "(제목 없음)";
+  var dept = r.org || r.dept_id || "";
   var date = r.date || r.dueDate || "";
   var metaParts = [];
-  if(dept) metaParts.push(dept);
-  if(r.assignee) metaParts.push(r.assignee);
+  if(dept) {
+    var dName = (typeof deptById === "function" && deptById(dept)) ? (deptById(dept).name || dept) : ((typeof orgLabel === "function") ? orgLabel(dept) : dept);
+    metaParts.push(dName);
+  }
+  var assignee = r.assignee || (r.jira && r.jira.displayAssignee) || "";
+  if(assignee) metaParts.push(assignee);
   if(date) metaParts.push(date);
 
   var escapeFn = (typeof escapeHtml === "function") ? escapeHtml : function(s){ return String(s || ""); };
 
   return '<div class="portal-task-item" data-task-id="' + escapeFn(String(taskId)) + '">' +
-    getPortalStatusBadge(r.status) +
+    getPortalStatusBadge(r) +
     '<span class="portal-task-title" title="' + escapeFn(title) + '">' + escapeFn(title) + '</span>' +
     '<span class="portal-task-meta">' + escapeFn(metaParts.join(" · ")) + '</span>' +
   '</div>';
@@ -588,7 +674,7 @@ function renderHomePortalSection(){
   // 2. Data pool
   var allRecords = (typeof records !== "undefined" && Array.isArray(records)) ? records : ((window.records && Array.isArray(window.records)) ? window.records : []);
   var userName = user ? (user.name || user.id || "") : "";
-  var userOrg = user ? (user.org || "") : "";
+  var userOrg = user ? (user.org || user.dept_id || "") : "";
 
   // 3. Render grid cards based on role
   var cardsHtml = "";
@@ -627,13 +713,13 @@ function renderHomePortalSection(){
   } else if(role === "member" || role === "viewer"){
     // Member: My Tasks & Department Tasks
     var myTasks = allRecords.filter(function(r){
-      var isMine = (r.assignee === userName || (user && r.assignee === user.id) || (r.all_assignees && r.all_assignees.indexOf(userName) !== -1));
-      var isNotDone = r.status !== "done" && r.status !== "completed";
+      var isMine = (r.assignee === userName || (user && (r.assignee === user.id || r.assignee_id === user.id)) || (r.all_assignees && r.all_assignees.indexOf(userName) !== -1));
+      var isNotDone = getPortalTaskCategory(r) !== "done";
       return isMine && isNotDone;
     });
 
     var deptTasks = allRecords.filter(function(r){
-      return userOrg ? (r.org === userOrg) : true;
+      return userOrg ? (r.org === userOrg || r.dept_id === userOrg) : true;
     }).slice(0, 5);
 
     // Card 1: My Tasks
@@ -673,22 +759,29 @@ function renderHomePortalSection(){
 
   } else if(role === "manager"){
     // Manager: Pending Approvals & Dept Overview Stats
-    var reviewTasks = allRecords.filter(function(r){
-      var isReview = (r.status === "review" || r.status === "pending" || r.status_review);
-      var matchOrg = userOrg ? (r.org === userOrg) : true;
-      return isReview && matchOrg;
+    var deptRecords = userOrg ? allRecords.filter(function(r){ return r.org === userOrg || r.dept_id === userOrg; }) : allRecords;
+
+    var reviewTasks = deptRecords.filter(function(r){
+      return getPortalTaskCategory(r) === "review" || r.status_review;
     });
 
-    var deptRecords = userOrg ? allRecords.filter(function(r){ return r.org === userOrg; }) : allRecords;
-    var inprogCount = deptRecords.filter(function(r){ return r.status === "inprogress" || r.status === "inprog" || r.status === "doing"; }).length;
-    var delayedCount = deptRecords.filter(function(r){ return r.status === "delayed"; }).length;
-    var doneCount = deptRecords.filter(function(r){ return r.status === "done" || r.status === "completed"; }).length;
+    var inprogCount = deptRecords.filter(function(r){
+      return getPortalTaskCategory(r) === "inprog";
+    }).length;
+
+    var delayedCount = deptRecords.filter(function(r){
+      return isPortalTaskUrgentOrDelayed(r);
+    }).length;
+
+    var doneCount = deptRecords.filter(function(r){
+      return getPortalTaskCategory(r) === "done";
+    }).length;
 
     // Card 1: Pending Approvals
     cardsHtml += '<div class="portal-widget-card">' +
       '<div class="portal-card-header">' +
         '<h3 class="portal-card-title">⏳ 결재 / 검토 대기 업무</h3>' +
-        '<span class="portal-counter ' + (reviewTasks.length > 0 ? 'warning' : '') + '">' + reviewTasks.length + '건</span>' +
+        '<span class="portal-counter ' + (reviewTasks.length > 0 ? "warning" : "") + '">' + reviewTasks.length + '건</span>' +
       '</div>' +
       '<div class="portal-card-body">' +
         (reviewTasks.length === 0
@@ -724,21 +817,30 @@ function renderHomePortalSection(){
   } else if(role === "admin"){
     // Admin: System-wide Reviews & System Overview
     var globalReviews = allRecords.filter(function(r){
-      return (r.status === "review" || r.status === "pending" || r.status_review);
+      return getPortalTaskCategory(r) === "review" || r.status_review;
     });
 
     var urgentTasks = allRecords.filter(function(r){
-      return (r.priority === "urgent" || r.priority === "high" || r.status === "delayed") && (r.status !== "done" && r.status !== "completed");
+      return isPortalTaskUrgentOrDelayed(r);
     });
 
-    var inprogAll = allRecords.filter(function(r){ return r.status === "inprogress" || r.status === "inprog" || r.status === "doing"; }).length;
-    var doneAll = allRecords.filter(function(r){ return r.status === "done" || r.status === "completed"; }).length;
+    var inprogAll = allRecords.filter(function(r){
+      return getPortalTaskCategory(r) === "inprog";
+    }).length;
+
+    var doneAll = allRecords.filter(function(r){
+      return getPortalTaskCategory(r) === "done";
+    }).length;
+
+    var totalAll = (typeof window.__RECORDS_TOTAL__ === "number" && window.__RECORDS_TOTAL__ > allRecords.length)
+      ? window.__RECORDS_TOTAL__
+      : allRecords.length;
 
     // Card 1: Global Reviews
     cardsHtml += '<div class="portal-widget-card">' +
       '<div class="portal-card-header">' +
         '<h3 class="portal-card-title">⏳ 전사 검토 / 승인 대기</h3>' +
-        '<span class="portal-counter ' + (globalReviews.length > 0 ? 'warning' : '') + '">' + globalReviews.length + '건</span>' +
+        '<span class="portal-counter ' + (globalReviews.length > 0 ? "warning" : "") + '">' + globalReviews.length + '건</span>' +
       '</div>' +
       '<div class="portal-card-body">' +
         (globalReviews.length === 0
@@ -759,7 +861,7 @@ function renderHomePortalSection(){
       '</div>' +
       '<div class="portal-card-body">' +
         '<div class="portal-stat-grid">' +
-          '<div class="portal-stat-item"><span class="portal-stat-num">' + allRecords.length + '</span><span class="portal-stat-lbl">총 업무 건수</span></div>' +
+          '<div class="portal-stat-item"><span class="portal-stat-num">' + totalAll + '</span><span class="portal-stat-lbl">총 업무 건수</span></div>' +
           '<div class="portal-stat-item"><span class="portal-stat-num" style="color:#2563eb;">' + inprogAll + '</span><span class="portal-stat-lbl">진행 중</span></div>' +
           '<div class="portal-stat-item"><span class="portal-stat-num" style="color:#dc2626;">' + urgentTasks.length + '</span><span class="portal-stat-lbl">긴급/지연</span></div>' +
           '<div class="portal-stat-item"><span class="portal-stat-num" style="color:#059669;">' + doneAll + '</span><span class="portal-stat-lbl">완료 누적</span></div>' +
