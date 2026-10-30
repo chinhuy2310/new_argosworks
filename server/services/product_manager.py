@@ -14,8 +14,10 @@ def product_search_text(p):
     proc = p.get("procurement") or {}
     parts.append(proc.get("registeredName", ""))
     parts.append(proc.get("identificationNo", ""))
-    parts.extend((p.get("specs") or {}).values())
-    return " ".join(parts).lower()
+    for v in (p.get("specs") or {}).values():
+        if v is not None:
+            parts.append(str(v))
+    return " ".join(str(part) for part in parts if part).lower()
 
 def search_products(products, query):
     q = (query or "").strip().lower()
