@@ -2426,25 +2426,11 @@
 }
 
 
-/* DaouOffice Top brand & more button */
+/* DaouOffice Top brand & close button */
 .sched-sidebar-brand-actions {
   display: flex;
   align-items: center;
   gap: 2px;
-}
-.sched-sidebar-more-btn {
-  background: none;
-  border: none;
-  color: var(--ink-soft);
-  font-size: 15px;
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-  line-height: 1;
-}
-.sched-sidebar-more-btn:hover {
-  background: var(--code-bg);
-  color: var(--ink);
 }
 .btn-sched-create-caret {
   font-size: 10px;
