@@ -1,3 +1,43 @@
+
+// === DEPARTMENT MANAGEMENT FOR REGISTRATION ===
+let availableDepartments = [];
+
+async function loadDepartments() {
+  try {
+    const res = await fetch('/api/auth/departments', { cache: 'no-store' });
+    const data = await res.json();
+    if (data && data.ok && Array.isArray(data.departments)) {
+      availableDepartments = data.departments;
+      renderDepartmentOptions();
+    }
+  } catch (e) {
+    console.warn('Failed to load departments:', e);
+  }
+}
+
+function renderDepartmentOptions() {
+  const select = document.getElementById('auth-dept');
+  if (!select) return;
+  const t = dict[currentLang] || dict.ko;
+  const cur = select.value;
+  select.innerHTML = '';
+
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = `-- ${t.phDept || '소속 부서를 선택하세요'} --`;
+  placeholder.disabled = true;
+  if (!cur) placeholder.selected = true;
+  select.appendChild(placeholder);
+
+  availableDepartments.forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d.id;
+    opt.textContent = d.name || d.id;
+    if (cur === d.id) opt.selected = true;
+    select.appendChild(opt);
+  });
+}
+
 // ============================================================================
 // ARGOS WORKS - CINEMATIC PUZZLE SPLIT-MERGE AUTH CONTROLLER
 // Original Flagship Choivis-style 2D Puzzle Animation (Zero 3D Blur, Zero Glitch)
@@ -53,6 +93,11 @@ const dict = {
     lblUserReg: 'ArgosWorks ID (요청 아이디)',
     phUserReg: '예: hongkd (영문, 숫자 3자 이상)',
     lblName: '이름 (Full Name)',
+    lblDept: '소속 부서 (필수)',
+    phDept: '소속 부서를 선택하세요',
+    lblEmail: '회사 이메일 (선택)',
+    phEmail: 'user@company.com (선택 사항)',
+    errDeptRequired: '소속 부서를 선택해주세요',
     phName: '예: 홍길동',
     lblPassReg: '비밀번호 (Password)',
     lblConfirmPass: '비밀번호 확인',
@@ -95,6 +140,11 @@ const dict = {
     lblUserReg: 'ArgosWorks ID (Requested ID)',
     phUserReg: 'e.g. alex (3+ letters/digits)',
     lblName: 'Full Name (Required)',
+    lblDept: 'Department (Required)',
+    phDept: 'Select your department',
+    lblEmail: 'Work Email (Optional)',
+    phEmail: 'user@company.com (optional)',
+    errDeptRequired: 'Please select your department',
     phName: 'e.g. Alex Johnson',
     lblPassReg: 'Password (Required)',
     lblConfirmPass: 'Confirm Password (Required)',
@@ -155,6 +205,13 @@ function renderFormText() {
   if (inputUser) inputUser.placeholder = isLoginMode ? t.phUserLogin : t.phUserReg;
   if (lblName) lblName.textContent = t.lblName;
   if (inputName) inputName.placeholder = t.phName;
+  const lblDept = document.getElementById('lbl-dept');
+  if (lblDept) lblDept.textContent = t.lblDept;
+  const lblEmail = document.getElementById('lbl-email');
+  const inputEmail = document.getElementById('auth-email');
+  if (lblEmail) lblEmail.textContent = t.lblEmail;
+  if (inputEmail) inputEmail.placeholder = t.phEmail;
+  renderDepartmentOptions();
   if (lblPass) lblPass.textContent = isLoginMode ? t.lblPass : t.lblPassReg;
   if (inputPass) inputPass.placeholder = t.phPass;
   if (lblConfirm) lblConfirm.textContent = t.lblConfirmPass;
@@ -297,12 +354,17 @@ async function triggerPuzzleTransition(targetIsLogin) {
     isLoginMode = targetIsLogin;
 
     const nameGroup = document.getElementById('name-group');
+    const deptGroup = document.getElementById('dept-group');
+    const emailGroup = document.getElementById('email-group');
     const confirmGroup = document.getElementById('confirm-password-group');
 
     if (nameGroup) nameGroup.style.display = isLoginMode ? 'none' : 'block';
+    if (deptGroup) deptGroup.style.display = isLoginMode ? 'none' : 'block';
+    if (emailGroup) emailGroup.style.display = isLoginMode ? 'none' : 'block';
     if (confirmGroup) confirmGroup.style.display = isLoginMode ? 'none' : 'block';
 
     renderFormText();
+  loadDepartments();
     const endHeight = card.offsetHeight;
 
     // Smooth card height morph
@@ -430,6 +492,7 @@ async function playSuccessTransition() {
 // === INITIALIZATION & EVENT LISTENERS ===
 document.addEventListener('DOMContentLoaded', () => {
   renderFormText();
+  loadDepartments();
 
   // Mode Switch Button (Link at bottom)
   document.getElementById('btn-switch-auth')?.addEventListener('click', () => {
@@ -442,6 +505,7 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem('argos_lang', currentLang);
     localStorage.setItem('jarvisLang', currentLang);
     renderFormText();
+  loadDepartments();
   });
 
   // === UNIFIED FORM SUBMISSION ===
@@ -513,11 +577,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // CASE B: REGISTER MODE
     // ----------------------------------------------------
     const name = document.getElementById('auth-name')?.value.trim();
+    const dept = document.getElementById('auth-dept')?.value.trim();
+    const email = document.getElementById('auth-email')?.value.trim();
     const confirmPassword = document.getElementById('auth-confirm-password')?.value;
 
     if (!username || !name || !password || !confirmPassword) {
       showBanner(t.errFillRequired, 'error');
       return;
+    }
+
+    if (!dept) {
+      showBanner(t.errDeptRequired || '소속 부서를 선택해주세요', 'error');
+      return;
+    }
+
+    if (email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        showBanner(t.errInvalidEmail || '올바른 이메일 주소를 입력해주세요', 'error');
+        return;
+      }
     }
 
     if (username.length < 3) {
@@ -542,7 +621,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, name, password, email: '' })
+        body: JSON.stringify({ username, name, org: dept, email: email || '', password })
       });
       const data = await res.json();
 
@@ -583,9 +662,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       } else {
         let msg = data.error || t.errGeneral;
-        if (msg.includes('already exists') || msg.includes('이미')) {
-          msg = data.error || t.errUserExists;
-        }
         showBanner(msg, 'error');
       }
     } catch (err) {

@@ -401,3 +401,20 @@ def ensure_seed_files():
     이 함수는 하위 호환성을 위해 유지만 한다. 실제 시드 데이터는 data_store.read_departments()에서
     DB가 비어있을 때 DEFAULT_DEPARTMENTS를 INSERT한다."""
     pass
+
+
+def is_client_disconnect(exc):
+    """Return True if exception indicates the client aborted or closed the connection."""
+    if exc is None:
+        return False
+    if isinstance(exc, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
+        return True
+    if isinstance(exc, OSError) and getattr(exc, "errno", None) in (32, 10053, 10054):
+        return True
+    cls_name = exc.__class__.__name__
+    if cls_name in ("ClientDisconnected", "ConnectionClosed", "Disconnected"):
+        return True
+    cause = getattr(exc, "__cause__", None) or getattr(exc, "__context__", None)
+    if cause and cause is not exc:
+        return is_client_disconnect(cause)
+    return False

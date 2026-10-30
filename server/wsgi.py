@@ -23,7 +23,7 @@ SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
 if SERVER_DIR not in sys.path:
     sys.path.insert(0, SERVER_DIR)
 
-from config import load_config, ensure_dirs, ensure_seed_files, DATA_DIR
+from config import load_config, ensure_dirs, ensure_seed_files, DATA_DIR, is_client_disconnect
 from db import init_db, close_connection
 from handler import ArgosHandler, JarvisHandler
 from services.auth import cleanup_expired_sessions
@@ -264,15 +264,20 @@ def application(environ, start_response):
     try:
         handler.dispatch()
     except Exception as e:
+        if is_client_disconnect(e):
+            return []
         import traceback
         log_line("Unhandled WSGI exception:\n", traceback.format_exc())
         if not handler._headers_sent:
-            start_response("500 Internal Server Error", [
-                ("Content-Type", "application/json; charset=utf-8"),
-                ("Cache-Control", "no-store"),
-            ])
-            return [b'{"ok": false, "error": "Internal server error"}']
-        raise
+            try:
+                start_response("500 Internal Server Error", [
+                    ("Content-Type", "application/json; charset=utf-8"),
+                    ("Cache-Control", "no-store"),
+                ])
+                return [b'{"ok": false, "error": "Internal server error"}']
+            except Exception:
+                pass
+        return []
     return []
 
 

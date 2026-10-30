@@ -9,6 +9,20 @@
 #define MyAppPublisher "ARGOS WORKS"
 #define MyAppExeName "ArgosWorks.exe"
 
+#ifndef BuildType
+#define BuildType "standard"
+#endif
+
+#if BuildType == "ai"
+  #define OutputName "ArgosWorks-Setup-AI-" + MyAppVersion
+  #define SourceFolder "..\dist\ArgosWorks-" + MyAppVersion + "-win64-ai\*"
+  #define SourceEnv "..\dist\ArgosWorks-" + MyAppVersion + "-win64-ai\.env.example"
+#else
+  #define OutputName "ArgosWorks-Setup-" + MyAppVersion
+  #define SourceFolder "..\dist\ArgosWorks-" + MyAppVersion + "-win64\*"
+  #define SourceEnv "..\dist\ArgosWorks-" + MyAppVersion + "-win64\.env.example"
+#endif
+
 [Setup]
 ; Thông tin nhận diện ứng dụng
 AppId={{E6F7A8B9-1C2D-4E5F-8A9B-0C1D2E3F4A5B}
@@ -30,7 +44,7 @@ ArchitecturesAllowed=x64compatible
 
 ; Đầu ra bộ cài đặt
 OutputDir=..\dist
-OutputBaseFilename=ArgosWorks-Setup-{#MyAppVersion}
+OutputBaseFilename={#OutputName}
 
 ; Nén tối ưu hóa LZMA2 siêu nhỏ gọn
 Compression=lzma2/ultra64
@@ -48,7 +62,7 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
 begin
-  Exec('taskkill.exe', '/F /IM ArgosWorks.exe /IM postgres.exe /IM caddy.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM ArgosWorks.exe /IM postgres.exe /IM caddy.exe /IM ollama.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(500);
   Result := '';
 end;
@@ -70,9 +84,9 @@ Name: "{app}\logs"; Permissions: users-full
 ; Biểu tượng ứng dụng
 Source: "app.ico"; DestDir: "{app}"; Flags: ignoreversion; Permissions: users-full
 ; Sao chép toàn bộ tệp từ bản dựng đã giấu code Nuitka (bao gồm pgsql và caddy)
-Source: "..\dist\ArgosWorks-1.0.0-win64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Permissions: users-full
+Source: "{#SourceFolder}"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Permissions: users-full
 ; Khởi tạo .env nếu chưa có và không ghi đè khi nâng cấp
-Source: "..\dist\ArgosWorks-1.0.0-win64\.env.example"; DestName: ".env"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Permissions: users-full
+Source: "{#SourceEnv}"; DestName: ".env"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall; Permissions: users-full
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app.ico"

@@ -380,6 +380,20 @@
       transition: color 0.25s;
     }
 
+    
+    /* Select input style */
+    select.pill-input {
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+    }
+    select.pill-input option {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 8px 12px;
+    }
+
     .pill-input {
       width: 100%;
       padding: 11px 40px 11px 40px;
@@ -658,6 +672,42 @@
               <input type="text" id="auth-name" class="pill-input" placeholder="예: 홍길동">
             </div>
           </div>
+
+          <!-- 2b. Department (Register Mode Only) -->
+          <div id="dept-group" class="input-field-group" style="display: none;">
+            <label id="lbl-dept" class="field-label">소속 부서 (Department)</label>
+            <div class="input-wrapper" style="position: relative;">
+              <span class="input-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                  <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                </svg>
+              </span>
+              <select id="auth-dept" class="pill-input select-input" style="padding-right: 36px;">
+                <option value="" disabled selected>-- 소속 부서를 선택하세요 --</option>
+              </select>
+              <span class="select-chevron" style="position: absolute; right: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; opacity: 0.6; display: flex; align-items: center;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </span>
+            </div>
+          </div>
+
+          <!-- 2c. Work Email (Register Mode Only, Optional) -->
+          <div id="email-group" class="input-field-group" style="display: none;">
+            <label id="lbl-email" class="field-label">이메일 (Email)</label>
+            <div class="input-wrapper">
+              <span class="input-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                  <polyline points="22,6 12,13 2,6"></polyline>
+                </svg>
+              </span>
+              <input type="email" id="auth-email" class="pill-input" placeholder="user@example.com (선택)">
+            </div>
+          </div>
+
 
           <!-- 3. Password (Both) -->
           <div class="input-field-group">

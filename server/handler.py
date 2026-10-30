@@ -14,6 +14,7 @@ from module_gate import check_module_access, denial_message
 from utils.logging import log_line, access_log
 from middleware_security import check_rate_limit, validate_csrf_token, get_allowed_cors_origin
 from db import close_connection
+from config import is_client_disconnect
 
 PUBLIC_BODY_LIMIT = 16 * 1024  # 16 KB for unauthenticated endpoints
 SETUP_BODY_LIMIT = 1024 * 1024  # 1 MB for setup wizard endpoints
@@ -33,6 +34,8 @@ PUBLIC_API_WHITELIST = {
     "/api/auth/login",
     "/api/account/register",
     "/api/auth/register",
+    "/api/account/departments",
+    "/api/auth/departments",
     "/api/account/csrf",
     "/api/auth/csrf",
     "/api/account/logout",
@@ -393,16 +396,20 @@ class ArgosHandler(BaseHTTPRequestHandler):
             self.wfile.write(f"data: {payload}\n\n".encode('utf-8'))
             self.wfile.flush()
             return True
-        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
-            return False
+        except Exception as e:
+            if is_client_disconnect(e):
+                return False
+            raise
 
     def _end_sse(self):
         """SSE 스트림을 종료한다."""
         try:
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
-            pass
+        except Exception as e:
+            if is_client_disconnect(e):
+                return
+            raise
 
     # ---- OPTIONS (CORS Preflight) ----
     def do_OPTIONS(self):
@@ -455,26 +462,31 @@ class ArgosHandler(BaseHTTPRequestHandler):
                         })
                         return
 
-            try:
-                route_type, handler_or_path, content_type = match_get(path)
+            route_type, handler_or_path, content_type = match_get(path)
+            
+            if route_type == "file":
+                self._send_file(handler_or_path, content_type)
+            elif route_type == "redirect":
+                self.send_response(302)
+                self.send_header("Location", handler_or_path)
+                self.end_headers()
+            elif route_type == "nocontent":
+                self.send_response(204)
+                self.end_headers()
+            elif route_type == "handler":
+                handler_or_path(self, parsed, ip)
+            elif route_type == "notfound":
+                self._send_json(404, {"ok": False, "error": "not found"})
                 
-                if route_type == "file":
-                    self._send_file(handler_or_path, content_type)
-                elif route_type == "redirect":
-                    self.send_response(302)
-                    self.send_header("Location", handler_or_path)
-                    self.end_headers()
-                elif route_type == "nocontent":
-                    self.send_response(204)
-                    self.end_headers()
-                elif route_type == "handler":
-                    handler_or_path(self, parsed, ip)
-                elif route_type == "notfound":
-                    self._send_json(404, {"ok": False, "error": "not found"})
-                    
-            except Exception as e:
-                log_line("GET 처리 중 오류:\n", traceback.format_exc())
+        except Exception as e:
+            if is_client_disconnect(e):
+                return
+            log_line("GET 처리 중 오류:\n", traceback.format_exc())
+            try:
                 self._send_json(500, {"ok": False, "error": "서버 내부 오류가 발생했습니다. (Internal Server Error)"})
+            except Exception as write_err:
+                if not is_client_disconnect(write_err):
+                    raise
         finally:
             close_connection()
 
@@ -573,35 +585,40 @@ class ArgosHandler(BaseHTTPRequestHandler):
                             self._send_json(403, {"ok": False, "error": "CSRF 검증 실패 (Invalid or missing CSRF token)"})
                             return
 
-            try:
-                # Stream read body with memory capping (prevents thread OOM during concurrent uploads)
-                # Small payloads (<1MB) stay in memory, large payloads spill safely to temporary disk
-                raw_body = b""
-                if length > 0:
-                    if length <= 1024 * 1024:
-                        raw_body = self.rfile.read(length)
-                    else:
-                        with tempfile.SpooledTemporaryFile(max_size=1024 * 1024) as spool:
-                            remaining = length
-                            chunk_size = 64 * 1024
-                            while remaining > 0:
-                                chunk = self.rfile.read(min(remaining, chunk_size))
-                                if not chunk:
-                                    break
-                                spool.write(chunk)
-                                remaining -= len(chunk)
-                            spool.seek(0)
-                            raw_body = spool.read()
-
-                handler_func = match_post(path)
-                if handler_func:
-                    handler_func(self, raw_body, ip)
+            # Stream read body with memory capping (prevents thread OOM during concurrent uploads)
+            # Small payloads (<1MB) stay in memory, large payloads spill safely to temporary disk
+            raw_body = b""
+            if length > 0:
+                if length <= 1024 * 1024:
+                    raw_body = self.rfile.read(length)
                 else:
-                    self._send_json(404, {"ok": False, "error": "not found"})
-            except Exception as e:
-                log_line("POST 처리 중 오류:\n", traceback.format_exc())
-                access_log(ip, "error", 500, f"Exception: {type(e).__name__}")
+                    with tempfile.SpooledTemporaryFile(max_size=1024 * 1024) as spool:
+                        remaining = length
+                        chunk_size = 64 * 1024
+                        while remaining > 0:
+                            chunk = self.rfile.read(min(remaining, chunk_size))
+                            if not chunk:
+                                break
+                            spool.write(chunk)
+                            remaining -= len(chunk)
+                        spool.seek(0)
+                        raw_body = spool.read()
+
+            handler_func = match_post(path)
+            if handler_func:
+                handler_func(self, raw_body, ip)
+            else:
+                self._send_json(404, {"ok": False, "error": "not found"})
+        except Exception as e:
+            if is_client_disconnect(e):
+                return
+            log_line("POST 처리 중 오류:\n", traceback.format_exc())
+            access_log(ip, "error", 500, f"Exception: {type(e).__name__}")
+            try:
                 self._send_json(500, {"ok": False, "error": "서버 내부 오류가 발생했습니다. (Internal Server Error)"})
+            except Exception as write_err:
+                if not is_client_disconnect(write_err):
+                    raise
         finally:
             close_connection()
 

@@ -96,6 +96,11 @@ def handle_account_register(handler, raw_body, ip):
     if not name:
         handler._send_json(400, {"ok": False, "error": "이름(성명)을 입력해주세요."})
         return
+    if email:
+        import re
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+            handler._send_json(400, {"ok": False, "error": "올바른 회사 이메일 주소(user@company.com)를 입력해주세요."})
+            return
     if len(password) < 8:
         handler._send_json(400, {"ok": False, "error": "보안 강화를 위해 비밀번호는 최소 8자 이상이어야 합니다."})
         return
@@ -104,7 +109,9 @@ def handle_account_register(handler, raw_body, ip):
     if not depts:
         handler._send_json(400, {"ok": False, "error": "등록 가능한 부서가 없습니다. 관리자에게 부서 생성을 요청하세요."})
         return
-    if not org or not dept_by_id(depts, org):
+    if not org:
+        org = depts[0]["id"]
+    elif not dept_by_id(depts, org):
         handler._send_json(400, {"ok": False, "error": "유효하지 않은 부서입니다."})
         return
 

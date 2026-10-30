@@ -21,6 +21,7 @@ import time
 CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 _POSTGRES_STARTED = False
 _CADDY_PROC = None
+_OLLAMA_PROC = None
 _PG_DATA_DIR = None
 _PG_BIN_DIR = None
 
@@ -34,7 +35,18 @@ def _is_port_open(host: str, port: int, timeout: float = 0.5) -> bool:
 
 
 def _stop_embedded_services():
-    global _POSTGRES_STARTED, _CADDY_PROC
+    global _POSTGRES_STARTED, _CADDY_PROC, _OLLAMA_PROC
+    if _OLLAMA_PROC and _OLLAMA_PROC.poll() is None:
+        try:
+            _OLLAMA_PROC.terminate()
+            _OLLAMA_PROC.wait(timeout=3)
+        except Exception:
+            try:
+                _OLLAMA_PROC.kill()
+            except Exception:
+                pass
+        _OLLAMA_PROC = None
+
     if _CADDY_PROC and _CADDY_PROC.poll() is None:
         try:
             _CADDY_PROC.terminate()
@@ -164,7 +176,7 @@ def start_embedded_services(app_home: str):
             "    admin off\n"
             "    auto_https disable_redirects\n"
             "}\n\n"
-            "https://localhost:8443 {\n"
+            ":8443 {\n"
             "    tls internal\n"
             "    reverse_proxy 127.0.0.1:8080\n"
             "}\n"
@@ -189,3 +201,50 @@ def start_embedded_services(app_home: str):
                     atexit.register(_stop_embedded_services)
             except Exception as exc:
                 print("[Embedded HTTPS] Warning: could not launch Caddy: %s" % exc, file=sys.stderr, flush=True)
+
+    # -------------------------------------------------------------------------
+    # 3. Embedded Ollama (Local AI & BGE-M3 Embeddings)
+    # -------------------------------------------------------------------------
+    candidate_ollama_bins = [
+        os.path.join(app_home, "ollama", "ollama.exe"),
+        os.path.join(app_home, "vendor", "ollama", "ollama.exe"),
+    ]
+    ollama_exe = next((o for o in candidate_ollama_bins if os.path.isfile(o)), None)
+
+    if ollama_exe:
+        global _OLLAMA_PROC
+        candidate_model_dirs = [
+            os.path.join(app_home, "ollama", "models"),
+            os.path.join(app_home, "vendor", "ollama", "models"),
+            os.path.join(app_home, "data", "models"),
+        ]
+        models_dir = next((d for d in candidate_model_dirs if os.path.isdir(d)), os.path.join(app_home, "data", "models"))
+        os.makedirs(models_dir, exist_ok=True)
+
+        if not _is_port_open("127.0.0.1", 11434):
+            print("[Embedded AI] Starting embedded Ollama on http://127.0.0.1:11434...", flush=True)
+            try:
+                ollama_env = os.environ.copy()
+                ollama_env["OLLAMA_MODELS"] = models_dir
+                ollama_env["OLLAMA_HOST"] = "127.0.0.1:11434"
+                _OLLAMA_PROC = subprocess.Popen(
+                    [ollama_exe, "serve"],
+                    cwd=app_home,
+                    env=ollama_env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=CREATE_NO_WINDOW,
+                )
+                atexit.register(_stop_embedded_services)
+            except Exception as exc:
+                print("[Embedded AI] Warning: could not launch Ollama: %s" % exc, file=sys.stderr, flush=True)
+
+        # Automatically default to Ollama + bge-m3 if not already customized
+        if not os.environ.get("VOYAGE_PROVIDER"):
+            os.environ["VOYAGE_PROVIDER"] = "ollama"
+        if not os.environ.get("VOYAGE_MODEL"):
+            os.environ["VOYAGE_MODEL"] = "bge-m3"
+        if not os.environ.get("VOYAGE_BASE_URL"):
+            os.environ["VOYAGE_BASE_URL"] = "http://127.0.0.1:11434/v1/embeddings"
+        if os.environ.get("VOYAGE_ENABLED") is None:
+            os.environ["VOYAGE_ENABLED"] = "true"
