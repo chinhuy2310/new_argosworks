@@ -41,6 +41,7 @@ EXE_NAME = "ArgosWorks.exe" if IS_WINDOWS else "ArgosWorks"
 TOP_LEVEL_MODULES = [
     "app_paths", "config", "db", "handler", "router", "wsgi",
     "module_gate", "middleware_security", "embedded_services", "prompts",
+    "instance_guard", "startup_report",
 ]
 PACKAGES = ["handlers", "services", "utils"]
 
@@ -59,6 +60,12 @@ PACKAGE_ENV_EXAMPLE = """\
 
 # Do not open the browser automatically at start.
 # ARGOS_NO_BROWSER=1
+
+# Do not wait for "Press Enter" when the server fails to start (for scheduled tasks).
+# ARGOS_NO_PAUSE=1
+
+# Keep manual edits to data\\Caddyfile.embedded instead of regenerating it on start.
+# ARGOS_KEEP_CADDYFILE=1
 
 # Allow staff to self-register (true/false). Default false: only admins create accounts.
 # ALLOW_PUBLIC_REGISTER=true

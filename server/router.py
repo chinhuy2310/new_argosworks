@@ -83,6 +83,24 @@ def handle_get_health(handler, parsed, ip):
     status_code = 200 if db_ok else 503
     handler._send_json(status_code, health_status)
 
+
+def handle_get_root_ca(handler, parsed, ip):
+    """GET /argos-root-ca.crt - public certificate of the embedded Caddy root CA.
+
+    Only the public certificate is served (root.key is never exposed). Client
+    machines can install it as a Trusted Root CA and then use the HTTPS LAN URL
+    without a certificate warning. Returns 404 while the CA has not been
+    created yet.
+    """
+    from app_paths import APP_HOME
+    from startup_report import find_caddy_root_ca
+
+    ca_path = find_caddy_root_ca(APP_HOME)
+    if not ca_path:
+        handler._send_json(404, {"ok": False, "error": "The local root CA has not been created yet."})
+        return
+    handler._stream_file(ca_path, "application/x-x509-ca-cert", download_name="argos-root-ca.crt")
+
 def handle_get_departments(handler, parsed, ip):
     handler._send_json(200, {"ok": True, "departments": read_departments()})
 
@@ -3075,6 +3093,9 @@ def match_get(path):
         return ("file", os.path.join(WEB_DIR, "favicon.svg"), "image/svg+xml")
     elif path == "/favicon.ico":
         return ("nocontent", None, None)
+    elif path == "/argos-root-ca.crt":
+        # Public certificate of the embedded Caddy root CA (see handle_get_root_ca).
+        return ("handler", handle_get_root_ca, None)
     elif path == "/api/health":
         return ("handler", handle_get_health, None)
     elif path in ("/api/departments", "/api/auth/departments", "/api/account/departments"):

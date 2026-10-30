@@ -78,6 +78,7 @@ Name: "startupicon"; Description: "Start ARGOS WORKS automatically on Windows st
 Name: "{app}"; Permissions: users-full
 Name: "{app}\data"; Permissions: users-full
 Name: "{app}\data\postgres"; Permissions: users-full
+Name: "{app}\data\caddy"; Permissions: users-full
 Name: "{app}\logs"; Permissions: users-full
 
 [Files]

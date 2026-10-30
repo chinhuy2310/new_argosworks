@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Startup & Packaging — Truthful, English-only startup console
+
+- **Bind before banner:** `server/main.py` binds the HTTP socket through
+  `waitress.create_server()` (or the legacy `ThreadingHTTPServer`) *before* printing
+  anything, so a port conflict can no longer be preceded by a "server is running"
+  banner. Failures print an actionable `[CRITICAL ERROR]` block (owner PID + image,
+  `netstat` hint, Windows reserved-range hint), are appended to `logs/startup.log`,
+  keep the console open on a double-click (`ARGOS_NO_PAUSE=1` opts out) and exit 1.
+- **Single-instance guard:** new `server/instance_guard.py` locks
+  `<app home>/data/.server.lock` (msvcrt/fcntl; the OS releases it on crash). A second
+  launch for the same data directory reuses the running instance (opens the browser,
+  exit 0) instead of running duplicate backup/vector schedulers against one database.
+  The guard is taken *before* embedded services start, and only the process that
+  started PostgreSQL may stop it, so a rejected second launch can no longer shut down
+  a database shared with the running server.
+- **Runtime network report:** new `server/startup_report.py` resolves every value the
+  banner prints at runtime — `0.0.0.0` is never shown again. The LAN IPv4 comes from
+  the default route, the host name and `GetAdaptersAddresses` (virtual/VPN adapters are
+  labelled), and `config.json → server.host` is respected (loopback deployments
+  advertise no LAN URL).
+- **Readiness instead of hope:** `start_embedded_services()` returns a state dict and
+  waits for Caddy (:8443, 15 s) and Ollama (:11434, 5 s); the banner reports each port
+  as `up`/`down` and only advertises HTTPS when the proxy actually answered. Caddy now
+  writes `logs/caddy.log` instead of `DEVNULL`.
+- **Per-install CA:** Caddy storage is pinned to `<app home>/data/caddy`, so the
+  internal root CA is identical for every Windows account and travels with `data/`;
+  an existing `%APPDATA%\Caddy` PKI is migrated on first start. New public endpoint
+  `GET /argos-root-ca.crt` serves only `root.crt`, so client PCs can install the CA
+  without knowing the server's file paths (`root.key` is never exposed).
+- **English console:** the remaining Korean strings in `server/main.py` and
+  `run_server.bat` were translated; the banner itself is ASCII-only.
+- **Build:** `scripts/build_exe.py` and `Dockerfile` include the two new modules; the
+  Inno Setup script pre-creates `{app}\data\caddy` with `users-full`.
+- **Tests:** `tests/test_startup_report.py` covers the wildcard-free banner, bind-error
+  mapping, LAN filtering, readiness retries, CA discovery, the instance guard and the
+  root-CA endpoint.
+
 ### Security — Full remediation of the 12 audit findings (audit/REPORT.md §1.1)
 
 - **F-0001 (High):** `handle_post_issue_transition` now enforces `can_write_data(session)`
