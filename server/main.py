@@ -10,6 +10,12 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 def _log_unhandled_exception(exc_type, exc_value, exc_traceback):
+    try:
+        from config import is_client_disconnect
+        if exc_value and is_client_disconnect(exc_value):
+            return
+    except Exception:
+        pass
     import traceback
     print("\n[CRITICAL UNHANDLED EXCEPTION]", file=sys.stderr, flush=True)
     traceback.print_exception(exc_type, exc_value, exc_traceback, file=sys.stderr)

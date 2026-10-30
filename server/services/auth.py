@@ -173,19 +173,25 @@ def create_user(name, username, org, email, salt, hash_pwd, role="member", is_ad
         raise ValueError("이름(Name)을 입력해주세요.")
 
     # 1. 중복 username 검증
-    dup_user = get_one("SELECT id FROM users WHERE LOWER(username) = LOWER(?) ORDER BY id ASC LIMIT 1", (username,))
+    dup_user = get_one("SELECT id, status FROM users WHERE LOWER(username) = LOWER(?) ORDER BY id ASC LIMIT 1", (username,))
     if dup_user:
-        raise ValueError("이미 사용 중인 ArgosWorks ID입니다. 다른 ID를 입력해주세요.")
+        if (dup_user.get("status") or "").lower() == "pending":
+            raise ValueError("해당 ID는 이미 계정 발급 승인 요청되어 관리자 승인 대기(Pending) 중입니다.")
+        raise ValueError("이미 등록된 ArgosWorks ID입니다. 다른 ID를 입력하거나 로그인해주세요.")
 
     # 2. 중복 email 검증 (email이 제공된 경우)
     if email:
-        dup_email = get_one("SELECT id FROM users WHERE email != '' AND LOWER(email) = LOWER(?) ORDER BY id ASC LIMIT 1", (email,))
+        dup_email = get_one("SELECT id, status FROM users WHERE email != '' AND LOWER(email) = LOWER(?) ORDER BY id ASC LIMIT 1", (email,))
         if dup_email:
-            raise ValueError("이미 등록된 이메일 주소입니다.")
+            if (dup_email.get("status") or "").lower() == "pending":
+                raise ValueError("해당 이메일로 이미 계정 발급 승인 요청되어 관리자 승인 대기(Pending) 중입니다.")
+            raise ValueError("이미 등록된 이메일 주소입니다. 다른 이메일을 입력하거나 로그인해주세요.")
 
     # 3. 동일 소속 + 이름 중복 검증
-    dup_name_dept = get_one("SELECT id FROM users WHERE name = ? AND dept_id = ? ORDER BY id ASC LIMIT 1", (name, org))
+    dup_name_dept = get_one("SELECT id, status FROM users WHERE name = ? AND dept_id = ? ORDER BY id ASC LIMIT 1", (name, org))
     if dup_name_dept:
+        if (dup_name_dept.get("status") or "").lower() == "pending":
+            raise ValueError("해당 소속에 동일한 이름으로 계정 발급 승인 요청이 이미 접수되어 대기 중입니다.")
         raise ValueError("해당 소속에 이미 동일한 이름의 사용자가 존재합니다.")
 
     from datetime import datetime

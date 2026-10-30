@@ -7,7 +7,7 @@ import urllib.parse
 import urllib.request
 from urllib.parse import urlsplit, parse_qs
 from datetime import datetime
-from config import WEB_DIR, PRODUCT_ATTACH_DIR, ATTACH_DIR
+from config import WEB_DIR, PRODUCT_ATTACH_DIR, ATTACH_DIR, is_client_disconnect
 from utils.logging import access_log
 from services.ai_client import call_ai_answer, get_ai_config
 from services.product_manager import search_products
@@ -542,8 +542,9 @@ def handle_get_notifications_stream(handler, parsed, ip):
                 # Keep-alive heartbeat comment every 20 seconds
                 handler.wfile.write(b": ping\n\n")
                 handler.wfile.flush()
-    except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
-        pass
+    except Exception as e:
+        if not is_client_disconnect(e):
+            raise
     finally:
         unsubscribe_notifications(q)
 
@@ -3076,7 +3077,7 @@ def match_get(path):
         return ("nocontent", None, None)
     elif path == "/api/health":
         return ("handler", handle_get_health, None)
-    elif path == "/api/departments":
+    elif path in ("/api/departments", "/api/auth/departments", "/api/account/departments"):
         return ("handler", handle_get_departments, None)
     elif path == "/api/account/me":
         return ("handler", handle_account_me, None)

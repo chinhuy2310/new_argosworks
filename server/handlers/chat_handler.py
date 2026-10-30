@@ -1,3 +1,4 @@
+from config import is_client_disconnect
 import json
 import re
 import time
@@ -607,14 +608,16 @@ def handle_chat_stream(handler, raw_body, ip):
             "messageId": saved_msg.get("id") if saved_msg else None
         })
         
-    except (BrokenPipeError, ConnectionResetError):
-        log_line(f"[Chat Stream] 클라이언트 연결 끊김(소켓 종료): {session_id}")
-        stop_ping.set()
-        return
-
     except Exception as e:
+        if is_client_disconnect(e):
+            log_line(f"[Chat Stream] 클라이언트 연결 끊김(소켓 종료): {session_id}")
+            stop_ping.set()
+            return
         log_line("[Chat Stream] 오류:", e)
-        handler._send_sse_event({"error": f"채팅 처리 중 오류: {str(e)}"})
+        try:
+            handler._send_sse_event({"error": f"채팅 처리 중 오류: {str(e)}"})
+        except Exception:
+            pass
     
     handler._end_sse()
     access_log(ip, "chat_stream", 200, f"session={session_id} msg={message[:40]}")
