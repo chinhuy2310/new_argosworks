@@ -144,15 +144,54 @@ def _caddy_storage_dir(app_home: str):
     return target
 
 
+def _local_ipv4_addresses():
+    """This machine's IPv4 addresses (loopback + LAN), used as certificate names."""
+    addrs = {"127.0.0.1"}
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            addrs.add(info[4][0])
+    except Exception:
+        pass
+    try:  # primary outbound interface (nothing is actually sent)
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe.connect(("10.255.255.255", 1))
+        addrs.add(probe.getsockname()[0])
+        probe.close()
+    except Exception:
+        pass
+    return sorted(a for a in addrs if not a.startswith("169.254."))
+
+
+def _embedded_site_names():
+    """Names Caddy must hold a certificate for: localhost, local IPv4s, computer name, ARGOS_TLS_HOSTS."""
+    names = ["localhost"] + _local_ipv4_addresses()
+    host = socket.gethostname().strip()
+    if host and host.lower() != "localhost":
+        names.append(host)
+    for extra in (os.environ.get("ARGOS_TLS_HOSTS") or "").split(","):
+        extra = extra.strip()
+        if extra:
+            names.append(extra)
+    return list(dict.fromkeys(names))
+
+
 def _render_embedded_caddyfile(storage_dir) -> str:
-    """Standalone Caddyfile: HTTPS on :8443 -> 127.0.0.1:8080 with a pinned data dir."""
-    global_options = ["    admin off", "    auto_https disable_redirects"]
+    """Standalone Caddyfile: HTTPS on 8443 -> 127.0.0.1:8080 with a pinned data dir.
+
+    A bare ``:8443 { tls internal }`` site has no hostname, so Caddy has nothing to issue a
+    certificate for and every TLS handshake fails (browser: ERR_SSL_PROTOCOL_ERROR). The
+    names are therefore listed explicitly so each gets its own internal certificate.
+    """
+    global_options = ["    admin off", "    auto_https disable_redirects", "    default_sni localhost"]
     if storage_dir:
         global_options.append('    storage file_system "%s"' % storage_dir.replace("\\", "/"))
+    sites = ", ".join("https://%s:%d" % (n, _CADDY_PORT) for n in _embedded_site_names())
     return (
         "{\n"
         + "\n".join(global_options)
-        + "\n}\n\n:%d {\n    tls internal\n    reverse_proxy 127.0.0.1:8080\n}\n" % _CADDY_PORT
+        + "\n}\n\n"
+        + sites
+        + " {\n    tls internal\n    reverse_proxy 127.0.0.1:8080\n}\n"
     )
 
 
@@ -313,7 +352,7 @@ def start_embedded_services(app_home: str):
                     _CADDY_LOG_HANDLE = None
                 try:
                     _CADDY_PROC = subprocess.Popen(
-                        [caddy_exe, "run", "--config", caddyfile],
+                        [caddy_exe, "run", "--config", caddyfile, "--adapter", "caddyfile"],
                         cwd=app_home,
                         stdout=_CADDY_LOG_HANDLE or subprocess.DEVNULL,
                         stderr=_CADDY_LOG_HANDLE or subprocess.DEVNULL,
