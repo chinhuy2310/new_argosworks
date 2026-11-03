@@ -7,7 +7,7 @@ def parse_multipart(body, boundary):
     # 반드시 MIME 구분자가 만드는 정확히 2바이트(앞 \r\n, 뒤 \r\n)만 슬라이싱으로 제거한다.
     if not isinstance(body, (bytes, bytearray)) or not isinstance(boundary, str):
         raise ValueError("multipart 본문 또는 boundary 형식이 올바르지 않습니다.")
-    if not boundary or len(boundary) > 200 or any(ch in boundary for ch in "\\r\\n"):
+    if not boundary or len(boundary) > 200 or any(ch in boundary for ch in "\r\n"):
         raise ValueError("multipart boundary가 올바르지 않습니다.")
 
     fields, files = {}, []
@@ -18,7 +18,7 @@ def parse_multipart(body, boundary):
         raise ValueError("multipart 본문 시작 boundary가 없습니다.")
     if not (
         body.endswith(boundary_bytes + b"--")
-        or body.endswith(boundary_bytes + b"--\\r\\n")
+        or body.endswith(boundary_bytes + b"--\r\n")
     ):
         raise ValueError("multipart 본문이 불완전합니다. 종료 boundary가 없습니다.")
 
