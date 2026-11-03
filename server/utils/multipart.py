@@ -1,3 +1,5 @@
+import re
+
 def parse_multipart(body, boundary):
     # Parse only MIME delimiter lines. Splitting on the bare boundary token can
     # corrupt binary uploads that merely contain the same byte sequence.
