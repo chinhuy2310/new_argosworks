@@ -236,6 +236,14 @@ def handle_post_setup_complete(handler, raw_body, ip):
     #    would otherwise leave a half-written licence row behind.
     act_ok, act_msg = activate_license(license_key)
     if not act_ok:
+        # The admin/departments transaction has already committed. Remove the
+        # bootstrap account so check_needs_setup() remains true and the wizard
+        # can be retried instead of leaving an unusable half-configured system.
+        try:
+            if admin_user and admin_user.get("id") is not None:
+                execute("DELETE FROM users WHERE id = ? AND username = ?", (admin_user["id"], username))
+        except Exception as cleanup_error:
+            log_line("[Setup] Failed to roll back bootstrap admin after license activation failure:", cleanup_error)
         handler._send_json(400, {"ok": False, "error": act_msg})
         return
 
