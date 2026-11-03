@@ -604,20 +604,24 @@ if(pimForm){
         var pendingImg = (pimImageInput && pimImageInput.files && pimImageInput.files.length) ? pimImageInput.files[0] : null;
         var pendingFiles = (pimAttachInput && pimAttachInput.files && pimAttachInput.files.length) ? pimAttachInput.files : null;
         
-        var uploadPromises = [];
-        if(pendingImg){
-          uploadPromises.push(uploadPimAttachments(product.id, [pendingImg]));
-        }
+        var pendingUploads = [];
+        if(pendingImg) pendingUploads.push(pendingImg);
         if(pendingFiles && pendingFiles.length){
-          uploadPromises.push(uploadPimAttachments(product.id, pendingFiles));
+          Array.prototype.forEach.call(pendingFiles, function(file){ pendingUploads.push(file); });
         }
 
-        var allUploads = uploadPromises.length ? Promise.all(uploadPromises) : Promise.resolve();
+        var allUploads = pendingUploads.length
+          ? uploadPimAttachments(product.id, pendingUploads)
+          : Promise.resolve();
         allUploads.then(function(){
           pimSaveBtn.disabled = false;
           showToast(isEdit ? "제품 정보를 수정했습니다." : "제품을 등록했습니다.");
           closePimFormModal();
           loadProducts(pimSearchInput.value.trim());
+        }).catch(function(error){
+          pimSaveBtn.disabled = false;
+          pimFormError.textContent = (error && error.message) || "첨부파일 업로드에 실패했습니다. 다시 시도해주세요.";
+          pimFormError.classList.add("show");
         });
       })
       .catch(function(){
