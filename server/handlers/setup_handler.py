@@ -8,7 +8,7 @@ import os
 import json
 from datetime import datetime
 from db import query, get_one, execute, transaction
-from utils.logging import access_log
+from utils.logging import access_log, log_line
 from utils.http_body import parse_json_dict
 
 
