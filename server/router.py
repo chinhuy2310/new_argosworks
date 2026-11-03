@@ -2247,7 +2247,7 @@ def handle_delete_record(handler, raw_body, ip):
     # 3. Audit event
     try:
         from services.audit_logger import log_audit
-        log_audit(
+        audit_saved = log_audit(
             session=session,
             ip=ip,
             action="RECORD_DELETE",
@@ -2255,6 +2255,9 @@ def handle_delete_record(handler, raw_body, ip):
             target_id=str(rec_id),
             details={"title": rec.get("title"), "card_code": rec.get("card_code")}
         )
+        if audit_saved is False:
+            cleanup_pending = True
+            log_line("레코드 삭제 감사 로그가 저장되지 않았습니다.")
     except Exception as audit_error:
         cleanup_pending = True
         log_line("레코드 삭제 감사 로그 기록 실패:", audit_error)
