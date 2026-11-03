@@ -430,6 +430,57 @@ def _safe_extract_tar(tar, target_dir):
         for member in tar.getmembers():
             tar.extract(member, target_dir)
 
+def _rollback_restore_from_safety_snapshot(safety_path, is_postgres, src_db_path, rollback_dir):
+    """Restore the verified pre-restore snapshot after any post-write restore failure."""
+    os.makedirs(rollback_dir, exist_ok=True)
+    with tarfile.open(safety_path, "r:gz") as safety_tar:
+        _safe_extract_tar(safety_tar, rollback_dir)
+
+    db_name = "argos.dump" if is_postgres else "argos.db"
+    safety_db = None
+    for root, _, files in os.walk(rollback_dir):
+        if db_name in files:
+            safety_db = os.path.join(root, db_name)
+            break
+    if not safety_db:
+        raise RuntimeError("안전 스냅샷에서 원본 데이터베이스 파일을 찾을 수 없습니다.")
+
+    close_connection(force=True)
+    if is_postgres:
+        cmd = [
+            _find_pg_tool("pg_restore"), "--clean", "--if-exists",
+            "--exit-on-error", "--single-transaction", "-d", DATABASE_URL, safety_db
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"PostgreSQL 안전 스냅샷 롤백 실패: {result.stderr}")
+    else:
+        check_conn = sqlite3.connect(safety_db)
+        try:
+            check = check_conn.execute("PRAGMA integrity_check;").fetchone()
+        finally:
+            check_conn.close()
+        if not check or check[0] != "ok":
+            raise RuntimeError(f"안전 스냅샷 SQLite 무결성 검사 실패: {check}")
+        source_conn = sqlite3.connect(safety_db)
+        live_conn = sqlite3.connect(src_db_path)
+        try:
+            with live_conn:
+                source_conn.backup(live_conn)
+        finally:
+            source_conn.close()
+            live_conn.close()
+
+    # Restore attachments as a directory snapshot, not as an overlay.
+    snapshot_attachments = os.path.join(rollback_dir, "attachments")
+    if os.path.isdir(snapshot_attachments):
+        if os.path.exists(ATTACH_DIR):
+            shutil.rmtree(ATTACH_DIR)
+        shutil.copytree(snapshot_attachments, ATTACH_DIR)
+    elif os.path.exists(ATTACH_DIR):
+        shutil.rmtree(ATTACH_DIR)
+
+
 def restore_backup(backup_filename):
     """
     지정한 백업 파일(.tar.gz 또는 .db.gz)로부터 CSDL 및 첨부파일을 1-Click 복원한다.
@@ -525,6 +576,8 @@ def restore_backup(backup_filename):
             except OSError:
                 pass
 
+        restore_started = False
+        rollback_dir = os.path.join(bdir, f"rollback_temp_{int(time.time() * 1000000)}")
         try:
             # 2. 압축 해제 및 DB 파일 준비
             has_attachments = False
@@ -564,7 +617,11 @@ def restore_backup(backup_filename):
 
             if is_postgres:
                 # PostgreSQL pg_restore execution with clean drop/create
-                cmd = [_find_pg_tool("pg_restore"), "--clean", "--if-exists", "-d", DATABASE_URL, temp_restore_db]
+                cmd = [
+                    _find_pg_tool("pg_restore"), "--clean", "--if-exists",
+                    "--exit-on-error", "--single-transaction", "-d", DATABASE_URL, temp_restore_db
+                ]
+                restore_started = True
                 try:
                     res = subprocess.run(cmd, capture_output=True, text=True)
                 except FileNotFoundError:
@@ -587,6 +644,7 @@ def restore_backup(backup_filename):
                     raise RuntimeError(f"복원할 백업 파일의 무결성이 손상되었습니다: {res}")
 
                 # SQLite Online Backup API hot restore
+                restore_started = True
                 restore_conn = sqlite3.connect(temp_restore_db)
                 live_conn = sqlite3.connect(src_db_path)
                 with live_conn:
@@ -598,16 +656,9 @@ def restore_backup(backup_filename):
             if has_attachments and os.path.exists(temp_extract_dir):
                 extracted_attach = os.path.join(temp_extract_dir, "attachments")
                 if os.path.exists(extracted_attach):
-                    os.makedirs(ATTACH_DIR, exist_ok=True)
-                    for item in os.listdir(extracted_attach):
-                        s = os.path.join(extracted_attach, item)
-                        d = os.path.join(ATTACH_DIR, item)
-                        if os.path.isdir(s):
-                            if os.path.exists(d):
-                                shutil.rmtree(d, ignore_errors=True)
-                            shutil.copytree(s, d)
-                        else:
-                            shutil.copy2(s, d)
+                    if os.path.exists(ATTACH_DIR):
+                        shutil.rmtree(ATTACH_DIR)
+                    shutil.copytree(extracted_attach, ATTACH_DIR)
 
             # 7. 최신 스키마 마이그레이션 재확인/적용
             init_db()
@@ -619,6 +670,21 @@ def restore_backup(backup_filename):
                 "safety_backup": os.path.basename(safety_path),
                 "attachments_restored": has_attachments
             }
+        except Exception as restore_error:
+            if restore_started:
+                try:
+                    _rollback_restore_from_safety_snapshot(
+                        safety_path, is_postgres, src_db_path, rollback_dir
+                    )
+                except Exception as rollback_error:
+                    raise RuntimeError(
+                        f"복원 작업 실패: {restore_error}. 사전 안전 스냅샷 롤백도 실패했습니다: {rollback_error}. "
+                        f"안전 백업 파일을 보존했습니다: {os.path.basename(safety_path)}"
+                    ) from restore_error
+                raise RuntimeError(
+                    f"복원 작업이 실패하여 사전 안전 스냅샷으로 원상 복구했습니다: {restore_error}"
+                ) from restore_error
+            raise
         finally:
             if os.path.exists(temp_restore_db):
                 try:
@@ -628,6 +694,11 @@ def restore_backup(backup_filename):
             if os.path.exists(temp_extract_dir):
                 try:
                     shutil.rmtree(temp_extract_dir, ignore_errors=True)
+                except Exception:
+                    pass
+            if os.path.exists(rollback_dir):
+                try:
+                    shutil.rmtree(rollback_dir, ignore_errors=True)
                 except Exception:
                     pass
 
