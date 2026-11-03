@@ -177,7 +177,7 @@ def create_user(name, username, org, email, salt, hash_pwd, role="member", is_ad
     if dup_user:
         if (dup_user.get("status") or "").lower() == "pending":
             raise ValueError("해당 ID는 이미 계정 발급 승인 요청되어 관리자 승인 대기(Pending) 중입니다.")
-        raise ValueError("이미 등록된 ArgosWorks ID입니다. 다른 ID를 입력하거나 로그인해주세요.")
+        raise ValueError("이미 사용 중인 ArgosWorks ID입니다. 다른 ID를 입력하거나 로그인해주세요.")
 
     # 2. 중복 email 검증 (email이 제공된 경우)
     if email:
@@ -1188,8 +1188,15 @@ def get_session(token):
     if not row:
         return None
 
-    created_at = row.get("created_at") or 0
-    last_active = row.get("last_active_at") or created_at
+    try:
+        created_at = float(row.get("created_at") or 0)
+    except (ValueError, TypeError):
+        created_at = 0.0
+    try:
+        raw_last = row.get("last_active_at")
+        last_active = float(raw_last) if raw_last not in (None, "") else created_at
+    except (ValueError, TypeError):
+        last_active = created_at
     now = time.time()
     ttl = get_session_ttl_seconds()
     max_age = get_session_max_age_seconds()
@@ -1290,8 +1297,8 @@ def cleanup_expired_sessions():
     try:
         execute(
             """DELETE FROM sessions
-               WHERE COALESCE(NULLIF(last_active_at, 0), created_at) < ?
-                  OR (created_at > 0 AND created_at < ?)""",
+               WHERE COALESCE(NULLIF(CAST(last_active_at AS REAL), 0), CAST(created_at AS REAL)) < ?
+                  OR (CAST(created_at AS REAL) > 0 AND CAST(created_at AS REAL) < ?)""",
             (sliding_cutoff, max_age_cutoff)
         )
     except Exception as e:

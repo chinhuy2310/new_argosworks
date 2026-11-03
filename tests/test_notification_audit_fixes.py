@@ -291,3 +291,56 @@ def test_sse_slot_cap_prevents_thread_exhaustion():
     finally:
         router._SSE_MAX_PER_USER = original_max
 
+
+def test_self_notification_exclusion_sync_between_list_and_count(tmp_db):
+    """
+    Safeguard verification:
+    Name-only self-notifications must be excluded in BOTH get_user_notifications
+    and count_unread_notifications to prevent unread count badge mismatch.
+    Email-addressed notifications between different accounts with duplicate names must be preserved.
+    """
+    from services.auth import create_user, hash_password
+    from services.notification_service import (
+        add_notification, get_user_notifications, count_unread_notifications
+    )
+
+    salt, hashed = hash_password("pass123")
+    user = create_user(
+        name="SyncUser", username="sync_user_1", org="dev",
+        email="sync1@test.com", salt=salt, hash_pwd=hashed
+    )
+
+    # 1. Name-only self-notification (sender == recipient name, no email)
+    add_notification(
+        recipient_email="",
+        recipient_name="SyncUser",
+        sender_name="SyncUser",
+        title="Self Task Assigned",
+        content="Self assignment details",
+        broadcast=False,
+        realtime=False
+    )
+
+    # Both list and count must exclude this self-notification
+    rows = get_user_notifications(user_email=user["email"], user_name=user["name"], user_id=user["id"])
+    cnt = count_unread_notifications(user_email=user["email"], user_name=user["name"], user_id=user["id"])
+    assert len(rows) == 0, "Self-notification should be excluded from list"
+    assert cnt == 0, "Self-notification should be excluded from unread count"
+
+    # 2. Legitimate notification from another user to SyncUser
+    add_notification(
+        recipient_email="",
+        recipient_name="SyncUser",
+        sender_name="OtherManager",
+        title="Manager Notice",
+        content="Legitimate notice",
+        broadcast=False,
+        realtime=False
+    )
+
+    rows2 = get_user_notifications(user_email=user["email"], user_name=user["name"], user_id=user["id"])
+    cnt2 = count_unread_notifications(user_email=user["email"], user_name=user["name"], user_id=user["id"])
+    assert len(rows2) == 1
+    assert cnt2 == 1
+    assert rows2[0]["title"] == "Manager Notice"
+

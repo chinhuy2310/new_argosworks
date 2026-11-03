@@ -109,9 +109,7 @@ def handle_account_register(handler, raw_body, ip):
     if not depts:
         handler._send_json(400, {"ok": False, "error": "등록 가능한 부서가 없습니다. 관리자에게 부서 생성을 요청하세요."})
         return
-    if not org:
-        org = depts[0]["id"]
-    elif not dept_by_id(depts, org):
+    if not org or not dept_by_id(depts, org):
         handler._send_json(400, {"ok": False, "error": "유효하지 않은 부서입니다."})
         return
 

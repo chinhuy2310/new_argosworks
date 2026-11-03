@@ -56,6 +56,18 @@ def _name_base_is_unambiguous(name):
         return False
 
 
+_SELF_NOTIFICATION_EXCLUSION_SQL = (
+    "NOT ("
+    "COALESCE(TRIM(n.recipient_email), '') = '' "
+    "AND COALESCE(TRIM(n.sender_name), '') != '' "
+    "AND COALESCE(TRIM(n.recipient_name), '') != '' "
+    "AND LOWER(TRIM(n.recipient_name)) NOT IN ('관리자', 'admin') "
+    "AND LOWER(TRIM(n.sender_name)) NOT IN ('시스템', 'system') "
+    "AND LOWER(TRIM(n.sender_name)) = LOWER(TRIM(n.recipient_name))"
+    ")"
+)
+
+
 def _resolve_recipient_user_id(recipient_email, recipient_name):
     """Resolve a notification recipient to a stable users.id when possible.
 
@@ -351,6 +363,7 @@ def get_user_notifications(user_email=None, user_name=None, is_admin=False, limi
                   LEFT JOIN notification_reads nr
                     ON nr.notification_id = n.id AND nr.user_id = ?
                   WHERE ({" OR ".join(where_clauses)})
+                    AND {_SELF_NOTIFICATION_EXCLUSION_SQL}
                   ORDER BY n.created_at DESC, n.id DESC
                   LIMIT ? OFFSET ?"""
         rows = query(sql, tuple([join_user_id] + params + [limit, offset]))
@@ -457,6 +470,7 @@ def count_unread_notifications(user_email=None, user_name=None, is_admin=False, 
                 LEFT JOIN notification_reads nr
                   ON nr.notification_id = n.id AND nr.user_id = ?
                WHERE ({" OR ".join(where_clauses)})
+                 AND {_SELF_NOTIFICATION_EXCLUSION_SQL}
                  AND COALESCE(NULLIF(nr.read_at, ''), '') = ''"""
     rows = query(sql, tuple([join_user_id] + params))
     return int(rows[0]["cnt"]) if rows else 0
@@ -550,7 +564,8 @@ def mark_all_notifications_as_read(user_email=None, user_name=None, is_admin=Fal
                   (notification_id, user_id, read_at)
                   SELECT n.id, ?, ?
                     FROM notifications n
-                   WHERE ({" OR ".join(access_clauses)})"""
+                   WHERE ({" OR ".join(access_clauses)})
+                     AND {_SELF_NOTIFICATION_EXCLUSION_SQL}"""
         execute(sql, tuple([user_id, now_str] + access_params))
 
     # Backwards-compatible legacy flag for direct rows only.
