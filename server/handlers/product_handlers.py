@@ -282,14 +282,20 @@ def handle_product_attachment_delete(handler, raw_body, ip):
 
         # Metadata is now authoritative. Remove the quarantined copy; if cleanup
         # fails, keep it out of the public path and log it for later reconciliation.
+        cleanup_pending = False
         if quarantine_path and os.path.lexists(quarantine_path):
             try:
                 os.remove(quarantine_path)
             except OSError as cleanup_error:
+                cleanup_pending = True
                 from utils.logging import log_line
                 log_line("PIM attachment quarantine cleanup failed:", cleanup_error)
     access_log(ip, "product_attachment_delete", 200, "%s %s" % (pid, fname))
-    handler._send_json(200, {"ok": True, "product": product})
+    handler._send_json(200, {
+        "ok": True,
+        "product": product,
+        "cleanupPending": cleanup_pending
+    })
 
 
 # ---------------------------------------------------------------------------
