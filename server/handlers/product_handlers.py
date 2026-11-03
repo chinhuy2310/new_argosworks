@@ -161,18 +161,31 @@ def handle_product_attachment_upload(handler, raw_body, ip):
         os.makedirs(product_dir, exist_ok=True)
         attachments = product.setdefault("attachments", [])
         added = []
+        saved_files = []
         from utils.image_optimizer import optimize_and_save_file
-        for f in files:
-            fname = unique_attachment_name(product_dir, f["filename"])
-            dest = safe_join(product_dir, fname)
-            if not dest:
-                handler._send_json(400, {"ok": False, "error": "잘못된 파일 이름입니다."})
-                return
-            fsize = optimize_and_save_file(f["data"], dest)
-            entry = {"name": fname, "size": fsize, "uploadedAt": datetime.now().isoformat()}
-            attachments.append(entry)
-            added.append(entry)
-        write_products(products)
+        try:
+            for f in files:
+                fname = unique_attachment_name(product_dir, f["filename"])
+                dest = safe_join(product_dir, fname)
+                if not dest:
+                    raise ValueError("잘못된 파일 이름입니다.")
+                fsize = optimize_and_save_file(f["data"], dest)
+                saved_files.append(dest)
+                entry = {"name": fname, "size": fsize, "uploadedAt": datetime.now().isoformat()}
+                attachments.append(entry)
+                added.append(entry)
+            write_products(products)
+        except Exception as e:
+            # Rollback newly written physical files on disk
+            for s_path in saved_files:
+                try:
+                    if os.path.isfile(s_path):
+                        os.remove(s_path)
+                except Exception:
+                    pass
+            log_line("[PIM] Attachment upload error rollback:", e)
+            handler._send_json(400, {"ok": False, "error": f"첨부파일 저장 실패: {str(e)}"})
+            return
     access_log(ip, "product_attachment_upload", 200, "%s +%d" % (pid, len(added)))
     handler._send_json(200, {"ok": True, "product": product, "added": added})
 
@@ -280,6 +293,19 @@ def handle_product_category_save(handler, raw_body, ip):
     if not isinstance(spec_template, list):
         handler._send_json(400, {"ok": False, "error": "규격 템플릿 목록 형식이 올바르지 않습니다."})
         return
+
+    valid_key_re = re.compile(r"^[^<>&\"'/\\]{1,80}$")
+    for item in spec_template:
+        if isinstance(item, dict):
+            k = str(item.get("key") or "").strip()
+        elif isinstance(item, str):
+            k = item.strip()
+        else:
+            handler._send_json(400, {"ok": False, "error": "규격 템플릿 항목 형식이 올바르지 않습니다."})
+            return
+        if not k or not valid_key_re.match(k):
+            handler._send_json(400, {"ok": False, "error": f"유효하지 않은 규격 키(key) 형식입니다: '{k}'."})
+            return
 
     from services.data_store import save_product_category, read_product_categories, get_used_spec_keys
 

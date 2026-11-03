@@ -228,6 +228,7 @@ def safe_delete_user(user_id):
         return False
     user_name = user.get("name", "")
     user_dept = user.get("dept_id", "")
+    is_name_unique = is_display_name_unique(user_name) if user_name else False
 
     def _do_del(conn):
         cur = conn.cursor()
@@ -235,8 +236,14 @@ def safe_delete_user(user_id):
         cur.execute("UPDATE records SET assignee_id = NULL WHERE assignee_id = ?", (user_id,))
         # 2. 일정 소유자 owner_id NULL 처리
         cur.execute("UPDATE schedule_events SET owner_id = NULL WHERE owner_id = ?", (user_id,))
-        # 3. 일정 참여자 항목 정리
-        cur.execute("DELETE FROM schedule_participants WHERE user_name = ?", (user_name,))
+        # 3. 일정 참여자 항목 정리 (타 부서 동명이인의 참여자 데이터는 보존)
+        cur.execute(
+            """DELETE FROM schedule_participants
+                WHERE user_name = ?
+                  AND (user_dept_id = ?
+                       OR (COALESCE(user_email, '') != '' AND LOWER(user_email) = LOWER(?)))""",
+            (user_name, user_dept, user.get("email") or "")
+        )
         # 4. 세션 만료
         cur.execute("DELETE FROM sessions WHERE user_name = ? AND user_dept_id = ?", (user_name, user_dept))
         # 5. Notification read state + direct notifications belonging to the user.
@@ -249,6 +256,15 @@ def safe_delete_user(user_id):
                        AND LOWER(recipient_email) = LOWER(?))""",
             (user_id, user.get("email") or "")
         )
+        # Legacy notifications matching by name only if name was truly unique across system
+        if is_name_unique and user_name:
+            cur.execute(
+                """DELETE FROM notifications
+                    WHERE recipient_user_id IS NULL
+                      AND COALESCE(recipient_email, '') = ''
+                      AND LOWER(recipient_name) = LOWER(?)""",
+                (user_name,)
+            )
         # 6. 사용자 삭제
         cur.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
@@ -795,18 +811,21 @@ def _schedule_event_matches(user_or_session, event, user_dept_map, user_name, us
     if user_dept and ev_org and ev_org == user_dept:
         return True
     if ev_owner and user_name and ev_owner == user_name:
-        return True
+        if not ev_org or not user_dept or ev_org == user_dept:
+            return True
 
     for p in (event.get("participants") or []):
         if isinstance(p, dict):
             p_name = (p.get("name") or "").strip()
             p_org = (p.get("org") or "").strip().lower()
             if p_name and user_name and p_name == user_name:
-                return True
+                if not p_org or not user_dept or p_org == user_dept:
+                    return True
             if user_dept and p_org and p_org == user_dept:
                 return True
         elif p and user_name and str(p).strip() == user_name:
-            return True
+            if not ev_org or not user_dept or ev_org == user_dept:
+                return True
     return False
 
 
@@ -1275,16 +1294,21 @@ def rotate_session(old_token):
         user_id=sess["id"]
     )
 
-def delete_all_user_sessions(user_id_or_name):
+def delete_all_user_sessions(user_id_or_name, dept_id=None):
     """해당 사용자의 모든 기기 세션 강제 만료 (Logout from all devices)."""
     if user_id_or_name is not None and user_id_or_name != "":
         try:
             if isinstance(user_id_or_name, int) or (isinstance(user_id_or_name, str) and str(user_id_or_name).isdigit()):
                 execute("DELETE FROM sessions WHERE user_id = ?", (int(user_id_or_name),))
+            elif dept_id:
+                execute("DELETE FROM sessions WHERE user_name = ? AND user_dept_id = ?", (str(user_id_or_name), str(dept_id)))
             else:
-                execute("DELETE FROM sessions WHERE user_name = ? OR user_id IN (SELECT id FROM users WHERE username = ?)", (str(user_id_or_name), str(user_id_or_name)))
+                execute("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE username = ? OR name = ?)", (str(user_id_or_name), str(user_id_or_name)))
+            return True
         except Exception as e:
             log_line("[auth] Error deleting all user sessions:", e)
+            return False
+    return False
 
 def cleanup_expired_sessions():
     """

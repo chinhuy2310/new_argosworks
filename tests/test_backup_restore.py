@@ -110,8 +110,10 @@ class TestBackupRestoreRoundTrip:
             "restore must never run without a pre-restore safety backup"
 
     def test_backup_of_missing_database_fails_loudly(self, isolated_backup_env):
+        import db as db_module
         from services import backup_manager
 
+        db_module.close_connection(force=True)
         os.remove(isolated_backup_env["db_path"])
         with pytest.raises(FileNotFoundError):
             backup_manager.create_backup(note="no db", backup_type="manual")

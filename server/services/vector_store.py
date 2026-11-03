@@ -20,6 +20,8 @@ from utils.logging import log_line
 
 _db_lock = threading.Lock()
 _sync_lock = threading.Lock()
+_sync_pending = False
+_sync_pending_lock = threading.Lock()
 
 
 def get_db_connection():
@@ -361,18 +363,20 @@ def _skip_bad_record(section, item, err):
     log_line(f"[VectorStore] skip {section} {ident}: {type(err).__name__}: {err}")
 
 
-def _collect_all_documents(cfg):
+def _collect_all_documents(cfg, return_failed_sources=False):
     """JARVIS 내 모든 검색 대상 문서(기록, Jira 이슈, 제품 PIM, 캘린더)를 표준 형식으로 수집"""
     from services.data_store import read_records, read_products, read_schedule, get_record_comments
     from services.jira_client import get_cached_jira_records
 
     docs = []
+    failed_sources = set()
 
     # 1. 인수인계 및 업무 기록 (Local Cards / records)
     records_list = []
     try:
         records_list = read_records() or []
     except Exception as e:
+        failed_sources.add("record")
         log_line(f"[VectorStore] Failed to read records: {e}")
 
     for r in records_list:
@@ -469,6 +473,7 @@ def _collect_all_documents(cfg):
         jira_cache = get_cached_jira_records(cfg) or {}
         jira_records = jira_cache.get("records") or []
     except Exception as e:
+        failed_sources.add("jira")
         log_line(f"[VectorStore] Failed to read Jira cache: {e}")
 
     for j in jira_records:
@@ -537,6 +542,7 @@ def _collect_all_documents(cfg):
     try:
         products_list = read_products(include_external=True) or []
     except Exception as e:
+        failed_sources.add("product")
         log_line(f"[VectorStore] Failed to read products: {e}")
 
     for p in products_list:
@@ -607,6 +613,7 @@ def _collect_all_documents(cfg):
     try:
         schedule_list = read_schedule() or []
     except Exception as e:
+        failed_sources.add("schedule")
         log_line(f"[VectorStore] Failed to read schedule: {e}")
 
     for s in schedule_list:
@@ -653,6 +660,8 @@ def _collect_all_documents(cfg):
         except Exception as _e:
             _skip_bad_record('schedule', s, _e)
 
+    if return_failed_sources:
+        return docs, failed_sources
     return docs
 
 
@@ -734,8 +743,8 @@ def sync_all_vectors(cfg, force=False):
     current_model = cfg.get("voyage", {}).get("model") or "voyage-3-lite"
 
     try:
-        docs = _collect_all_documents(cfg)
-        if not docs:
+        docs, failed_sources = _collect_all_documents(cfg, return_failed_sources=True)
+        if not docs and not failed_sources:
             return {"ok": True, "indexed": 0, "skipped": 0, "total": 0, "current_model": current_model}
 
         conn = get_db_connection()
@@ -827,9 +836,15 @@ def sync_all_vectors(cfg, force=False):
                             ))
                         conn.commit()
                     indexed += len(batch)
-            # Remove deleted / obsolete documents from vector store
+            # Remove deleted / obsolete documents from vector store (excluding sources that failed to load)
             current_doc_ids = {d["doc_id"] for d in docs}
-            stale_doc_ids = [doc_id for doc_id in existing if doc_id not in current_doc_ids]
+            stale_doc_ids = []
+            for doc_id in existing:
+                if doc_id not in current_doc_ids:
+                    dtype = doc_id.split(":", 1)[0]
+                    if dtype in failed_sources:
+                        continue
+                    stale_doc_ids.append(doc_id)
             if stale_doc_ids:
                 with _db_lock:
                     for s_id in stale_doc_ids:
@@ -854,11 +869,27 @@ def sync_all_vectors(cfg, force=False):
 
 
 def trigger_async_vector_sync(cfg):
-    """백그라운드 스레드에서 점진적(Incremental) 벡터 색인 비동기 실행"""
+    """백그라운드 스레드에서 점진적(Incremental) 벡터 색인 비동기 실행 (coalesced pending 지원)"""
+    global _sync_pending
     if not is_voyage_configured(cfg):
         return
+    with _sync_pending_lock:
+        _sync_pending = True
+    if _sync_lock.locked():
+        return
     import threading
-    threading.Thread(target=sync_all_vectors, args=(cfg,), daemon=True).start()
+    threading.Thread(target=_run_coalesced_sync, args=(cfg,), daemon=True).start()
+
+
+def _run_coalesced_sync(cfg):
+    global _sync_pending
+    while True:
+        with _sync_pending_lock:
+            _sync_pending = False
+        sync_all_vectors(cfg)
+        with _sync_pending_lock:
+            if not _sync_pending:
+                break
 
 
 # ---------------------------------------------------------------------------
@@ -925,14 +956,43 @@ def can_view_vector_doc(session, doc_type, meta, ctx=None):
         if r_id:
             try:
                 from db import get_one
-                live_r = get_one("SELECT id, dept_id, is_private, assignee_id, assignee_name FROM records WHERE id = ? LIMIT 1", (r_id,))
-                if live_r:
-                    meta = dict(meta)
-                    meta["is_private"] = live_r.get("is_private")
-                    meta["dept_id"] = live_r.get("dept_id")
-                    meta["assignee_id"] = live_r.get("assignee_id")
+                live_r = get_one(
+                    """SELECT id, card_code, title, dept_id, is_private,
+                              assignee_id, assignee_name, assignee_email, participants
+                       FROM records WHERE id = ? LIMIT 1""",
+                    (r_id,)
+                )
+                if not live_r:
+                    # Deleted record: fail-closed
+                    return False
+                rec = dict(meta)
+                rec["id"] = live_r.get("id")
+                rec["cardCode"] = live_r.get("card_code") or meta.get("cardCode")
+                rec["title"] = live_r.get("title") or meta.get("title")
+                rec["dept_id"] = live_r.get("dept_id")
+                rec["org"] = live_r.get("dept_id")
+                rec["is_private"] = bool(live_r.get("is_private"))
+                rec["assignee_id"] = live_r.get("assignee_id")
+                rec["assignee_name"] = live_r.get("assignee_name") or ""
+                rec["assignee"] = live_r.get("assignee_name") or ""
+                rec["assignee_email"] = live_r.get("assignee_email") or ""
+                rec["assigneeEmail"] = live_r.get("assignee_email") or ""
+
+                raw_p = live_r.get("participants")
+                if raw_p:
+                    if isinstance(raw_p, str):
+                        try:
+                            rec["participants"] = json.loads(raw_p)
+                        except Exception:
+                            rec["participants"] = []
+                    else:
+                        rec["participants"] = raw_p
+                else:
+                    rec["participants"] = []
+                return can_view_record(session, rec)
             except Exception:
-                pass
+                # On query error: fail-closed to prevent leaking private data based on stale metadata
+                return False
         return can_view_record(session, meta)
 
     if doc_type == "jira":

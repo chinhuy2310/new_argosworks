@@ -351,7 +351,11 @@ def handle_account_logout_all(handler, raw_body, ip):
         return
     try:
         from services.auth import delete_all_user_sessions
-        delete_all_user_sessions(session.get("name"))
+        uid = session.get("id") or session.get("user_id")
+        if uid:
+            delete_all_user_sessions(uid)
+        else:
+            delete_all_user_sessions(session.get("name"), dept_id=session.get("org") or session.get("dept_id"))
     except Exception as e:
         log_line("[Auth] Error deleting all user sessions on logout-all:", e)
     logout_cookie_hdr = handler._make_logout_cookie_header()

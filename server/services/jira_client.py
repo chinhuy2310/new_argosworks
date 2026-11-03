@@ -833,16 +833,21 @@ def sync_jira_cache(cfg, force_full=False):
 
     # DB에 UPSERT 저장
     if records is not None:
-        if records:
-            upsert_jira_records(records)
-            try:
-                from services.vector_store import trigger_async_vector_sync
-                trigger_async_vector_sync(cfg)
-            except Exception:
-                pass
-        if activities:
-            upsert_jira_activities(activities)
-        set_last_sync_time(now)
+        try:
+            if records:
+                upsert_jira_records(records)
+                try:
+                    from services.vector_store import trigger_async_vector_sync
+                    trigger_async_vector_sync(cfg)
+                except Exception:
+                    pass
+            if activities:
+                upsert_jira_activities(activities)
+            set_last_sync_time(now)
+        except Exception as e:
+            log_line("Jira cache upsert failed; sync cursor not advanced:", e)
+            with _jira_cache_lock:
+                _jira_cache["error"] = f"Jira 동기화 DB 저장 오류: {e}"
         all_records = load_all_jira_from_db()
         all_activities = load_all_jira_activities_from_db()
     else:

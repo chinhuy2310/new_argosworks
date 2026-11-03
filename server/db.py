@@ -229,21 +229,6 @@ if ENGINE == "sqlite":
         logger.info(f"Initializing SQLite database at {db_path}")
         _check_sql_params_debug()
 
-        # Pre-migration safety snapshot: Protect on-premise customer data before DDL
-        if os.path.exists(db_path) and os.path.getsize(db_path) > 0:
-            try:
-                from datetime import datetime
-                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                data_dir = os.path.dirname(db_path)
-                snap_dir = os.path.join(data_dir, "backups")
-                os.makedirs(snap_dir, exist_ok=True)
-                snap_file = os.path.join(snap_dir, f"argos_safety_before_migration_{ts}.tmp.db")
-                with sqlite3.connect(db_path) as s_conn, sqlite3.connect(snap_file) as d_conn:
-                    s_conn.backup(d_conn)
-                logger.info(f"[db] Pre-migration safety snapshot created: {snap_file}")
-            except Exception as e:
-                logger.warning(f"[db] Pre-migration safety snapshot notice: {e}")
-
         conn = sqlite3.connect(db_path, isolation_level=None)
         try:
             conn.execute("PRAGMA journal_mode = WAL;")
@@ -292,6 +277,35 @@ if ENGINE == "sqlite":
 
             # 2. Versioned Migrations Check & Upgrades (for existing legacy databases)
             applied_migrations = {row[0] for row in conn.execute("SELECT version FROM schema_migrations").fetchall()}
+            pending_migrations = {2, 3, 4, 6, 7, 8, 9, 10, 11} - applied_migrations
+
+            # Pre-migration safety snapshot: Protect on-premise customer data only when migrations are actually pending
+            if pending_migrations and os.path.exists(db_path) and os.path.getsize(db_path) > 0:
+                try:
+                    from datetime import datetime
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    data_dir = os.path.dirname(db_path)
+                    snap_dir = os.path.join(data_dir, "backups")
+                    os.makedirs(snap_dir, exist_ok=True)
+                    snap_file = os.path.join(snap_dir, f"argos_safety_before_migration_{ts}.tmp.db")
+                    s_conn = sqlite3.connect(db_path)
+                    d_conn = sqlite3.connect(snap_file)
+                    try:
+                        s_conn.backup(d_conn)
+                    finally:
+                        d_conn.close()
+                        s_conn.close()
+                    logger.info(f"[db] Pre-migration safety snapshot created: {snap_file} (pending: {sorted(pending_migrations)})")
+                    # Retention cleanup: Keep at most 5 recent temporary safety migration snapshots
+                    tmp_snaps = sorted([os.path.join(snap_dir, f) for f in os.listdir(snap_dir) if f.startswith("argos_safety_before_migration_") and f.endswith(".tmp.db")])
+                    if len(tmp_snaps) > 5:
+                        for old_snap in tmp_snaps[:-5]:
+                            try:
+                                os.remove(old_snap)
+                            except Exception:
+                                pass
+                except Exception as e:
+                    logger.warning(f"[db] Pre-migration safety snapshot notice: {e}")
 
             # Migration v2: Unique indexes on users (username, email) and session foreign key index
             if 2 not in applied_migrations:

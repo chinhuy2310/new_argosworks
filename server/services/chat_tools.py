@@ -1389,7 +1389,9 @@ def _tool_update_issue_status(args, current_user, cfg):
 
 
 
-    from services.auth import can_transition_status
+    from services.auth import can_transition_status, can_write_data
+    if not can_write_data(current_user):
+        return {"success": False, "error": "조회 전용(Viewer) 권한으로는 상태를 변경할 수 없습니다."}
     local_rec = find_record_by_key_or_code(issue_key)
     if local_rec:
         can_trans, trans_err = can_transition_status(current_user, local_rec, new_status)
@@ -1632,7 +1634,9 @@ def _tool_add_issue_comment(args, current_user, cfg):
 
 
 
-    from services.auth import can_view_record
+    from services.auth import can_view_record, can_write_data
+    if not can_write_data(current_user):
+        return {"success": False, "error": "조회 전용(Viewer) 권한으로는 댓글을 작성할 수 없습니다."}
 
     local_rec = find_record_by_key_or_code(issue_key)
 
@@ -2427,8 +2431,10 @@ def _tool_schedule_issue(args, current_user, cfg):
 
 
 
+    from services.auth import can_modify_record, can_write_data
+    if not can_write_data(current_user):
+        return {"success": False, "error": "조회 전용(Viewer) 권한으로는 일정을 등록/변경할 수 없습니다."}
     local_rec = find_record_by_key_or_code(issue_key)
-    from services.auth import can_modify_record
     if local_rec and not can_modify_record(current_user, local_rec):
         return {"success": False, "error": "해당 업무 카드의 일정을 변경할 권한이 없습니다."}
 
@@ -2897,17 +2903,19 @@ def execute_tool(name, args, current_user, cfg, allow_write=False):
 
     """
 
-    # 하드 블록 2단계: 런타임 차단 (사용자 명시 승인 없이 쓰기 도구 호출 시 즉시 거부)
-
-    if name in WRITE_TOOL_NAMES and not allow_write:
-
-        log_line(f"[Security Guard] AI의 쓰기 도구 직접 실행 시도 차단: {name} (사용자: {current_user.get('name')})")
-
-        return {
-
-            "error": f"'{name}' 직접 실행이 시스템 정책에 의해 원천 차단되었습니다. 쓰기 작업은 반드시 :::action-proposal 형식으로 작성하여 사용자 확인을 받아야 합니다."
-
-        }
+    # 하드 블록 2단계: 런타임 차단 (Viewer 차단 및 사용자 명시 승인 없이 쓰기 도구 호출 시 즉시 거부)
+    if name in WRITE_TOOL_NAMES:
+        from services.auth import can_write_data
+        if not can_write_data(current_user):
+            return {
+                "success": False,
+                "error": "조회 전용(Viewer) 권한으로는 쓰기 작업을 실행할 수 없습니다."
+            }
+        if not allow_write:
+            log_line(f"[Security Guard] AI의 쓰기 도구 직접 실행 시도 차단: {name} (사용자: {current_user.get('name')})")
+            return {
+                "error": f"'{name}' 직접 실행이 시스템 정책에 의해 원천 차단되었습니다. 쓰기 작업은 반드시 :::action-proposal 형식으로 작성하여 사용자 확인을 받아야 합니다."
+            }
 
 
 

@@ -1130,7 +1130,7 @@ def update_record_details(record_id_or_code, title=None, memo=None, assignee_nam
             if exp_v != current_version:
                 return None, f"CONFLICT: 다른 사용자가 이 카드를 이미 수정했습니다 (현재 v{current_version}, 클라이언트 v{exp_v}). 최신 정보를 다시 불러와주세요."
         except (ValueError, TypeError):
-            pass
+            return None, "expected_version must be an integer"
 
     updates = []
     params = []
@@ -1150,16 +1150,24 @@ def update_record_details(record_id_or_code, title=None, memo=None, assignee_nam
         new_assignee_str = str(assignee_name).strip()
         updates.append("assignee_name = ?")
         params.append(new_assignee_str)
-        try:
-            r_dept = rec.get("dept_id") or rec.get("org") or ""
-            u_row = get_one("SELECT id FROM users WHERE (name = ? OR username = ?) AND dept_id = ? LIMIT 1", (new_assignee_str, new_assignee_str, r_dept))
-            if not u_row:
-                u_row = get_one("SELECT id FROM users WHERE name = ? OR username = ? LIMIT 1", (new_assignee_str, new_assignee_str))
-            if u_row:
-                updates.append("assignee_id = ?")
-                params.append(u_row["id"])
-        except Exception:
-            pass
+        if not new_assignee_str or new_assignee_str.lower() in ("미배정", "none", "unassigned", "-"):
+            updates.append("assignee_id = NULL")
+        else:
+            try:
+                r_dept = rec.get("dept_id") or rec.get("org") or ""
+                u_row = get_one("SELECT id FROM users WHERE (name = ? OR username = ?) AND dept_id = ? LIMIT 1", (new_assignee_str, new_assignee_str, r_dept))
+                if u_row:
+                    updates.append("assignee_id = ?")
+                    params.append(u_row["id"])
+                else:
+                    matches = query("SELECT id FROM users WHERE (name = ? OR username = ?) AND (status IS NULL OR status = 'active')", (new_assignee_str, new_assignee_str))
+                    if len(matches) == 1:
+                        updates.append("assignee_id = ?")
+                        params.append(matches[0]["id"])
+                    else:
+                        updates.append("assignee_id = NULL")
+            except Exception:
+                pass
 
     if assignee_email is not None:
         updates.append("assignee_email = ?")

@@ -156,9 +156,10 @@ function renderPimSpecFields(category, values){
       var val = (values && (values[f.key] != null ? values[f.key] : values[f.label])) || "";
       handledKeys[f.key] = true;
       if(f.label) handledKeys[f.label] = true;
+      var safeKey = escapeHtml(f.key);
       html += '<div class="field" style="margin-bottom: 8px;">' +
-        '<label for="pimSpec_' + f.key + '">' + escapeHtml(f.label) + ' <span class="optional">(선택)</span></label>' +
-        '<input type="text" id="pimSpec_' + f.key + '" data-spec-key="' + f.key + '" maxlength="' + (f.maxlen || 200) + '" value="' + escapeHtml(val) + '">' +
+        '<label for="pimSpec_' + safeKey + '">' + escapeHtml(f.label) + ' <span class="optional">(선택)</span></label>' +
+        '<input type="text" id="pimSpec_' + safeKey + '" data-spec-key="' + safeKey + '" maxlength="' + (f.maxlen || 200) + '" value="' + escapeHtml(val) + '">' +
         '</div>';
     });
   } else {
@@ -618,6 +619,11 @@ if(pimForm){
           showToast(isEdit ? "제품 정보를 수정했습니다." : "제품을 등록했습니다.");
           closePimFormModal();
           loadProducts(pimSearchInput.value.trim());
+        }).catch(function(uploadErr){
+          pimSaveBtn.disabled = false;
+          pimFormError.textContent = "제품 정보는 저장되었으나 첨부파일 업로드에 실패했습니다: " + (uploadErr && uploadErr.message ? uploadErr.message : "업로드 오류");
+          pimFormError.classList.add("show");
+          loadProducts(pimSearchInput.value.trim());
         });
       })
       .catch(function(){
@@ -640,13 +646,9 @@ function uploadPimAttachments(productId, fileList){
     .then(function(data){
       if(!data.ok){
         showToast(data.error || "첨부파일 업로드에 실패했습니다.");
-        return null;
+        throw new Error(data.error || "첨부파일 업로드에 실패했습니다.");
       }
       return data.product;
-    })
-    .catch(function(){
-      showToast("첨부파일 업로드 중 서버에 연결할 수 없습니다.");
-      return null;
     });
 }
 

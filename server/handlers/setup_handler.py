@@ -236,6 +236,12 @@ def handle_post_setup_complete(handler, raw_body, ip):
     #    would otherwise leave a half-written licence row behind.
     act_ok, act_msg = activate_license(license_key)
     if not act_ok:
+        # Compensation: Roll back master admin user and reset setup cache to avoid locking out setup wizard
+        try:
+            execute("DELETE FROM users WHERE username = ?", (username,))
+            reset_setup_cache()
+        except Exception:
+            pass
         handler._send_json(400, {"ok": False, "error": act_msg})
         return
 

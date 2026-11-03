@@ -20,7 +20,10 @@ from db import execute, query
 class TestAiChatDataPermissions(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # Create test records in database
+        # Create test records and fixtures in database
+        execute("INSERT OR IGNORE INTO departments (id, name, color_index, local_prefix) VALUES ('dev', 'Development', 1, 'DEV')")
+        execute("INSERT OR IGNORE INTO departments (id, name, color_index, local_prefix) VALUES ('sales', 'Sales', 2, 'SALES')")
+        execute("INSERT OR IGNORE INTO users (id, name, username, dept_id, email, salt, password_hash, role, status) VALUES (6, '강동원', 'kang.dw', 'sales', 'kang@example.com', 'salt', 'hash', 'member', 'active')")
         execute("DELETE FROM records WHERE id >= 999900")
         # 1. Dept Dev: public record
         execute("""
@@ -51,6 +54,7 @@ class TestAiChatDataPermissions(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         execute("DELETE FROM records WHERE id >= 999900")
+        execute("DELETE FROM users WHERE id = 6 AND username = 'kang.dw'")
 
     def setUp(self):
         self.cfg = {"jira": {"enabled": False}}
