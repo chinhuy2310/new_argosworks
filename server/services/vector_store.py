@@ -965,6 +965,7 @@ def can_view_vector_doc(session, doc_type, meta, ctx=None):
             return False
         rec = dict(rec)
         rec["assignee_name"] = rec.get("assignee") or rec.get("assignee_name") or ""
+        rec["assignee_email"] = rec.get("assigneeEmail") or rec.get("assignee_email") or ""
         rec["dept_id"] = rec.get("dept_id") or rec.get("org") or ""
         rec["org"] = rec.get("org") or rec.get("dept_id") or ""
         rec["is_private"] = bool(rec.get("is_private"))
