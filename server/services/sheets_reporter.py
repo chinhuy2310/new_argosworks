@@ -37,6 +37,15 @@ def get_report_columns(lang="ko"):
     """Returns report column headers in Korean or English (default: Korean)"""
     return REPORT_COLUMNS_I18N.get(str(lang).lower().strip(), REPORT_COLUMNS_I18N["ko"])
 
+def _excel_safe_value(value):
+    """Prevent spreadsheet formula execution for untrusted text values."""
+    if not isinstance(value, str):
+        return value
+    probe = value.lstrip(" \t\r\n\x00\x0b\x0c")
+    if probe.startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
+
 # Default fallback
 COLUMNS = REPORT_COLUMNS_I18N["ko"]
 
@@ -454,7 +463,7 @@ def _generate_xlsx(rows, filepath, start_date, end_date, cfg=None, lang="ko"):
     ws.merge_cells('A1:L1')
     title_cell = ws['A1']
     title_text = f"{ws_name} Weekly Work Report ({start_date} ~ {end_date})" if lang == "en" else f"{ws_name} 주간 업무 보고서 ({start_date} ~ {end_date})"
-    title_cell.value = title_text
+    title_cell.value = _excel_safe_value(title_text)
     title_cell.font = Font(name='Malgun Gothic', size=14, bold=True)
     title_cell.alignment = Alignment(horizontal='center', vertical='center')
     
@@ -495,7 +504,7 @@ def _generate_xlsx(rows, filepath, start_date, end_date, cfg=None, lang="ko"):
         
         for col_idx, col_name in enumerate(COLUMNS, 1):
             cell = ws.cell(row=row_idx, column=col_idx)
-            cell.value = r.get(col_name, '')
+            cell.value = _excel_safe_value(r.get(col_name, ''))
             cell.font = base_font
             cell.border = thin_border
             
@@ -763,20 +772,29 @@ def _render_custom_template(template_path, rows, filepath, start_date, end_date,
             if isinstance(val, str):
                 val_clean = val.strip()
                 matched_field = None
+                matched_tag = None
                 for tag, field in TAG_FIELD_MAP.items():
                     if tag in val_clean:
                         matched_field = field
+                        matched_tag = tag
                         break
                 if matched_field:
-                    is_row_template = True
                     detected_tags[c_idx] = matched_field
-                else:
+                    # {{assignee}} is also used in the report subtitle. It is
+                    # a row-template marker only when accompanied by another
+                    # row-specific marker in the same row.
+                    if matched_tag not in ("{{assignee}}", "{{담당자}}"):
+                        is_row_template = True
+
+                # Ambiguous assignee placeholders in title/subtitle rows are
+                # scalar substitutions, not enough to identify a data row.
+                if (not matched_field) or (matched_tag in ("{{assignee}}", "{{담당자}}")):
                     new_val = val
                     for s_tag, s_rep in scalar_replacements.items():
                         if s_tag in new_val:
                             new_val = new_val.replace(s_tag, s_rep)
                     if new_val != val:
-                        cell.value = new_val
+                        cell.value = _excel_safe_value(new_val)
 
         if is_row_template and template_row_idx is None:
             template_row_idx = r_idx
@@ -816,7 +834,7 @@ def _render_custom_template(template_path, rows, filepath, start_date, end_date,
 
             field = row_tag_cols.get(c_idx)
             if field:
-                c.value = row_data.get(field, "")
+                c.value = _excel_safe_value(row_data.get(field, ""))
             else:
                 c.value = ""
 

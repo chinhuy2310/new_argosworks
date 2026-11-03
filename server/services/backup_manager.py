@@ -124,75 +124,120 @@ def update_backup_config(new_dir):
 
 def import_backup_file(file_bytes, original_filename, note="외부 업로드 백업"):
     """
-    사용자가 로컬 PC/외부 드라이브에서 업로드한 백업 파일(.tar.gz, .db.gz 또는 .db)을 검증하고 
-    현재 백업 디렉토리에 정식 백업본으로 안전하게 등록한다.
+    Validate and register a user-uploaded SQLite or PostgreSQL backup archive.
+    PostgreSQL archives are checked with pg_restore --list; they are never
+    silently interpreted as SQLite files.
     """
     with _backup_lock:
         bdir = _ensure_backup_dir()
         safe_name = os.path.basename(original_filename).replace(" ", "_")
-        
+
         is_tar = safe_name.endswith(".tar.gz")
         is_gz = safe_name.endswith(".db.gz")
         is_raw_db = safe_name.endswith(".db")
-
         if not (is_tar or is_gz or is_raw_db):
             raise ValueError("지원하지 않는 백업 파일 형식입니다. (.tar.gz, .db.gz 또는 .db 파일만 가능합니다)")
 
-        if is_raw_db:
-            final_name = safe_name + ".gz"
-        else:
-            final_name = safe_name
-
+        final_name = safe_name + ".gz" if is_raw_db else safe_name
         dest_path = os.path.join(bdir, final_name)
         if os.path.exists(dest_path):
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             final_name = f"imported_{ts}_{final_name}"
             dest_path = os.path.join(bdir, final_name)
 
-        # 1. 파일 저장
         if is_raw_db:
-            with gzip.open(dest_path, "wb", compresslevel=6) as f_out:
-                f_out.write(file_bytes)
+            with gzip.open(dest_path, "wb", compresslevel=6) as output_file:
+                output_file.write(file_bytes)
         else:
-            with open(dest_path, "wb") as f_out:
-                f_out.write(file_bytes)
+            with open(dest_path, "wb") as output_file:
+                output_file.write(file_bytes)
 
-        # 2. SQLite 무결성 검사
-        chk_tmp = os.path.join(bdir, f"chk_import_{datetime.now().strftime('%H%M%S')}.tmp.db")
+        check_suffix = ".dump" if ENGINE == "postgres" else ".tmp.db"
+        chk_tmp = os.path.join(bdir, f"chk_import_{datetime.now().strftime('%H%M%S_%f')}{check_suffix}")
         try:
+            detected_engine = "sqlite"
             if is_tar:
-                with tarfile.open(dest_path, "r:gz") as tar:
-                    db_member = None
-                    for m in tar.getmembers():
-                        if m.name.endswith(".db") or m.name.endswith(".sqlite"):
-                            db_member = m
-                            break
-                    if not db_member:
-                        raise RuntimeError("백업 아카이브(.tar.gz) 내에 유효한 SQLite 데이터베이스가 없습니다.")
-                    with open(chk_tmp, "wb") as f_out:
-                        extracted = tar.extractfile(db_member)
-                        shutil.copyfileobj(extracted, f_out)
-            else:
-                with gzip.open(dest_path, "rb") as f_in, open(chk_tmp, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out)
+                with tarfile.open(dest_path, "r:gz") as archive:
+                    members = [m for m in archive.getmembers() if m.isfile()]
+                    dump_members = [m for m in members if os.path.basename(m.name) == "argos.dump" or m.name.endswith(".dump")]
+                    sqlite_members = [m for m in members if m.name.lower().endswith((".db", ".sqlite"))]
+                    if dump_members and sqlite_members:
+                        raise RuntimeError("백업 아카이브에 PostgreSQL과 SQLite 데이터베이스가 함께 포함되어 있습니다.")
+                    if dump_members:
+                        db_member = dump_members[0]
+                        detected_engine = "postgres"
+                    elif sqlite_members:
+                        db_member = sqlite_members[0]
+                        detected_engine = "sqlite"
+                    else:
+                        raise RuntimeError("백업 아카이브에 검증 가능한 데이터베이스 파일이 없습니다.")
 
-            conn = sqlite3.connect(chk_tmp)
-            cur = conn.cursor()
-            cur.execute("PRAGMA integrity_check;")
-            res = cur.fetchone()
-            conn.close()
-            if not res or res[0] != "ok":
+                    manifest_member = next(
+                        (m for m in members if os.path.basename(m.name) == "backup_manifest.json"),
+                        None
+                    )
+                    if manifest_member:
+                        manifest_file = archive.extractfile(manifest_member)
+                        if manifest_file:
+                            try:
+                                embedded_manifest = json.loads(manifest_file.read().decode("utf-8"))
+                                declared_engine = embedded_manifest.get("database_engine")
+                                if declared_engine and declared_engine != detected_engine:
+                                    raise RuntimeError("백업 Manifest의 DB 엔진 정보가 실제 파일과 일치하지 않습니다.")
+                            except json.JSONDecodeError as manifest_error:
+                                raise RuntimeError("백업 Manifest JSON이 손상되었습니다.") from manifest_error
+
+                    extracted = archive.extractfile(db_member)
+                    if extracted is None:
+                        raise RuntimeError("백업 데이터베이스 파일을 읽을 수 없습니다.")
+                    with open(chk_tmp, "wb") as output_file:
+                        shutil.copyfileobj(extracted, output_file)
+            else:
+                with gzip.open(dest_path, "rb") as source_file, open(chk_tmp, "wb") as output_file:
+                    shutil.copyfileobj(source_file, output_file)
+
+            if detected_engine != ENGINE:
+                raise ValueError(
+                    f"백업 DB 엔진({detected_engine})이 현재 서버 엔진({ENGINE})과 다릅니다. "
+                    "동일한 DB 엔진의 서버에서 가져오세요."
+                )
+
+            if detected_engine == "postgres":
+                try:
+                    verify = subprocess.run(
+                        [_find_pg_tool("pg_restore"), "--list", chk_tmp],
+                        capture_output=True,
+                        text=True
+                    )
+                except FileNotFoundError as tool_error:
+                    raise FileNotFoundError(
+                        "PostgreSQL 백업 검증 도구(pg_restore)가 없습니다. postgresql-client 패키지를 설치해주세요."
+                    ) from tool_error
+                if verify.returncode != 0:
+                    raise RuntimeError(f"가져온 PostgreSQL 백업 검증 실패: {verify.stderr}")
+            else:
+                conn = sqlite3.connect(chk_tmp)
+                try:
+                    result = conn.execute("PRAGMA integrity_check;").fetchone()
+                finally:
+                    conn.close()
+                if not result or result[0] != "ok":
+                    raise RuntimeError(f"가져온 SQLite 백업 무결성 검증 실패: {result}")
+
+        except Exception:
+            try:
                 if os.path.exists(dest_path):
                     os.remove(dest_path)
-                raise RuntimeError(f"가져온 백업 파일의 CSDL 무결성 검증 실패: {res}")
+            except OSError:
+                pass
+            raise
         finally:
-            if os.path.exists(chk_tmp):
-                try:
+            try:
+                if os.path.exists(chk_tmp):
                     os.remove(chk_tmp)
-                except Exception:
-                    pass
+            except OSError:
+                pass
 
-        # 3. Manifest 등록
         now = datetime.now()
         manifest = _read_manifest()
         manifest[final_name] = {
@@ -201,7 +246,8 @@ def import_backup_file(file_bytes, original_filename, note="외부 업로드 백
             "type": "imported",
             "note": note,
             "gz_size": os.path.getsize(dest_path),
-            "format": "tar.gz" if is_tar else "db.gz"
+            "format": "tar.gz" if is_tar else "db.gz",
+            "database_engine": ENGINE
         }
         _write_manifest(manifest)
 
@@ -283,6 +329,7 @@ def create_backup(note="수동 백업", backup_type="manual"):
             meta_data = {
                 "version": "2.0",
                 "app": "ARGOS WORKS",
+                "database_engine": "postgres" if is_postgres else "sqlite",
                 "created_at": now.isoformat(),
                 "type": backup_type,
                 "note": note,
@@ -383,6 +430,57 @@ def _safe_extract_tar(tar, target_dir):
         for member in tar.getmembers():
             tar.extract(member, target_dir)
 
+def _rollback_restore_from_safety_snapshot(safety_path, is_postgres, src_db_path, rollback_dir):
+    """Restore the verified pre-restore snapshot after any post-write restore failure."""
+    os.makedirs(rollback_dir, exist_ok=True)
+    with tarfile.open(safety_path, "r:gz") as safety_tar:
+        _safe_extract_tar(safety_tar, rollback_dir)
+
+    db_name = "argos.dump" if is_postgres else "argos.db"
+    safety_db = None
+    for root, _, files in os.walk(rollback_dir):
+        if db_name in files:
+            safety_db = os.path.join(root, db_name)
+            break
+    if not safety_db:
+        raise RuntimeError("안전 스냅샷에서 원본 데이터베이스 파일을 찾을 수 없습니다.")
+
+    close_connection(force=True)
+    if is_postgres:
+        cmd = [
+            _find_pg_tool("pg_restore"), "--clean", "--if-exists",
+            "--exit-on-error", "--single-transaction", "-d", DATABASE_URL, safety_db
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"PostgreSQL 안전 스냅샷 롤백 실패: {result.stderr}")
+    else:
+        check_conn = sqlite3.connect(safety_db)
+        try:
+            check = check_conn.execute("PRAGMA integrity_check;").fetchone()
+        finally:
+            check_conn.close()
+        if not check or check[0] != "ok":
+            raise RuntimeError(f"안전 스냅샷 SQLite 무결성 검사 실패: {check}")
+        source_conn = sqlite3.connect(safety_db)
+        live_conn = sqlite3.connect(src_db_path)
+        try:
+            with live_conn:
+                source_conn.backup(live_conn)
+        finally:
+            source_conn.close()
+            live_conn.close()
+
+    # Restore attachments as a directory snapshot, not as an overlay.
+    snapshot_attachments = os.path.join(rollback_dir, "attachments")
+    if os.path.isdir(snapshot_attachments):
+        if os.path.exists(ATTACH_DIR):
+            shutil.rmtree(ATTACH_DIR)
+        shutil.copytree(snapshot_attachments, ATTACH_DIR)
+    elif os.path.exists(ATTACH_DIR):
+        shutil.rmtree(ATTACH_DIR)
+
+
 def restore_backup(backup_filename):
     """
     지정한 백업 파일(.tar.gz 또는 .db.gz)로부터 CSDL 및 첨부파일을 1-Click 복원한다.
@@ -403,43 +501,83 @@ def restore_backup(backup_filename):
         temp_restore_db = os.path.join(bdir, "argos_restore_temp.dump" if is_postgres else "argos_restore_temp.db")
         temp_extract_dir = os.path.join(bdir, f"extract_temp_{int(time.time())}")
 
-        # 1. 안전 사전 백업 생성 (Pre-restore Safety Backup)
+        # 1. Create and verify a safety snapshot before any destructive restore.
         safety_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         safety_name = f"argos_safety_before_restore_{safety_ts}"
         safety_path = os.path.join(bdir, f"{safety_name}.tar.gz")
+        safety_tmp = os.path.join(
+            bdir, f"{safety_name}.dump" if is_postgres else f"{safety_name}.tmp.db"
+        )
         try:
             if is_postgres:
-                safety_tmp = os.path.join(bdir, f"{safety_name}.dump")
-                try:
-                    res = subprocess.run([_find_pg_tool("pg_dump"), "-Fc", "-d", DATABASE_URL, "-f", safety_tmp], capture_output=True)
-                    if res.returncode == 0:
-                        with tarfile.open(safety_path, "w:gz", compresslevel=6) as star:
-                            star.add(safety_tmp, arcname="argos.dump")
-                            if os.path.exists(ATTACH_DIR):
-                                star.add(ATTACH_DIR, arcname="attachments")
-                except FileNotFoundError:
-                    logger.warning("pg_dump를 찾을 수 없어 사전 안전 백업 생성을 건너뜁니다.")
-                if os.path.exists(safety_tmp):
-                    os.remove(safety_tmp)
-            elif os.path.exists(src_db_path):
-                safety_tmp_db = os.path.join(bdir, f"{safety_name}.tmp.db")
-                s_conn = sqlite3.connect(src_db_path)
-                d_conn = sqlite3.connect(safety_tmp_db)
-                with d_conn:
-                    s_conn.backup(d_conn)
-                d_conn.close()
-                s_conn.close()
-
+                dump_cmd = [
+                    _find_pg_tool("pg_dump"), "-Fc", "-d", DATABASE_URL, "-f", safety_tmp
+                ]
+                dump_res = subprocess.run(dump_cmd, capture_output=True, text=True)
+                if dump_res.returncode != 0 or not os.path.isfile(safety_tmp) or os.path.getsize(safety_tmp) == 0:
+                    raise RuntimeError(
+                        f"복원 전 PostgreSQL 안전 백업 생성 실패 (code {dump_res.returncode}): "
+                        f"{dump_res.stderr}"
+                    )
+                verify_cmd = [_find_pg_tool("pg_restore"), "--list", safety_tmp]
+                verify_res = subprocess.run(verify_cmd, capture_output=True, text=True)
+                if verify_res.returncode != 0:
+                    raise RuntimeError(
+                        f"복원 전 PostgreSQL 안전 백업 검증 실패: {verify_res.stderr}"
+                    )
                 with tarfile.open(safety_path, "w:gz", compresslevel=6) as star:
-                    star.add(safety_tmp_db, arcname="argos.db")
+                    star.add(safety_tmp, arcname="argos.dump")
+                    if os.path.exists(ATTACH_DIR):
+                        star.add(ATTACH_DIR, arcname="attachments")
+            else:
+                if not os.path.isfile(src_db_path):
+                    raise RuntimeError("복원 전 SQLite 안전 백업을 만들 원본 DB 파일이 없습니다.")
+                source_conn = sqlite3.connect(src_db_path)
+                snapshot_conn = sqlite3.connect(safety_tmp)
+                try:
+                    with snapshot_conn:
+                        source_conn.backup(snapshot_conn)
+                    check = snapshot_conn.execute("PRAGMA integrity_check;").fetchone()
+                    if not check or check[0] != "ok":
+                        raise RuntimeError(f"복원 전 SQLite 안전 백업 무결성 검사 실패: {check}")
+                finally:
+                    snapshot_conn.close()
+                    source_conn.close()
+                with tarfile.open(safety_path, "w:gz", compresslevel=6) as star:
+                    star.add(safety_tmp, arcname="argos.db")
                     if os.path.exists(ATTACH_DIR):
                         star.add(ATTACH_DIR, arcname="attachments")
 
-                if os.path.exists(safety_tmp_db):
-                    os.remove(safety_tmp_db)
-        except Exception as se:
-            logger.warning(f"안전 백업 생성 중 경고: {se}")
+            if not os.path.isfile(safety_path) or os.path.getsize(safety_path) == 0:
+                raise RuntimeError("복원 전 안전 백업 아카이브가 생성되지 않았습니다.")
+            with tarfile.open(safety_path, "r:gz") as check_tar:
+                names = check_tar.getnames()
+                expected_member = "argos.dump" if is_postgres else "argos.db"
+                if expected_member not in names:
+                    raise RuntimeError("복원 전 안전 백업에 데이터베이스 파일이 포함되지 않았습니다.")
+        except Exception as safety_error:
+            try:
+                if os.path.exists(safety_path):
+                    os.remove(safety_path)
+            except OSError:
+                pass
+            if isinstance(safety_error, FileNotFoundError):
+                raise FileNotFoundError(
+                    "PostgreSQL 안전 백업 검증 도구(pg_restore)가 시스템에 설치되어 있지 않습니다. "
+                    "Dockerfile 또는 호스트에 postgresql-client 패키지를 설치해주세요."
+                ) from safety_error
+            raise RuntimeError(
+                f"안전 스냅샷을 검증하지 못해 데이터 복원을 중단했습니다: {safety_error}"
+            ) from safety_error
+        finally:
+            try:
+                if os.path.exists(safety_tmp):
+                    os.remove(safety_tmp)
+            except OSError:
+                pass
 
+        restore_started = False
+        rollback_dir = os.path.join(bdir, f"rollback_temp_{int(time.time() * 1000000)}")
         try:
             # 2. 압축 해제 및 DB 파일 준비
             has_attachments = False
@@ -479,7 +617,11 @@ def restore_backup(backup_filename):
 
             if is_postgres:
                 # PostgreSQL pg_restore execution with clean drop/create
-                cmd = [_find_pg_tool("pg_restore"), "--clean", "--if-exists", "-d", DATABASE_URL, temp_restore_db]
+                cmd = [
+                    _find_pg_tool("pg_restore"), "--clean", "--if-exists",
+                    "--exit-on-error", "--single-transaction", "-d", DATABASE_URL, temp_restore_db
+                ]
+                restore_started = True
                 try:
                     res = subprocess.run(cmd, capture_output=True, text=True)
                 except FileNotFoundError:
@@ -487,8 +629,9 @@ def restore_backup(backup_filename):
                         "PostgreSQL 복원 도구(pg_restore)가 시스템에 설치되어 있지 않습니다. "
                         "Dockerfile 또는 호스트에 postgresql-client 패키지를 설치해주세요."
                     )
-                # pg_restore may return 1 on warnings (e.g. notices), returncode > 1 is failure
-                if res.returncode > 1:
+                # pg_restore returns non-zero when restore errors occurred; never report
+                # a potentially partial restore as successful.
+                if res.returncode != 0:
                     raise RuntimeError(f"PostgreSQL pg_restore 복원 실패 (code {res.returncode}): {res.stderr}")
             else:
                 # SQLite integrity check & restore
@@ -501,6 +644,7 @@ def restore_backup(backup_filename):
                     raise RuntimeError(f"복원할 백업 파일의 무결성이 손상되었습니다: {res}")
 
                 # SQLite Online Backup API hot restore
+                restore_started = True
                 restore_conn = sqlite3.connect(temp_restore_db)
                 live_conn = sqlite3.connect(src_db_path)
                 with live_conn:
@@ -508,20 +652,15 @@ def restore_backup(backup_filename):
                 restore_conn.close()
                 live_conn.close()
 
-            # 6. 첨부파일 디렉토리 복원 (있을 경우)
-            if has_attachments and os.path.exists(temp_extract_dir):
-                extracted_attach = os.path.join(temp_extract_dir, "attachments")
-                if os.path.exists(extracted_attach):
-                    os.makedirs(ATTACH_DIR, exist_ok=True)
-                    for item in os.listdir(extracted_attach):
-                        s = os.path.join(extracted_attach, item)
-                        d = os.path.join(ATTACH_DIR, item)
-                        if os.path.isdir(s):
-                            if os.path.exists(d):
-                                shutil.rmtree(d, ignore_errors=True)
-                            shutil.copytree(s, d)
-                        else:
-                            shutil.copy2(s, d)
+            # 6. Replace attachments only when the archive actually contains
+            # an attachment snapshot. Legacy .db.gz backups are database-only;
+            # they must not erase the live attachment directory.
+            extracted_attach = os.path.join(temp_extract_dir, "attachments") if is_tar else None
+            if extracted_attach and os.path.isdir(extracted_attach):
+                if os.path.exists(ATTACH_DIR):
+                    shutil.rmtree(ATTACH_DIR)
+                shutil.copytree(extracted_attach, ATTACH_DIR)
+                has_attachments = True
 
             # 7. 최신 스키마 마이그레이션 재확인/적용
             init_db()
@@ -533,6 +672,21 @@ def restore_backup(backup_filename):
                 "safety_backup": os.path.basename(safety_path),
                 "attachments_restored": has_attachments
             }
+        except Exception as restore_error:
+            if restore_started:
+                try:
+                    _rollback_restore_from_safety_snapshot(
+                        safety_path, is_postgres, src_db_path, rollback_dir
+                    )
+                except Exception as rollback_error:
+                    raise RuntimeError(
+                        f"복원 작업 실패: {restore_error}. 사전 안전 스냅샷 롤백도 실패했습니다: {rollback_error}. "
+                        f"안전 백업 파일을 보존했습니다: {os.path.basename(safety_path)}"
+                    ) from restore_error
+                raise RuntimeError(
+                    f"복원 작업이 실패하여 사전 안전 스냅샷으로 원상 복구했습니다: {restore_error}"
+                ) from restore_error
+            raise
         finally:
             if os.path.exists(temp_restore_db):
                 try:
@@ -542,6 +696,11 @@ def restore_backup(backup_filename):
             if os.path.exists(temp_extract_dir):
                 try:
                     shutil.rmtree(temp_extract_dir, ignore_errors=True)
+                except Exception:
+                    pass
+            if os.path.exists(rollback_dir):
+                try:
+                    shutil.rmtree(rollback_dir, ignore_errors=True)
                 except Exception:
                     pass
 

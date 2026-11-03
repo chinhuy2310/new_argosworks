@@ -794,18 +794,41 @@ def _schedule_event_matches(user_or_session, event, user_dept_map, user_name, us
 
     if user_dept and ev_org and ev_org == user_dept:
         return True
-    if ev_owner and user_name and ev_owner == user_name:
+
+    # Cross-department personal access must use an unambiguous identity.
+    user_email = (user_or_session.get("email") or "").strip().lower()
+    user_id = user_or_session.get("id") or user_or_session.get("user_id")
+    event_owner_id = event.get("ownerId")
+    if user_id not in (None, "") and event_owner_id not in (None, ""):
+        if str(user_id) == str(event_owner_id):
+            return True
+    user_key = account_key(user_name, user_dept) if user_name and user_dept else ""
+    owner_key = (event.get("ownerKey") or "").strip()
+    owner_email = (event.get("ownerEmail") or "").strip().lower()
+    if user_key and owner_key and owner_key == user_key:
+        return True
+    if user_email and owner_email and owner_email == user_email:
+        return True
+    if (not owner_key and not owner_email and ev_owner == user_name
+            and ev_org == user_dept and is_display_name_unique(user_name)):
         return True
 
     for p in (event.get("participants") or []):
         if isinstance(p, dict):
-            p_name = (p.get("name") or "").strip()
+            p_key = (p.get("key") or "").strip()
+            p_email = (p.get("email") or "").strip().lower()
             p_org = (p.get("org") or "").strip().lower()
-            if p_name and user_name and p_name == user_name:
-                return True
+            p_name = (p.get("name") or "").strip()
             if user_dept and p_org and p_org == user_dept:
                 return True
-        elif p and user_name and str(p).strip() == user_name:
+            if user_key and p_key and p_key == user_key:
+                return True
+            if user_email and p_email and p_email == user_email:
+                return True
+            if (not p_key and not p_email and p_name == user_name
+                    and p_org == user_dept and is_display_name_unique(user_name)):
+                return True
+        elif p and user_name and str(p).strip() == user_name and is_display_name_unique(user_name):
             return True
     return False
 
@@ -1275,16 +1298,15 @@ def rotate_session(old_token):
         user_id=sess["id"]
     )
 
-def delete_all_user_sessions(user_id_or_name):
-    """해당 사용자의 모든 기기 세션 강제 만료 (Logout from all devices)."""
-    if user_id_or_name is not None and user_id_or_name != "":
-        try:
-            if isinstance(user_id_or_name, int) or (isinstance(user_id_or_name, str) and str(user_id_or_name).isdigit()):
-                execute("DELETE FROM sessions WHERE user_id = ?", (int(user_id_or_name),))
-            else:
-                execute("DELETE FROM sessions WHERE user_name = ? OR user_id IN (SELECT id FROM users WHERE username = ?)", (str(user_id_or_name), str(user_id_or_name)))
-        except Exception as e:
-            log_line("[auth] Error deleting all user sessions:", e)
+def delete_all_user_sessions(user_id):
+    """Revoke every session belonging to one immutable user ID."""
+    if user_id in (None, ""):
+        raise ValueError("user_id is required to revoke all sessions")
+    try:
+        execute("DELETE FROM sessions WHERE user_id = ?", (int(user_id),))
+    except Exception as e:
+        log_line("[auth] Error deleting all user sessions:", e)
+        raise
 
 def cleanup_expired_sessions():
     """
@@ -1297,8 +1319,8 @@ def cleanup_expired_sessions():
     try:
         execute(
             """DELETE FROM sessions
-               WHERE COALESCE(NULLIF(CAST(last_active_at AS REAL), 0), CAST(created_at AS REAL)) < ?
-                  OR (CAST(created_at AS REAL) > 0 AND CAST(created_at AS REAL) < ?)""",
+               WHERE COALESCE(NULLIF(CAST(last_active_at AS DOUBLE PRECISION), 0), CAST(created_at AS DOUBLE PRECISION)) < ?
+                  OR (CAST(created_at AS DOUBLE PRECISION) > 0 AND CAST(created_at AS DOUBLE PRECISION) < ?)""",
             (sliding_cutoff, max_age_cutoff)
         )
     except Exception as e:

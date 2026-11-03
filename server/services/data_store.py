@@ -404,7 +404,7 @@ def _get_record_attachments(record_id):
 
 
 def delete_record_attachment(record_id, attachment_id):
-    """레코드의 첨부파일을 DB 및 디스크에서 삭제한다."""
+    """레코드 첨부파일을 먼저 격리한 뒤 DB 메타데이터를 삭제한다."""
     rows = query(
         "SELECT filename FROM record_attachments WHERE id = ? AND record_id = ?",
         (attachment_id, record_id)
@@ -412,23 +412,58 @@ def delete_record_attachment(record_id, attachment_id):
     if not rows:
         return False, "첨부파일을 찾을 수 없습니다."
     fname = rows[0]["filename"]
-    execute(
-        "DELETE FROM record_attachments WHERE id = ? AND record_id = ?",
-        (attachment_id, record_id)
-    )
     from config import ATTACH_DIR
     from utils.file_ops import safe_join
     from utils.logging import log_line
+    import uuid
 
     rec_dir = safe_join(ATTACH_DIR, str(record_id))
     fpath = safe_join(rec_dir, fname) if rec_dir else None
     if not fpath:
-        log_line(f"[Attachment] Invalid attachment path or traversal attempt: record_id={record_id}, fname={fname}")
-    elif os.path.isfile(fpath):
+        # Preserve the historical safe behavior for corrupt legacy metadata:
+        # remove only the DB reference and never touch a path outside the record
+        # directory. No filesystem path is opened or deleted in this branch.
+        log_line(
+            f"[Attachment] Invalid attachment path; deleting metadata only: record_id={record_id}, fname={fname}"
+        )
+        execute(
+            "DELETE FROM record_attachments WHERE id = ? AND record_id = ?",
+            (attachment_id, record_id)
+        )
+        return True, None
+
+    quarantine_path = None
+    if os.path.isfile(fpath):
+        quarantine_path = f"{fpath}.deleting-{uuid.uuid4().hex}"
         try:
-            os.remove(fpath)
-        except OSError as e:
-            log_line(f"[Attachment] Failed to remove file from disk ({fpath}): {e}")
+            # Same-filesystem atomic rename removes the file from the serving
+            # path before the metadata row is deleted.
+            os.replace(fpath, quarantine_path)
+        except OSError as move_error:
+            return False, f"첨부파일을 안전하게 격리하지 못했습니다: {move_error}"
+
+    try:
+        execute(
+            "DELETE FROM record_attachments WHERE id = ? AND record_id = ?",
+            (attachment_id, record_id)
+        )
+    except Exception:
+        if quarantine_path and os.path.exists(quarantine_path):
+            try:
+                os.replace(quarantine_path, fpath)
+            except OSError as rollback_error:
+                log_line(
+                    f"[Attachment] Failed to restore quarantined file ({quarantine_path}): {rollback_error}"
+                )
+        raise
+
+    if quarantine_path and os.path.exists(quarantine_path):
+        try:
+            os.remove(quarantine_path)
+        except OSError as cleanup_error:
+            # The quarantine filename is no longer referenced by the database
+            # or served by the attachment route; log for later maintenance.
+            log_line(f"[Attachment] Quarantined file cleanup failed ({quarantine_path}): {cleanup_error}")
     return True, None
 
 
@@ -654,6 +689,7 @@ def read_schedule():
     for r in rows:
         ev = {
             "id": r["id"],
+            "ownerId": r.get("owner_id"),
             "ownerKey": f"{r['owner_name']}|{r['owner_dept_id']}",
             "ownerName": r["owner_name"],
             "ownerOrg": r["owner_dept_id"],
@@ -697,19 +733,20 @@ def write_schedule(events):
         cur.execute("DELETE FROM schedule_events")
 
         for ev in events:
-            owner_id = None
-            try:
-                row = cur.execute(
-                    "SELECT id FROM users WHERE name = ? AND dept_id = ?",
-                    (ev.get("ownerName", ""), ev.get("ownerOrg", ""))
-                ).fetchone()
-                if row:
-                    # PostgreSQL transactions use RealDictCursor (dict rows); SQLite
-                    # uses tuples. row[0] would raise KeyError on Postgres and the
-                    # except below would silently drop the owner link.
-                    owner_id = row["id"] if isinstance(row, dict) else row[0]
-            except Exception as e:
-                log_line("[data_store] Error looking up schedule event owner_id:", e)
+            owner_id = ev.get("ownerId")
+            if owner_id in ("", 0):
+                owner_id = None
+            if owner_id is None:
+                try:
+                    row = cur.execute(
+                        "SELECT id FROM users WHERE name = ? AND dept_id = ?",
+                        (ev.get("ownerName", ""), ev.get("ownerOrg", ""))
+                    ).fetchone()
+                    if row:
+                        # PostgreSQL uses dict rows; SQLite uses tuples.
+                        owner_id = row["id"] if isinstance(row, dict) else row[0]
+                except Exception as e:
+                    log_line("[data_store] Error looking up schedule event owner_id:", e)
 
             cur.execute(
                 """INSERT INTO schedule_events(id, owner_id, owner_name, owner_dept_id, owner_email,
@@ -978,6 +1015,30 @@ def read_product_categories():
         # If empty in DB, provide default template if available
         if not tpl:
             tpl = defaults_by_id.get(r["id"]) or defaults_by_name.get(r["name"]) or []
+        # Sanitize legacy persisted templates on read too: older installations may
+        # contain arbitrary keys written before backend validation existed.
+        import re
+        safe_tpl = []
+        if isinstance(tpl, list):
+            for index, field in enumerate(tpl, 1):
+                if isinstance(field, str):
+                    field = {"group": "기본 사양", "label": field, "key": f"spec_{index}", "maxlen": 200}
+                if not isinstance(field, dict):
+                    continue
+                key = field.get("key")
+                label = field.get("label", "")
+                group = field.get("group", "")
+                maxlen = field.get("maxlen", 200)
+                if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", key):
+                    continue
+                if not isinstance(label, str) or len(label) > 120:
+                    continue
+                if not isinstance(group, str) or len(group) > 120:
+                    continue
+                if not isinstance(maxlen, int) or isinstance(maxlen, bool) or not 1 <= maxlen <= 2000:
+                    field = dict(field, maxlen=200)
+                safe_tpl.append(field)
+        tpl = safe_tpl
         result.append({
             "id": r["id"],
             "name": r["name"],
@@ -998,6 +1059,34 @@ def save_product_category(cat_id, name, spec_template):
     if not name:
         return False, "카테고리 이름을 입력해주세요."
     
+    # Older versions accepted a list of labels. Normalize that legacy shape
+    # into explicit safe keys while preserving label-based value lookup.
+    if isinstance(spec_template, list):
+        spec_template = [
+            {"group": "기본 사양", "label": item, "key": f"spec_{index}", "maxlen": 200}
+            if isinstance(item, str) else item
+            for index, item in enumerate(spec_template, 1)
+        ]
+
+    # Template keys are used in HTML attributes by the PIM editor.
+    # Validate all persisted template fields at the backend boundary.
+    import re
+    if not isinstance(spec_template, list) or len(spec_template) > 100:
+        return False, "규격 템플릿 형식이 올바르지 않습니다."
+    for field in spec_template:
+        if not isinstance(field, dict):
+            return False, "규격 템플릿 항목 형식이 올바르지 않습니다."
+        key = field.get("key")
+        if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", key):
+            return False, "규격 항목 key는 영문, 숫자, 밑줄, 하이픈만 사용할 수 있습니다. (1~64자)"
+        for field_name in ("label", "group"):
+            field_value = field.get(field_name, "")
+            if not isinstance(field_value, str) or len(field_value) > 120:
+                return False, "규격 항목 label/group 값이 올바르지 않습니다."
+        maxlen = field.get("maxlen", 200)
+        if not isinstance(maxlen, int) or isinstance(maxlen, bool) or not 1 <= maxlen <= 2000:
+            return False, "규격 항목 maxlen은 1~2000 사이의 정수여야 합니다."
+
     cats = read_product_categories()
     # Check duplicate name
     if any(c["name"].lower() == name.lower() and c["id"] != cat_id for c in cats):
@@ -1130,7 +1219,7 @@ def update_record_details(record_id_or_code, title=None, memo=None, assignee_nam
             if exp_v != current_version:
                 return None, f"CONFLICT: 다른 사용자가 이 카드를 이미 수정했습니다 (현재 v{current_version}, 클라이언트 v{exp_v}). 최신 정보를 다시 불러와주세요."
         except (ValueError, TypeError):
-            pass
+            return None, "유효하지 않은 버전 값입니다. 최신 정보를 다시 불러온 후 다시 시도해주세요."
 
     updates = []
     params = []

@@ -349,11 +349,17 @@ def handle_account_logout_all(handler, raw_body, ip):
     session = handler._get_session_or_401()
     if not session:
         return
+    user_id = session.get("id") or session.get("user_id")
+    if user_id in (None, ""):
+        handler._send_json(500, {"ok": False, "error": "사용자 계정 식별자를 확인할 수 없어 전체 로그아웃을 완료하지 못했습니다."})
+        return
     try:
         from services.auth import delete_all_user_sessions
-        delete_all_user_sessions(session.get("name"))
+        delete_all_user_sessions(user_id)
     except Exception as e:
         log_line("[Auth] Error deleting all user sessions on logout-all:", e)
+        handler._send_json(500, {"ok": False, "error": "전체 기기 로그아웃 처리에 실패했습니다. 다시 시도해주세요."})
+        return
     logout_cookie_hdr = handler._make_logout_cookie_header()
     handler._send_json(200, {"ok": True, "message": "모든 기기에서 로그아웃되었습니다."}, extra_headers=[logout_cookie_hdr])
 

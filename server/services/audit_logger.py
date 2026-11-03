@@ -80,8 +80,10 @@ def log_audit(session_or_user=None, ip=None, action="", target_type="", target_i
                 details_json
             )
         )
+        return True
     except Exception as e:
         _record_audit_failure(action=action, target_type=target_type, target_id=target_id, err=e)
+        return False
 
 def build_audit_export(logs, export_format="csv"):
     """
@@ -110,7 +112,8 @@ def build_audit_export(logs, export_format="csv"):
 
     def _safe(value):
         text = "" if value is None else str(value)
-        if text[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        probe = text.lstrip(" \\t\\r\\n\\x00\\x0b\\x0c")
+        if probe.startswith(("=", "+", "-", "@")):
             text = "'" + text
         return text
 

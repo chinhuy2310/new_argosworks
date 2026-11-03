@@ -433,10 +433,9 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None)
 
     반환값 규칙(캐시 쪽에서 '진짜 0건'과 '조회 자체가 실패함'을 구분해야 하므로 중요):
       - Jira 연동이 꺼져 있거나 연결된 프로젝트가 하나도 없으면: 빈 리스트 [] (정상, 0건)
-      - 네트워크/인증/API 오류 등으로 조회 자체가 실패하면: None (실패 — 캐시에서 이전
-        목록을 그대로 유지시키기 위한 신호). 단, 이미 몇 페이지를 받아온 뒤 그 다음
-        페이지에서 실패한 경우에는 그때까지 받아온 이슈만이라도 돌려준다(완전 실패보다
-        부분 결과가 낫다)."""
+      - 네트워크/인증/API 오류 등으로 어느 페이지든 조회가 실패하면: None (실패 — 캐시에서
+        이전 목록을 그대로 유지시키기 위한 신호). 일부 페이지만 받은 결과를 완전한 스냅샷처럼
+        저장하면 실제 이슈를 삭제 처리할 수 있으므로 부분 결과는 성공으로 반환하지 않는다."""
     j = cfg.get("jira", {})
     if not j.get("enabled") or not j.get("api_token") or not j.get("email"):
         return [], []
@@ -480,8 +479,10 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None)
                 if first_page:
                     log_line("Jira 이슈 목록 조회 실패(이전 캐시 유지):", e, e2)
                     return None, None
-                log_line("Jira 이슈 목록 추가 페이지 조회 실패(그때까지 받은 %d건만 사용):" % len(all_issues), e)
-                break
+                # A partial page set is not a complete snapshot. Returning it as
+                # success could make full-sync reconciliation delete valid issues.
+                log_line("Jira 이슈 목록 추가 페이지 조회 실패 — 이전 캐시를 유지합니다:", e, e2)
+                return None, None
         first_page = False
         issues = data.get("issues", []) or []
         all_issues.extend(issues)
@@ -831,20 +832,28 @@ def sync_jira_cache(cfg, force_full=False):
         records, activities = res, []
     now = datetime.now().isoformat()
 
-    # DB에 UPSERT 저장
+    # Persist only complete results. A first/forced full sync reconciles deleted
+    # Jira issues after every page has been fetched successfully.
     if records is not None:
-        if records:
-            upsert_jira_records(records)
-            try:
-                from services.vector_store import trigger_async_vector_sync
-                trigger_async_vector_sync(cfg)
-            except Exception:
-                pass
-        if activities:
-            upsert_jira_activities(activities)
-        set_last_sync_time(now)
-        all_records = load_all_jira_from_db()
-        all_activities = load_all_jira_activities_from_db()
+        full_sync = last_sync is None
+        saved = True
+        if records or full_sync:
+            saved = upsert_jira_records(records, replace_existing=full_sync)
+        if saved:
+            if activities:
+                upsert_jira_activities(activities)
+            set_last_sync_time(now)
+            if records or full_sync:
+                try:
+                    from services.vector_store import trigger_async_vector_sync
+                    trigger_async_vector_sync(cfg)
+                except Exception:
+                    pass
+            all_records = load_all_jira_from_db()
+            all_activities = load_all_jira_activities_from_db()
+        else:
+            all_records = None
+            all_activities = None
     else:
         all_records = None
         all_activities = None

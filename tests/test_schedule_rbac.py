@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
+import json
 import unittest
 from unittest.mock import patch
 
@@ -88,6 +89,42 @@ class TestScheduleRBACPartitioning(unittest.TestCase):
         execute("DELETE FROM schedule_participants")
         execute("DELETE FROM schedule_events")
         execute("DELETE FROM users WHERE username LIKE 'sched_test_%'")
+
+    def test_owner_can_update_schedule_after_display_name_change(self):
+        from handlers.schedule_handlers import handle_schedule_update
+        from services.data_store import read_schedule
+
+        event = next(e for e in read_schedule() if e["id"] == 8801)
+        self.assertEqual(str(event.get("ownerId")), "881002")
+
+        # Simulate an account rename: immutable user ID and email remain stable,
+        # while the denormalized display name in the event is the old value.
+        renamed_owner = {
+            "id": 881002,
+            "user_id": 881002,
+            "username": "sched_test_dev_mgr",
+            "name": "개발팀장_변경",
+            "org": "dev",
+            "dept_id": "dev",
+            "email": "dev_mgr@test.local",
+            "role": "member",
+            "is_admin": 0
+        }
+        handler = MockHandler(renamed_owner)
+        payload = {
+            "id": 8801,
+            "title": "이름 변경 후에도 본인 일정 수정 가능",
+            "type": "회의",
+            "startDate": "2026-11-01",
+            "endDate": "2026-11-01",
+            "memo": "owner ID authorization"
+        }
+        handle_schedule_update(handler, json.dumps(payload).encode("utf-8"), "127.0.0.1")
+
+        self.assertEqual(handler.status, 200, handler.body)
+        updated = next(e for e in read_schedule() if e["id"] == 8801)
+        self.assertEqual(updated["title"], payload["title"])
+        self.assertEqual(str(updated.get("ownerId")), "881002")
 
     def test_member_only_sees_own_department(self):
         """User thường ở dev chỉ thấy thành viên và sự kiện của dev."""

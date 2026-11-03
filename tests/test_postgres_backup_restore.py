@@ -113,9 +113,12 @@ class TestPostgresBackupRestore(unittest.TestCase):
         called_commands = []
         def fake_run(cmd, **kwargs):
             called_commands.append(cmd)
+            if "pg_dump" in os.path.basename(cmd[0]) and "-f" in cmd:
+                with open(cmd[cmd.index("-f") + 1], "wb") as dump_file:
+                    dump_file.write(b"VALID_PG_DUMP")
             res = MagicMock()
             res.returncode = 0
-            res.stdout = ""
+            res.stdout = "archive contents" if "--list" in cmd else ""
             res.stderr = ""
             return res
 
@@ -137,6 +140,38 @@ class TestPostgresBackupRestore(unittest.TestCase):
             self.assertIn("-d", restore_cmd)
             self.assertIn(self.db_url, restore_cmd)
 
+
+    def test_pg_restore_nonzero_exit_is_failure(self):
+        """pg_restore의 exit code 1도 부분 복원 가능성이 있으므로 실패 처리해야 함."""
+        archive_name = "test_pg_restore_error.tar.gz"
+        archive_path = os.path.join(self.backup_dir, archive_name)
+        temp_dump = os.path.join(self.td, "argos_restore_error.dump")
+        with open(temp_dump, "wb") as f:
+            f.write(b"DUMP")
+        with tarfile.open(archive_path, "w:gz") as tar:
+            tar.add(temp_dump, arcname="argos.dump")
+
+        def fake_run(cmd, **kwargs):
+            res = MagicMock()
+            if "pg_dump" in os.path.basename(cmd[0]):
+                with open(cmd[cmd.index("-f") + 1], "wb") as dump_file:
+                    dump_file.write(b"VALID_PG_DUMP")
+                res.returncode = 0
+            elif "--list" in cmd:
+                res.returncode = 0
+            else:
+                res.returncode = 1
+            res.stdout = ""
+            res.stderr = "restore encountered errors"
+            return res
+
+        with patch("subprocess.run", side_effect=fake_run), \
+             patch("services.backup_manager.close_connection"):
+            with self.assertRaises(RuntimeError) as ctx:
+                backup_manager.restore_backup(archive_name)
+        self.assertIn("복원 실패 (code 1)", str(ctx.exception))
+
+
     def test_missing_pg_dump_raises_clear_error(self):
         """When pg_dump binary is missing, raise FileNotFoundError with actionable advice."""
         with patch("subprocess.run", side_effect=FileNotFoundError("pg_dump not found")):
@@ -157,6 +192,8 @@ class TestPostgresBackupRestore(unittest.TestCase):
 
         def fake_run(cmd, **kwargs):
             if "pg_dump" in os.path.basename(cmd[0]):
+                with open(cmd[cmd.index("-f") + 1], "wb") as dump_file:
+                    dump_file.write(b"VALID_PG_DUMP")
                 res = MagicMock()
                 res.returncode = 0
                 return res

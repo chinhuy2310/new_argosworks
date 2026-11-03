@@ -140,7 +140,11 @@ def handle_product_attachment_upload(handler, raw_body, ip):
     
     from utils.multipart import parse_multipart
     from utils.file_ops import unique_attachment_name, safe_join
-    fields, files = parse_multipart(raw_body, m.group(1))
+    try:
+        fields, files = parse_multipart(raw_body, m.group(1))
+    except ValueError as multipart_error:
+        handler._send_json(400, {"ok": False, "error": str(multipart_error)})
+        return
     pid = (fields.get("id") or "").strip()
     if not pid:
         handler._send_json(400, {"ok": False, "error": "제품 id가 필요합니다."})
@@ -161,18 +165,33 @@ def handle_product_attachment_upload(handler, raw_body, ip):
         os.makedirs(product_dir, exist_ok=True)
         attachments = product.setdefault("attachments", [])
         added = []
+        saved_paths = []
         from utils.image_optimizer import optimize_and_save_file
-        for f in files:
-            fname = unique_attachment_name(product_dir, f["filename"])
-            dest = safe_join(product_dir, fname)
-            if not dest:
-                handler._send_json(400, {"ok": False, "error": "잘못된 파일 이름입니다."})
+        try:
+            for f in files:
+                fname = unique_attachment_name(product_dir, f["filename"])
+                dest = safe_join(product_dir, fname)
+                if not dest:
+                    raise ValueError("잘못된 파일 이름입니다.")
+                fsize = optimize_and_save_file(f["data"], dest)
+                saved_paths.append(dest)
+                entry = {"name": fname, "size": fsize, "uploadedAt": datetime.now().isoformat()}
+                attachments.append(entry)
+                added.append(entry)
+            write_products(products)
+        except Exception as upload_error:
+            # Roll back files written before a later file or metadata save failed.
+            for saved_path in saved_paths:
+                try:
+                    if os.path.isfile(saved_path):
+                        os.remove(saved_path)
+                except OSError:
+                    pass
+            from utils.image_optimizer import ImageTooLargeError
+            if isinstance(upload_error, ImageTooLargeError):
+                handler._send_json(400, {"ok": False, "error": str(upload_error)})
                 return
-            fsize = optimize_and_save_file(f["data"], dest)
-            entry = {"name": fname, "size": fsize, "uploadedAt": datetime.now().isoformat()}
-            attachments.append(entry)
-            added.append(entry)
-        write_products(products)
+            raise
     access_log(ip, "product_attachment_upload", 200, "%s +%d" % (pid, len(added)))
     handler._send_json(200, {"ok": True, "product": product, "added": added})
 
@@ -219,16 +238,64 @@ def handle_product_attachment_delete(handler, raw_body, ip):
         if not file_path:
             handler._send_json(404, {"ok": False, "error": "첨부파일을 찾을 수 없습니다."})
             return
+        # Move the file out of its serving path first. If persisting the
+        # metadata change fails, restore the original file before returning.
+        import uuid
+        quarantine_path = None
+        if os.path.lexists(file_path):
+            quarantine_path = os.path.join(
+                product_dir, ".deleting-" + uuid.uuid4().hex
+            )
+            try:
+                os.replace(file_path, quarantine_path)
+            except OSError as move_error:
+                handler._send_json(500, {
+                    "ok": False,
+                    "error": "첨부파일을 안전하게 격리하지 못해 삭제를 취소했습니다."
+                })
+                from utils.logging import log_line
+                log_line("PIM attachment quarantine failed:", move_error)
+                return
+
         product["attachments"] = [a for a in attachments if a.get("name") != fname]
-        write_products(products)
         try:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-        except Exception as e:
+            write_products(products)
+        except Exception as save_error:
+            rollback_error = None
+            if quarantine_path and os.path.lexists(quarantine_path):
+                try:
+                    os.replace(quarantine_path, file_path)
+                except OSError as restore_error:
+                    rollback_error = restore_error
             from utils.logging import log_line
-            log_line("첨부파일 삭제 실패(목록에서는 제거됨):", e)
+            log_line("PIM attachment metadata save failed:", save_error)
+            if rollback_error:
+                log_line("PIM attachment file rollback failed:", rollback_error)
+                message = (
+                    "첨부파일 메타데이터 저장과 파일 복구가 모두 실패했습니다. "
+                    "관리자 확인이 필요합니다."
+                )
+            else:
+                message = "첨부파일 삭제를 저장하지 못해 원본 파일을 복구했습니다."
+            handler._send_json(500, {"ok": False, "error": message})
+            return
+
+        # Metadata is now authoritative. Remove the quarantined copy; if cleanup
+        # fails, keep it out of the public path and log it for later reconciliation.
+        cleanup_pending = False
+        if quarantine_path and os.path.lexists(quarantine_path):
+            try:
+                os.remove(quarantine_path)
+            except OSError as cleanup_error:
+                cleanup_pending = True
+                from utils.logging import log_line
+                log_line("PIM attachment quarantine cleanup failed:", cleanup_error)
     access_log(ip, "product_attachment_delete", 200, "%s %s" % (pid, fname))
-    handler._send_json(200, {"ok": True, "product": product})
+    handler._send_json(200, {
+        "ok": True,
+        "product": product,
+        "cleanupPending": cleanup_pending
+    })
 
 
 # ---------------------------------------------------------------------------

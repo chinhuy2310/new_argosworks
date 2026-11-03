@@ -33,6 +33,16 @@ SAMPLE_LOGS = [
         "target_id": "@SUM(1+1)",
         "details_json": "+1+1",
     },
+    {
+        "timestamp": "2026-10-23T10:25:00",
+        "username": "  =HYPERLINK(\\\"https://example.invalid\\\")",
+        "dept_id": "qa",
+        "ip": "10.0.0.10",
+        "action": "LOGIN_FAILED",
+        "target_type": "auth",
+        "target_id": "safe",
+        "details_json": "plain text",
+    },
 ]
 
 
@@ -61,13 +71,14 @@ class TestAuditCsvExport:
         assert ",'=cmd|calc," in text or "'=cmd|calc" in text
         assert "'@SUM(1+1)" in text
         assert "'+1+1" in text
+        assert "'  =HYPERLINK" in text
 
     def test_json_export_is_valid(self):
         body, content_type, ext = build_audit_export(SAMPLE_LOGS, "json")
         assert ext == "json"
         assert "application/json" in content_type
         parsed = json.loads(body.decode("utf-8"))
-        assert len(parsed) == 2
+        assert len(parsed) == 3
         assert parsed[1]["action"] == "LOGIN_FAILED"
 
     def test_empty_log_set(self):

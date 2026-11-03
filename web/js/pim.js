@@ -153,12 +153,12 @@ function renderPimSpecFields(category, values){
         html += '<p class="pim-spec-group-title">' + escapeHtml(f.group || "규격") + '</p>';
         lastGroup = f.group;
       }
-      var val = (values && (values[f.key] != null ? values[f.key] : values[f.label])) || "";
-      handledKeys[f.key] = true;
+      var val = (values && (values[escapeHtml(f.key)] != null ? values[escapeHtml(f.key)] : values[f.label])) || "";
+      handledKeys[escapeHtml(f.key)] = true;
       if(f.label) handledKeys[f.label] = true;
       html += '<div class="field" style="margin-bottom: 8px;">' +
-        '<label for="pimSpec_' + f.key + '">' + escapeHtml(f.label) + ' <span class="optional">(선택)</span></label>' +
-        '<input type="text" id="pimSpec_' + f.key + '" data-spec-key="' + f.key + '" maxlength="' + (f.maxlen || 200) + '" value="' + escapeHtml(val) + '">' +
+        '<label for="pimSpec_' + escapeHtml(f.key) + '">' + escapeHtml(f.label) + ' <span class="optional">(선택)</span></label>' +
+        '<input type="text" id="pimSpec_' + escapeHtml(f.key) + '" data-spec-key="' + escapeHtml(f.key) + '" maxlength="' + (Number.isInteger(f.maxlen) && f.maxlen >= 1 && f.maxlen <= 2000 ? f.maxlen : 200) + '" value="' + escapeHtml(val) + '">' +
         '</div>';
     });
   } else {
@@ -604,20 +604,24 @@ if(pimForm){
         var pendingImg = (pimImageInput && pimImageInput.files && pimImageInput.files.length) ? pimImageInput.files[0] : null;
         var pendingFiles = (pimAttachInput && pimAttachInput.files && pimAttachInput.files.length) ? pimAttachInput.files : null;
         
-        var uploadPromises = [];
-        if(pendingImg){
-          uploadPromises.push(uploadPimAttachments(product.id, [pendingImg]));
-        }
+        var pendingUploads = [];
+        if(pendingImg) pendingUploads.push(pendingImg);
         if(pendingFiles && pendingFiles.length){
-          uploadPromises.push(uploadPimAttachments(product.id, pendingFiles));
+          Array.prototype.forEach.call(pendingFiles, function(file){ pendingUploads.push(file); });
         }
 
-        var allUploads = uploadPromises.length ? Promise.all(uploadPromises) : Promise.resolve();
+        var allUploads = pendingUploads.length
+          ? uploadPimAttachments(product.id, pendingUploads)
+          : Promise.resolve();
         allUploads.then(function(){
           pimSaveBtn.disabled = false;
           showToast(isEdit ? "제품 정보를 수정했습니다." : "제품을 등록했습니다.");
           closePimFormModal();
           loadProducts(pimSearchInput.value.trim());
+        }).catch(function(error){
+          pimSaveBtn.disabled = false;
+          pimFormError.textContent = (error && error.message) || "첨부파일 업로드에 실패했습니다. 다시 시도해주세요.";
+          pimFormError.classList.add("show");
         });
       })
       .catch(function(){
@@ -639,14 +643,13 @@ function uploadPimAttachments(productId, fileList){
     .then(function(r){ return r.json(); })
     .then(function(data){
       if(!data.ok){
-        showToast(data.error || "첨부파일 업로드에 실패했습니다.");
-        return null;
+        throw new Error(data.error || "첨부파일 업로드에 실패했습니다.");
       }
       return data.product;
     })
-    .catch(function(){
-      showToast("첨부파일 업로드 중 서버에 연결할 수 없습니다.");
-      return null;
+    .catch(function(error){
+      showToast(error && error.message ? error.message : "첨부파일 업로드 중 서버에 연결할 수 없습니다.");
+      throw error;
     });
 }
 
