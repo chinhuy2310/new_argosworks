@@ -1194,6 +1194,23 @@ def handle_get_products_categories(handler, parsed, ip):
     categories, templates = get_product_categories_and_templates()
     handler._send_json(200, {"ok": True, "categories": categories, "templates": templates})
 
+def _mask_product_prices(value):
+    """Return a recursively masked copy of PIM data for users without price access."""
+    if isinstance(value, dict):
+        masked = {}
+        for key, item in value.items():
+            normalized = str(key).replace("_", "").lower()
+            if normalized in ("price", "unitprice"):
+                masked[key] = 0
+            else:
+                masked[key] = _mask_product_prices(item)
+        masked["priceHidden"] = True
+        return masked
+    if isinstance(value, list):
+        return [_mask_product_prices(item) for item in value]
+    return value
+
+
 def handle_get_products(handler, parsed, ip):
     session = handler._get_session_or_401()
     if not session:
@@ -1206,7 +1223,7 @@ def handle_get_products(handler, parsed, ip):
     filtered = search_products(products, q)
     from services.auth import can_view_pim_price
     if not can_view_pim_price(session):
-        filtered = [dict(p, price=0, priceHidden=True) for p in filtered]
+        filtered = [_mask_product_prices(p) for p in filtered]
     handler._send_json(200, {"ok": True, "products": filtered, "total": len(filtered)})
 
 def handle_get_products_attachment(handler, parsed, ip):
@@ -1261,11 +1278,7 @@ def handle_get_product_detail(handler, parsed, ip):
     specs = product.get("specs") or {}
     proc = dict(product.get("procurement") or {})
     if not allow_price:
-        if "price" in proc:
-            proc["price"] = 0
-        if "unitPrice" in proc:
-            proc["unitPrice"] = 0
-        proc["priceHidden"] = True
+        proc = _mask_product_prices(proc)
     source = product.get("source") or "internal"
     is_live = False
 

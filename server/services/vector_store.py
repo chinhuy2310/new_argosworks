@@ -921,19 +921,23 @@ def can_view_vector_doc(session, doc_type, meta, ctx=None):
 
     meta = meta or {}
     if doc_type == "record":
+        # Vector metadata is only a retrieval hint. Live record data is the
+        # authority for access decisions; missing IDs/rows or DB failures fail closed.
         r_id = meta.get("id") or meta.get("record_id")
-        if r_id:
-            try:
-                from db import get_one
-                live_r = get_one("SELECT id, dept_id, is_private, assignee_id, assignee_name FROM records WHERE id = ? LIMIT 1", (r_id,))
-                if live_r:
-                    meta = dict(meta)
-                    meta["is_private"] = live_r.get("is_private")
-                    meta["dept_id"] = live_r.get("dept_id")
-                    meta["assignee_id"] = live_r.get("assignee_id")
-            except Exception:
-                pass
-        return can_view_record(session, meta)
+        if not r_id:
+            return False
+        try:
+            from db import get_one
+            live_r = get_one(
+                "SELECT id, dept_id, is_private, assignee_id, assignee_name "
+                "FROM records WHERE id = ? LIMIT 1",
+                (r_id,)
+            )
+        except Exception:
+            return False
+        if not live_r:
+            return False
+        return can_view_record(session, live_r)
 
     if doc_type == "jira":
         # Jira 캐시 레코드도 일반 레코드와 동일한 부서/담당자/참여자 규칙을 적용한다.
