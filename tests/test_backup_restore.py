@@ -154,6 +154,30 @@ class TestBackupRestoreRoundTrip:
             "failed restore must not leave files from the attempted archive"
         )
 
+    def test_database_only_restore_preserves_live_attachments(
+        self, isolated_backup_env
+    ):
+        import gzip
+        import db as db_module
+        from services import backup_manager
+
+        attachment_path = os.path.join(isolated_backup_env["attach_dir"], "keep.txt")
+        with open(attachment_path, "w", encoding="utf-8") as output:
+            output.write("must remain")
+        db_only_backup = os.path.join(
+            isolated_backup_env["backup_dir"], "database_only.db.gz"
+        )
+        with open(isolated_backup_env["db_path"], "rb") as source, gzip.open(
+            db_only_backup, "wb"
+        ) as compressed:
+            compressed.write(source.read())
+
+        result = backup_manager.restore_backup("database_only.db.gz")
+        assert result["ok"] is True
+        assert os.path.isfile(attachment_path)
+        with open(attachment_path, encoding="utf-8") as source:
+            assert source.read() == "must remain"
+
     def test_restore_creates_safety_snapshot(self, isolated_backup_env):
         import db as db_module
         from services import backup_manager
