@@ -361,8 +361,13 @@ def _skip_bad_record(section, item, err):
     log_line(f"[VectorStore] skip {section} {ident}: {type(err).__name__}: {err}")
 
 
-def _collect_all_documents(cfg):
-    """JARVIS 내 모든 검색 대상 문서(기록, Jira 이슈, 제품 PIM, 캘린더)를 표준 형식으로 수집"""
+def _collect_all_documents(cfg, strict=False):
+    """Collect all searchable documents.
+
+    strict=True is used by destructive full-sync reconciliation: a partial source
+    read or malformed row must abort the sync rather than cause valid old vectors
+    to be mistaken for deleted documents.
+    """
     from services.data_store import read_records, read_products, read_schedule, get_record_comments
     from services.jira_client import get_cached_jira_records
 
@@ -373,6 +378,8 @@ def _collect_all_documents(cfg):
     try:
         records_list = read_records() or []
     except Exception as e:
+        if strict:
+            raise RuntimeError("Vector sync aborted: records source could not be read") from e
         log_line(f"[VectorStore] Failed to read records: {e}")
 
     for r in records_list:
@@ -410,7 +417,9 @@ def _collect_all_documents(cfg):
                     ]
                     if comments_lines:
                         comments_text = "\n[댓글 및 진행 이력]\n" + "\n".join(comments_lines)
-            except Exception:
+            except Exception as e:
+                if strict:
+                    raise RuntimeError("Vector sync aborted: record comments could not be read") from e
                 comments_text = ""
 
             attach_names = _attachment_names(attachments)
@@ -461,6 +470,8 @@ def _collect_all_documents(cfg):
                 }
             })
         except Exception as _e:
+            if strict:
+                raise RuntimeError("Vector sync aborted: malformed record row") from _e
             _skip_bad_record('record', r, _e)
 
     # 2. Jira 동기화 이슈 (get_cached_jira_records)
@@ -469,6 +480,8 @@ def _collect_all_documents(cfg):
         jira_cache = get_cached_jira_records(cfg) or {}
         jira_records = jira_cache.get("records") or []
     except Exception as e:
+        if strict:
+            raise RuntimeError("Vector sync aborted: Jira cache could not be read") from e
         log_line(f"[VectorStore] Failed to read Jira cache: {e}")
 
     for j in jira_records:
@@ -530,6 +543,8 @@ def _collect_all_documents(cfg):
                 }
             })
         except Exception as _e:
+            if strict:
+                raise RuntimeError("Vector sync aborted: malformed Jira row") from _e
             _skip_bad_record('jira', j, _e)
 
     # 3. 제품 정보 (PIM) - 사내 관리 제품 및 공식 라이브 제품 모두 벡터 인덱싱
@@ -537,6 +552,8 @@ def _collect_all_documents(cfg):
     try:
         products_list = read_products(include_external=True) or []
     except Exception as e:
+        if strict:
+            raise RuntimeError("Vector sync aborted: products source could not be read") from e
         log_line(f"[VectorStore] Failed to read products: {e}")
 
     for p in products_list:
@@ -600,6 +617,8 @@ def _collect_all_documents(cfg):
                 }
             })
         except Exception as _e:
+            if strict:
+                raise RuntimeError("Vector sync aborted: malformed product row") from _e
             _skip_bad_record('product', p, _e)
 
     # 4. 일정 (schedule.json)
@@ -607,6 +626,8 @@ def _collect_all_documents(cfg):
     try:
         schedule_list = read_schedule() or []
     except Exception as e:
+        if strict:
+            raise RuntimeError("Vector sync aborted: schedule source could not be read") from e
         log_line(f"[VectorStore] Failed to read schedule: {e}")
 
     for s in schedule_list:
@@ -651,6 +672,8 @@ def _collect_all_documents(cfg):
                 }
             })
         except Exception as _e:
+            if strict:
+                raise RuntimeError("Vector sync aborted: malformed schedule row") from _e
             _skip_bad_record('schedule', s, _e)
 
     return docs
@@ -723,8 +746,7 @@ def sync_all_vectors(cfg, force=False):
     모든 문서의 벡터 임베딩을 점진적(Incremental)으로 동기화.
     내용의 해시(SHA256) 및 모델 일치 여부를 비교하여 변경되지 않은 문서는 API 호출을 생략(0비용).
     """
-    if not is_voyage_configured(cfg):
-        return {"ok": False, "reason": "voyage_not_configured"}
+    provider_configured = is_voyage_configured(cfg)
 
     if not _sync_lock.acquire(blocking=False):
         return {"ok": False, "reason": "already_syncing"}
@@ -734,9 +756,9 @@ def sync_all_vectors(cfg, force=False):
     current_model = cfg.get("voyage", {}).get("model") or "voyage-3-lite"
 
     try:
-        docs = _collect_all_documents(cfg)
-        if not docs:
-            return {"ok": True, "indexed": 0, "skipped": 0, "total": 0, "current_model": current_model}
+        # Strict collection is essential: never purge vectors based on a partial
+        # read of SQL/Jira sources.
+        docs = _collect_all_documents(cfg, strict=True)
 
         conn = get_db_connection()
         try:
@@ -756,7 +778,7 @@ def sync_all_vectors(cfg, force=False):
                 doc_id = d["doc_id"]
                 if not force and doc_id in existing and existing[doc_id]["hash"] == chash and existing[doc_id]["model"] == current_model:
                     skipped += 1
-                else:
+                elif provider_configured:
                     to_embed.append(d)
 
             indexed = 0
@@ -836,6 +858,18 @@ def sync_all_vectors(cfg, force=False):
                         conn.execute("DELETE FROM document_embeddings WHERE doc_id = ?;", (s_id,))
                     conn.commit()
                 log_line(f"[Vector Store] 삭제된 문서 {len(stale_doc_ids)}건 색인 정리 완료")
+
+            # Stale-vector cleanup does not require an embedding provider.
+            if not provider_configured:
+                return {
+                    "ok": False,
+                    "reason": "voyage_not_configured",
+                    "indexed": 0,
+                    "skipped": skipped,
+                    "total": len(docs),
+                    "cleaned": len(stale_doc_ids),
+                    "current_model": current_model
+                }
 
             duration = round(time.time() - t0, 2)
             log_line(f"[Vector Store] 동기화 완료: 신규 {indexed}건, 스킵 {skipped}건, 총 {len(docs)}건 ({duration}초, 모델: {current_model})")
