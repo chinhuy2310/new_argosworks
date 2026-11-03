@@ -108,6 +108,52 @@ class TestBackupRestoreRoundTrip:
         assert imported["ok"] is True
         assert imported["filename"] == "customer_uploaded_backup.tar.gz"
 
+    def test_failed_restore_rolls_back_database_and_attachments(
+        self, isolated_backup_env, monkeypatch
+    ):
+        import db as db_module
+        from services import backup_manager
+
+        marker_id = 990003
+        _insert_marker(db_module, marker_id)
+        attach_dir = isolated_backup_env["attach_dir"]
+        archived_file = os.path.join(attach_dir, "archived.txt")
+        with open(archived_file, "w", encoding="utf-8") as output:
+            output.write("from archive")
+
+        backup = backup_manager.create_backup(note="rollback source", backup_type="manual")
+
+        # Change the live state after the archive is created. This is the state
+        # the pre-restore safety snapshot must put back if restore later fails.
+        db_module.execute("DELETE FROM records WHERE id = ?", (marker_id,))
+        os.remove(archived_file)
+        current_file = os.path.join(attach_dir, "current.txt")
+        with open(current_file, "w", encoding="utf-8") as output:
+            output.write("current live state")
+
+        def fail_after_database_and_attachment_restore():
+            raise RuntimeError("simulated post-restore migration failure")
+
+        monkeypatch.setattr(
+            backup_manager, "init_db", fail_after_database_and_attachment_restore
+        )
+
+        with pytest.raises(RuntimeError, match="원상 복구"):
+            backup_manager.restore_backup(backup["filename"])
+
+        if hasattr(db_module, "_tls"):
+            db_module._tls = threading.local()
+
+        assert not _marker_exists(db_module, marker_id), (
+            "failed restore must put the pre-restore database state back"
+        )
+        assert os.path.isfile(current_file)
+        with open(current_file, encoding="utf-8") as source:
+            assert source.read() == "current live state"
+        assert not os.path.exists(archived_file), (
+            "failed restore must not leave files from the attempted archive"
+        )
+
     def test_restore_creates_safety_snapshot(self, isolated_backup_env):
         import db as db_module
         from services import backup_manager
