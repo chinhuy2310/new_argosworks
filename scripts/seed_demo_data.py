@@ -42,6 +42,7 @@ def run_seed():
     print("[1/8] Cleaning up existing transactional and test records...")
     tables_to_clear = [
         "sessions",
+        "activities",
         "chat_messages",
         "chat_sessions",
         "record_comments",
@@ -61,7 +62,12 @@ def run_seed():
         "users",
         "card_sequences",
         "departments",
-        "license_info"
+        "license_info",
+        "jira_issues",
+        "jira_comments",
+        "jira_attachments",
+        "jira_changelog",
+        "sync_meta"
     ]
     for tbl in tables_to_clear:
         try:
