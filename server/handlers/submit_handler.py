@@ -1,6 +1,7 @@
 import json
 import re
 import os
+import shutil
 from datetime import date, datetime
 from config import ATTACH_DIR
 from utils.logging import access_log
@@ -37,7 +38,11 @@ def handle_submit(handler, raw_body, ip):
     from services.ai_client import call_ai_classify as call_claude_classify
     from services.jira_client import jira_project_for_dept, get_cached_categories, lookup_jira_account_id, create_jira_issue
     
-    fields, files = parse_multipart(raw_body, m.group(1))
+    try:
+        fields, files = parse_multipart(raw_body, m.group(1))
+    except ValueError as multipart_error:
+        handler._send_json(400, {"ok": False, "error": str(multipart_error)})
+        return
 
     org = (fields.get("org") or "").strip()
     depts = read_departments()
@@ -130,21 +135,25 @@ def handle_submit(handler, raw_body, ip):
     else:
         title = "제목 없는 기록"
 
-    # 첨부파일 저장
+    # Stage uploaded files under this record ID and remove the whole directory
+    # if any file fails. The DB row is not committed until every file is ready.
     saved_attachments = []
+    record_attach_dir = os.path.join(ATTACH_DIR, str(record_id))
     if files:
         from utils.image_optimizer import optimize_and_save_file
         from utils.file_ops import safe_join
-        record_attach_dir = os.path.join(ATTACH_DIR, str(record_id))
         os.makedirs(record_attach_dir, exist_ok=True)
-        for f in files:
-            fname = sanitize_filename(f["filename"])
-            dest = safe_join(record_attach_dir, fname)
-            if not dest:
-                # Defense in depth: sanitize_filename already strips separators.
-                continue
-            optimize_and_save_file(f["data"], dest)
-            saved_attachments.append(fname)
+        try:
+            for f in files:
+                fname = sanitize_filename(f["filename"])
+                dest = safe_join(record_attach_dir, fname)
+                if not dest:
+                    raise ValueError("잘못된 첨부파일 이름입니다.")
+                optimize_and_save_file(f["data"], dest)
+                saved_attachments.append(fname)
+        except Exception:
+            shutil.rmtree(record_attach_dir, ignore_errors=True)
+            raise
 
     # Jira 티켓 (후속조치 체크 시에만)
     jira = None
@@ -217,7 +226,14 @@ def handle_submit(handler, raw_body, ip):
         "priority": priority,
         "jira": jira
     }
-    append_record(record)
+    try:
+        append_record(record)
+    except Exception:
+        # SQL transaction failed after the files had been staged. Remove the
+        # unreferenced directory so the failed submission leaves no orphan files.
+        if saved_attachments and os.path.isdir(record_attach_dir):
+            shutil.rmtree(record_attach_dir, ignore_errors=True)
+        raise
     access_log(ip, "submit", 200, "id=%s org=%s code=%s jira=%s" % (record_id, dept["id"], card_code, jira["key"] if jira else "-"))
 
     # Log to JARVIS activity store
