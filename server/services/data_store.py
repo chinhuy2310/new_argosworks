@@ -404,7 +404,7 @@ def _get_record_attachments(record_id):
 
 
 def delete_record_attachment(record_id, attachment_id):
-    """레코드의 첨부파일을 DB 및 디스크에서 삭제한다."""
+    """레코드 첨부파일을 먼저 격리한 뒤 DB 메타데이터를 삭제한다."""
     rows = query(
         "SELECT filename FROM record_attachments WHERE id = ? AND record_id = ?",
         (attachment_id, record_id)
@@ -412,23 +412,48 @@ def delete_record_attachment(record_id, attachment_id):
     if not rows:
         return False, "첨부파일을 찾을 수 없습니다."
     fname = rows[0]["filename"]
-    execute(
-        "DELETE FROM record_attachments WHERE id = ? AND record_id = ?",
-        (attachment_id, record_id)
-    )
     from config import ATTACH_DIR
     from utils.file_ops import safe_join
     from utils.logging import log_line
+    import uuid
 
     rec_dir = safe_join(ATTACH_DIR, str(record_id))
     fpath = safe_join(rec_dir, fname) if rec_dir else None
     if not fpath:
-        log_line(f"[Attachment] Invalid attachment path or traversal attempt: record_id={record_id}, fname={fname}")
-    elif os.path.isfile(fpath):
+        return False, "첨부파일 경로가 올바르지 않아 삭제를 중단했습니다."
+
+    quarantine_path = None
+    if os.path.isfile(fpath):
+        quarantine_path = f"{fpath}.deleting-{uuid.uuid4().hex}"
         try:
-            os.remove(fpath)
-        except OSError as e:
-            log_line(f"[Attachment] Failed to remove file from disk ({fpath}): {e}")
+            # Same-filesystem atomic rename removes the file from the serving
+            # path before the metadata row is deleted.
+            os.replace(fpath, quarantine_path)
+        except OSError as move_error:
+            return False, f"첨부파일을 안전하게 격리하지 못했습니다: {move_error}"
+
+    try:
+        execute(
+            "DELETE FROM record_attachments WHERE id = ? AND record_id = ?",
+            (attachment_id, record_id)
+        )
+    except Exception:
+        if quarantine_path and os.path.exists(quarantine_path):
+            try:
+                os.replace(quarantine_path, fpath)
+            except OSError as rollback_error:
+                log_line(
+                    f"[Attachment] Failed to restore quarantined file ({quarantine_path}): {rollback_error}"
+                )
+        raise
+
+    if quarantine_path and os.path.exists(quarantine_path):
+        try:
+            os.remove(quarantine_path)
+        except OSError as cleanup_error:
+            # The quarantine filename is no longer referenced by the database
+            # or served by the attachment route; log for later maintenance.
+            log_line(f"[Attachment] Quarantined file cleanup failed ({quarantine_path}): {cleanup_error}")
     return True, None
 
 
