@@ -814,6 +814,8 @@ def _schedule_event_matches(user_or_session, event, user_dept_map, user_name, us
             p_email = (p.get("email") or "").strip().lower()
             p_org = (p.get("org") or "").strip().lower()
             p_name = (p.get("name") or "").strip()
+            if user_dept and p_org and p_org == user_dept:
+                return True
             if user_key and p_key and p_key == user_key:
                 return True
             if user_email and p_email and p_email == user_email:
