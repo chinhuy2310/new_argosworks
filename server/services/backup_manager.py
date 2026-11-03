@@ -652,13 +652,18 @@ def restore_backup(backup_filename):
                 restore_conn.close()
                 live_conn.close()
 
-            # 6. 첨부파일 디렉토리 복원 (있을 경우)
-            if has_attachments and os.path.exists(temp_extract_dir):
-                extracted_attach = os.path.join(temp_extract_dir, "attachments")
-                if os.path.exists(extracted_attach):
-                    if os.path.exists(ATTACH_DIR):
-                        shutil.rmtree(ATTACH_DIR)
-                    shutil.copytree(extracted_attach, ATTACH_DIR)
+            # 6. Replace attachments as part of the same restore operation.
+            # An archive without an attachments directory represents an empty
+            # attachment snapshot; retaining old files would leave orphaned data.
+            extracted_attach = os.path.join(temp_extract_dir, "attachments") if is_tar else None
+            if os.path.exists(ATTACH_DIR):
+                shutil.rmtree(ATTACH_DIR)
+            if extracted_attach and os.path.isdir(extracted_attach):
+                shutil.copytree(extracted_attach, ATTACH_DIR)
+                has_attachments = True
+            else:
+                os.makedirs(ATTACH_DIR, exist_ok=True)
+                has_attachments = False
 
             # 7. 최신 스키마 마이그레이션 재확인/적용
             init_db()
