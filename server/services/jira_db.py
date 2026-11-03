@@ -45,11 +45,18 @@ def upsert_jira_records(records, replace_existing=False):
         return True
 
     incoming_keys = set()
+    has_missing_key = False
     for record in records or []:
         jira_info = record.get("jira") or {}
         key = jira_info.get("key") or str(record.get("id") or "").replace("jira-", "")
         if key:
             incoming_keys.add(str(key))
+        else:
+            has_missing_key = True
+    if replace_existing and has_missing_key:
+        # Never interpret malformed issue rows as deletions during a full sync.
+        log_line("Refusing Jira full-sync reconciliation because a returned issue has no stable key.")
+        return False
 
     def _do_upsert(conn):
         cur = conn.cursor()
