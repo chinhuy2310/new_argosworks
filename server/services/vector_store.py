@@ -194,13 +194,14 @@ def _execute_embedding_http(provider_info, key, texts, input_type="document", ti
     base_url = provider_info["base_url"]
     fmt = provider_info["format"]
 
-    # 텍스트 전처리
+    # 텍스트 전처리: 모델별 토큰 한도 보호 (Gemini 2048 tokens, OpenAI 8191 tokens, Voyage 32k)
+    max_char_len = 3500 if (prov == "gemini" or fmt == "gemini") else 10000
     clean_texts = []
     for t in texts:
         s = (t or "").strip()
         if not s:
             s = "(내용 없음)"
-        clean_texts.append(s[:10000])
+        clean_texts.append(s[:max_char_len])
 
     if prov == "voyage" or fmt == "voyage":
         url = base_url or "https://api.voyageai.com/v1/embeddings"
@@ -338,6 +339,28 @@ def embed_query(cfg, query_text):
 # 데이터 수집 및 인덱싱 동기화 (Sync)
 # ─────────────────────────────────────────────────────────────
 
+def _attachment_names(items):
+    """File names from an attachments list. Accepts str items and dicts that use
+    "filename" or "name" (different data sources use different keys); skips empties."""
+    names = []
+    for a in items or []:
+        if not a:
+            continue
+        name = (a.get("filename") or a.get("name")) if isinstance(a, dict) else a
+        name = str(name or "").strip()
+        if name:
+            names.append(name)
+    return names
+
+
+def _skip_bad_record(section, item, err):
+    """One malformed record must not abort the whole vector sync: log it and move on."""
+    ident = ""
+    if isinstance(item, dict):
+        ident = str(item.get("key") or item.get("id") or item.get("model") or "")
+    log_line(f"[VectorStore] skip {section} {ident}: {type(err).__name__}: {err}")
+
+
 def _collect_all_documents(cfg):
     """JARVIS 내 모든 검색 대상 문서(기록, Jira 이슈, 제품 PIM, 캘린더)를 표준 형식으로 수집"""
     from services.data_store import read_records, read_products, read_schedule, get_record_comments
@@ -346,255 +369,289 @@ def _collect_all_documents(cfg):
     docs = []
 
     # 1. 인수인계 및 업무 기록 (Local Cards / records)
-    for r in read_records():
-        rid = r.get("id")
-        if not rid:
-            continue
-        card_code = str(r.get("cardCode") or f"#{rid}").strip()
-        title = (r.get("title") or "(제목 없음)").strip()
-        org = r.get("org") or ""
-        cat = r.get("category") or ""
-        proj = r.get("project") or ""
-        assignee = r.get("assignee") or ""
-        assignee_email = r.get("assigneeEmail") or ""
-        participants = r.get("participants") or ""
-        status = r.get("status") or "진행"
-        start_date = r.get("startDate") or r.get("date") or ""
-        due_date = r.get("dueDate") or r.get("endDate") or start_date or ""
-        date_str = f"{start_date} ~ {due_date}" if (start_date and due_date and start_date != due_date) else (start_date or r.get("date", ""))
-        parent_key = r.get("parentKey") or ""
-        summary = r.get("summary") or ""
-        memo = r.get("memo") or ""
-        tags = r.get("tags") or []
-        attachments = r.get("attachments") or []
-        jira = r.get("jira")
+    records_list = []
+    try:
+        records_list = read_records() or []
+    except Exception as e:
+        log_line(f"[VectorStore] Failed to read records: {e}")
 
-        # 댓글 및 업무 진행 이력 수집
-        comments = get_record_comments(rid) or []
-        comments_text = ""
-        if comments:
-            comments_lines = [
-                f"- ({str(c.get('created', ''))[:16]} {c.get('author', '작성자')}): {c.get('body', '')}"
-                for c in comments if c.get("body")
-            ]
-            if comments_lines:
-                comments_text = "\n[댓글 및 진행 이력]\n" + "\n".join(comments_lines)
+    for r in records_list:
+        try:
+            rid = r.get("id")
+            if not rid:
+                continue
+            card_code = str(r.get("cardCode") or f"#{rid}").strip()
+            title = (r.get("title") or "(제목 없음)").strip()
+            org = r.get("org") or ""
+            cat = r.get("category") or ""
+            proj = r.get("project") or ""
+            assignee = r.get("assignee") or ""
+            assignee_email = r.get("assigneeEmail") or ""
+            participants = r.get("participants") or ""
+            status = r.get("status") or "진행"
+            start_date = r.get("startDate") or r.get("date") or ""
+            due_date = r.get("dueDate") or r.get("endDate") or start_date or ""
+            date_str = f"{start_date} ~ {due_date}" if (start_date and due_date and start_date != due_date) else (start_date or r.get("date", ""))
+            parent_key = r.get("parentKey") or ""
+            summary = r.get("summary") or ""
+            memo = r.get("memo") or ""
+            tags = r.get("tags") or []
+            attachments = r.get("attachments") or []
+            jira = r.get("jira")
 
-        # attachments co the la list[str] hoac list[dict] ({"name": ...}) tuy theo nguon du lieu
-        attach_names = []
-        for a in attachments:
-            name = a.get("name") if isinstance(a, dict) else a
-            name = str(name or "").strip()
-            if name:
-                attach_names.append(name)
-        attach_text = f"\n첨부파일 목록: {', '.join(attach_names)}" if attach_names else ""
-        parent_text = f" | 상위 작업: {parent_key}" if parent_key else ""
-        part_text = f" | 참여자: {participants}" if participants else ""
-        email_text = f" ({assignee_email})" if assignee_email else ""
-        tags_text = f" | 태그: {', '.join(tags)}" if tags else ""
+            # 댓글 및 업무 진행 이력 수집 (방어적 처리)
+            comments_text = ""
+            try:
+                comments = get_record_comments(rid) or []
+                if comments:
+                    comments_lines = [
+                        f"- ({str(c.get('created', ''))[:16]} {c.get('author', '작성자')}): {c.get('body', '')}"
+                        for c in comments if isinstance(c, dict) and c.get("body")
+                    ]
+                    if comments_lines:
+                        comments_text = "\n[댓글 및 진행 이력]\n" + "\n".join(comments_lines)
+            except Exception:
+                comments_text = ""
 
-        content = (
-            f"[업무 카드: {card_code}] {title}\n"
-            f"상태: {status} | 담당자: {assignee}{email_text}{part_text} | 부서: {org}\n"
-            f"카테고리: {cat} | 관련 프로젝트/고객사: {proj}{parent_text}{tags_text}\n"
-            f"진행 기간: {date_str}\n"
-            f"업무 요약: {summary}\n"
-            f"상세 내용 및 인수인계 메모:\n{memo}"
-            f"{attach_text}"
-            f"{comments_text}"
-        ).strip()
-        if jira and jira.get("key"):
-            content += f"\n연계 Jira 티켓: {jira.get('key')}"
+            attach_names = _attachment_names(attachments)
+            attach_text = f"\n첨부파일 목록: {', '.join(attach_names)}" if attach_names else ""
+            parent_text = f" | 상위 작업: {parent_key}" if parent_key else ""
+            part_text = f" | 참여자: {participants}" if participants else ""
+            email_text = f" ({assignee_email})" if assignee_email else ""
+            tags_text = f" | 태그: {', '.join(tags)}" if isinstance(tags, list) and tags else ""
 
-        docs.append({
-            "doc_id": f"record:{rid}",
-            "doc_type": "record",
-            "title": f"[{card_code}] {title}",
-            "content": content,
-            "metadata": {
-                "id": rid,
-                "cardCode": card_code,
+            content = (
+                f"[업무 카드: {card_code}] {title}\n"
+                f"상태: {status} | 담당자: {assignee}{email_text}{part_text} | 부서: {org}\n"
+                f"카테고리: {cat} | 관련 프로젝트/고객사: {proj}{parent_text}{tags_text}\n"
+                f"진행 기간: {date_str}\n"
+                f"업무 요약: {summary}\n"
+                f"상세 내용 및 인수인계 메모:\n{memo}"
+                f"{attach_text}"
+                f"{comments_text}"
+            ).strip()
+            if isinstance(jira, dict) and jira.get("key"):
+                content += f"\n연계 Jira 티켓: {jira.get('key')}"
+
+            docs.append({
+                "doc_id": f"record:{rid}",
+                "doc_type": "record",
                 "title": f"[{card_code}] {title}",
-                "org": org,
-                "dept_id": r.get("dept_id") or org,
-                "is_private": bool(r.get("is_private")),
-                "assignee_id": r.get("assignee_id"),
-                "assignee_name": assignee,
-                "assignee_email": assignee_email,
-                "category": cat,
-                "project": proj,
-                "assignee": assignee,
-                "participants": participants,
-                "status": status,
-                "date": start_date or r.get("date", ""),
-                "startDate": start_date,
-                "dueDate": due_date,
-                "summary": summary or memo[:200],
-                "jira": jira
-            }
-        })
+                "content": content,
+                "metadata": {
+                    "id": rid,
+                    "cardCode": card_code,
+                    "title": f"[{card_code}] {title}",
+                    "org": org,
+                    "dept_id": r.get("dept_id") or org,
+                    "is_private": bool(r.get("is_private")),
+                    "assignee_id": r.get("assignee_id"),
+                    "assignee_name": assignee,
+                    "assignee_email": assignee_email,
+                    "category": cat,
+                    "project": proj,
+                    "assignee": assignee,
+                    "participants": participants,
+                    "status": status,
+                    "date": start_date or r.get("date", ""),
+                    "startDate": start_date,
+                    "dueDate": due_date,
+                    "summary": summary or memo[:200],
+                    "jira": jira if isinstance(jira, dict) else None
+                }
+            })
+        except Exception as _e:
+            _skip_bad_record('record', r, _e)
 
     # 2. Jira 동기화 이슈 (get_cached_jira_records)
-    jira_cache = get_cached_jira_records(cfg)
-    for j in (jira_cache.get("records") or []):
-        key = (j.get("jira") or {}).get("key") or str(j.get("id", ""))
-        if not key:
-            continue
-        title = (j.get("title") or "(제목 없음)").strip()
-        org = j.get("org") or ""
-        cat = j.get("category") or ""
-        assignee = j.get("assignee") or ""
-        summary = j.get("summary") or ""
-        status = j.get("statusName") or ""
-        parent_key = j.get("parentKey") or ""
-        participants = j.get("participants") or ""
+    jira_records = []
+    try:
+        jira_cache = get_cached_jira_records(cfg) or {}
+        jira_records = jira_cache.get("records") or []
+    except Exception as e:
+        log_line(f"[VectorStore] Failed to read Jira cache: {e}")
 
-        comments = j.get("comments") or []
-        comments_text = ""
-        if comments:
-            comments_lines = [
-                f"- ({str(c.get('created', ''))[:16]} {c.get('author', '')}): {c.get('body', '')}"
-                for c in comments if c.get("body")
-            ]
-            if comments_lines:
-                comments_text = "\n[댓글 및 진행 이력]\n" + "\n".join(comments_lines)
+    for j in jira_records:
+        try:
+            jira_info = j.get("jira") if isinstance(j.get("jira"), dict) else {}
+            key = jira_info.get("key") or str(j.get("id", ""))
+            if not key:
+                continue
+            title = (j.get("title") or "(제목 없음)").strip()
+            org = j.get("org") or ""
+            cat = j.get("category") or ""
+            assignee = j.get("assignee") or ""
+            summary = j.get("summary") or ""
+            status = j.get("statusName") or ""
+            parent_key = j.get("parentKey") or ""
+            participants = j.get("participants") or ""
 
-        attach_names = [a.get("filename") if isinstance(a, dict) else str(a) for a in (j.get("attachments") or [])]
-        attach_text = f"\n첨부파일 목록: {', '.join(attach_names)}" if attach_names else ""
-        parent_text = f" | 상위 작업: {parent_key}" if parent_key else ""
-        part_text = f" | 참여자: {participants}" if participants else ""
+            comments = j.get("comments") or []
+            comments_text = ""
+            if comments:
+                comments_lines = [
+                    f"- ({str(c.get('created', ''))[:16]} {c.get('author', '')}): {c.get('body', '')}"
+                    for c in comments if isinstance(c, dict) and c.get("body")
+                ]
+                if comments_lines:
+                    comments_text = "\n[댓글 및 진행 이력]\n" + "\n".join(comments_lines)
 
-        content = (
-            f"[Jira {key}] {title}\n"
-            f"상태: {status} | 담당자: {assignee}{part_text} | 부서: {org}\n"
-            f"카테고리: {cat}{parent_text}\n"
-            f"상세 내용: {summary}"
-            f"{attach_text}"
-            f"{comments_text}"
-        ).strip()
+            attach_names = _attachment_names(j.get("attachments"))
+            attach_text = f"\n첨부파일 목록: {', '.join(attach_names)}" if attach_names else ""
+            parent_text = f" | 상위 작업: {parent_key}" if parent_key else ""
+            part_text = f" | 참여자: {participants}" if participants else ""
 
-        docs.append({
-            "doc_id": f"jira:{key}",
-            "doc_type": "jira",
-            "title": f"[{key}] {title}",
-            "content": content,
-            "metadata": {
-                "id": j.get("id"),
-                "cardCode": key,
+            content = (
+                f"[Jira {key}] {title}\n"
+                f"상태: {status} | 담당자: {assignee}{part_text} | 부서: {org}\n"
+                f"카테고리: {cat}{parent_text}\n"
+                f"상세 내용: {summary}"
+                f"{attach_text}"
+                f"{comments_text}"
+            ).strip()
+
+            docs.append({
+                "doc_id": f"jira:{key}",
+                "doc_type": "jira",
                 "title": f"[{key}] {title}",
-                "org": org,
-                "category": cat,
-                "assignee": assignee,
-                "participants": participants,
-                "date": j.get("date", ""),
-                "summary": summary,
-                "status": status,
-                "jira": j.get("jira")
-            }
-        })
+                "content": content,
+                "metadata": {
+                    "id": j.get("id"),
+                    "cardCode": key,
+                    "title": f"[{key}] {title}",
+                    "org": org,
+                    "category": cat,
+                    "assignee": assignee,
+                    "participants": participants,
+                    "date": j.get("date", ""),
+                    "summary": summary,
+                    "status": status,
+                    "jira": j.get("jira")
+                }
+            })
+        except Exception as _e:
+            _skip_bad_record('jira', j, _e)
 
     # 3. 제품 정보 (PIM) - 사내 관리 제품 및 공식 라이브 제품 모두 벡터 인덱싱
-    for p in read_products(include_external=True):
-        pid = p.get("id")
-        if not pid:
-            continue
-        model = p.get("model") or ""
-        name = p.get("displayName") or model or "(이름 없음)"
-        cat = p.get("category") or ""
-        family = p.get("family") or ""
-        lifecycle = p.get("lifecycle") or "판매 중"
-        source = p.get("source") or "internal"
-        is_live = (source == "vision119" or source == "external")
+    products_list = []
+    try:
+        products_list = read_products(include_external=True) or []
+    except Exception as e:
+        log_line(f"[VectorStore] Failed to read products: {e}")
 
-        desc_parts = []
-        if p.get("summary"):
-            desc_parts.append(f"핵심 요약: {p.get('summary')}")
-        if p.get("memo"):
-            desc_parts.append(f"상세 메모/내부 참고사항: {p.get('memo')}")
-        desc = "\n".join(desc_parts) if desc_parts else ""
+    for p in products_list:
+        try:
+            pid = p.get("id")
+            if not pid:
+                continue
+            model = p.get("model") or ""
+            name = p.get("displayName") or model or "(이름 없음)"
+            cat = p.get("category") or ""
+            family = p.get("family") or ""
+            lifecycle = p.get("lifecycle") or "판매 중"
+            source = p.get("source") or "internal"
+            is_live = (source == "vision119" or source == "external")
 
-        # ⚠️ 가격 정보는 임베딩 콘텐츠에 절대 포함하지 않는다 (의미 검색을 통한 가격 유출 방지).
-        # 가격은 can_view_pim_price 권한을 검사하는 PIM API / 챗 도구에서만 마스킹 후 제공한다.
-        proc = p.get("procurement") or {}
-        proc_str = ""
-        if proc.get("identificationNo"):
-            proc_str = f"조달정보: 식별번호 {proc.get('identificationNo')} | 품명 {proc.get('registeredName', '')}"
+            desc_parts = []
+            if p.get("summary"):
+                desc_parts.append(f"핵심 요약: {p.get('summary')}")
+            if p.get("memo"):
+                desc_parts.append(f"상세 메모/내부 참고사항: {p.get('memo')}")
+            desc = "\n".join(desc_parts) if desc_parts else ""
 
-        specs_dict = p.get("specs") or {}
-        specs_lines = [f"- {k}: {v}" for k, v in specs_dict.items() if v]
-        specs_str = "\n".join(specs_lines) if specs_lines else "등록된 세부 규격 없음"
+            # ⚠️ 가격 정보는 임베딩 콘텐츠에 절대 포함하지 않는다 (의미 검색을 통한 가격 유출 방지).
+            # 가격은 can_view_pim_price 권한을 검사하는 PIM API / 챗 도구에서만 마스킹 후 제공한다.
+            proc = p.get("procurement") if isinstance(p.get("procurement"), dict) else {}
+            proc_str = ""
+            if proc and proc.get("identificationNo"):
+                proc_str = f"조달정보: 식별번호 {proc.get('identificationNo')} | 품명 {proc.get('registeredName', '')}"
 
-        attach_names = [a.get("name") if isinstance(a, dict) else str(a) for a in (p.get("attachments") or []) if a]
-        attach_str = f"첨부자료: {', '.join(attach_names)}" if attach_names else ""
+            specs_dict = p.get("specs") if isinstance(p.get("specs"), dict) else {}
+            specs_lines = [f"- {k}: {v}" for k, v in specs_dict.items() if v]
+            specs_str = "\n".join(specs_lines) if specs_lines else "등록된 세부 규격 없음"
 
-        meta_rows = [f"제품구분: {'공식 카탈로그' if is_live else '사내 관리 제품'}", f"모델명: {model}", f"제품명: {name}", f"카테고리: {cat} (패밀리: {family}) | 수명주기: {lifecycle}"]
-        if desc:
-            meta_rows.append(f"설명 및 소개:\n{desc}")
-        if proc_str:
-            meta_rows.append(proc_str)
-        if attach_str:
-            meta_rows.append(attach_str)
-        meta_rows.append(f"세부 규격 사양:\n{specs_str}")
+            attach_names = _attachment_names(p.get("attachments"))
+            attach_str = f"첨부자료: {', '.join(attach_names)}" if attach_names else ""
 
-        content = "\n".join(meta_rows).strip()
+            meta_rows = [f"제품구분: {'공식 카탈로그' if is_live else '사내 관리 제품'}", f"모델명: {model}", f"제품명: {name}", f"카테고리: {cat} (패밀리: {family}) | 수명주기: {lifecycle}"]
+            if desc:
+                meta_rows.append(f"설명 및 소개:\n{desc}")
+            if proc_str:
+                meta_rows.append(proc_str)
+            if attach_str:
+                meta_rows.append(attach_str)
+            meta_rows.append(f"세부 규격 사양:\n{specs_str}")
 
-        docs.append({
-            "doc_id": f"product:{pid}",
-            "doc_type": "product",
-            "title": f"[제품] {name} ({model})",
-            "content": content,
-            "metadata": {
-                "id": f"pim-{pid}",
+            content = "\n".join(meta_rows).strip()
+
+            docs.append({
+                "doc_id": f"product:{pid}",
+                "doc_type": "product",
                 "title": f"[제품] {name} ({model})",
-                "org": "공식카탈로그" if is_live else "lab",
-                "category": cat,
-                "summary": (p.get("summary") or p.get("memo") or "")[:200],
-                "date": (p.get("updatedAt") or "")[:10],
-                "source": source
-            }
-        })
+                "content": content,
+                "metadata": {
+                    "id": f"pim-{pid}",
+                    "title": f"[제품] {name} ({model})",
+                    "org": "공식카탈로그" if is_live else "lab",
+                    "category": cat,
+                    "summary": (p.get("summary") or p.get("memo") or "")[:200],
+                    "date": (p.get("updatedAt") or "")[:10],
+                    "source": source
+                }
+            })
+        except Exception as _e:
+            _skip_bad_record('product', p, _e)
 
     # 4. 일정 (schedule.json)
-    for s in read_schedule():
-        sid = s.get("id")
-        if not sid:
-            continue
-        title = s.get("title") or ""
-        owner = s.get("ownerName") or ""
-        org = s.get("ownerOrg") or ""
-        stype = s.get("type") or ""
-        memo = s.get("memo") or ""
-        sdate = s.get("startDate") or ""
-        edate = s.get("endDate") or sdate
-        parts = s.get("participants") or []
-        parts_names = [p.get("name") if isinstance(p, dict) else str(p) for p in parts if p]
-        parts_str = f" | 참석자: {', '.join(parts_names)}" if parts_names else ""
+    schedule_list = []
+    try:
+        schedule_list = read_schedule() or []
+    except Exception as e:
+        log_line(f"[VectorStore] Failed to read schedule: {e}")
 
-        content = (
-            f"[일정: {stype}] {title}\n"
-            f"담당자: {owner} ({org}){parts_str}\n"
-            f"기간: {sdate} ~ {edate}\n"
-            f"메모: {memo}"
-        ).strip()
+    for s in schedule_list:
+        try:
+            sid = s.get("id")
+            if not sid:
+                continue
+            title = s.get("title") or ""
+            owner = s.get("ownerName") or ""
+            org = s.get("ownerOrg") or ""
+            stype = s.get("type") or ""
+            memo = s.get("memo") or ""
+            sdate = s.get("startDate") or ""
+            edate = s.get("endDate") or sdate
+            parts = s.get("participants") or []
+            parts_names = [p.get("name") if isinstance(p, dict) else str(p) for p in parts if p]
+            parts_str = f" | 참석자: {', '.join(parts_names)}" if parts_names else ""
 
-        docs.append({
-            "doc_id": f"schedule:{sid}",
-            "doc_type": "schedule",
-            "title": f"[일정] {title} ({owner})",
-            "content": content,
-            "metadata": {
-                "id": sid,
-                "title": f"[{stype}] {title} ({owner})",
-                "org": org,
-                "dept_id": org,
-                "ownerName": owner,
-                "ownerOrg": org,
-                "participants": parts_names,
-                "category": stype,
-                "summary": memo,
-                "date": sdate
-            }
-        })
+            content = (
+                f"[일정: {stype}] {title}\n"
+                f"담당자: {owner} ({org}){parts_str}\n"
+                f"기간: {sdate} ~ {edate}\n"
+                f"메모: {memo}"
+            ).strip()
+
+            docs.append({
+                "doc_id": f"schedule:{sid}",
+                "doc_type": "schedule",
+                "title": f"[일정] {title} ({owner})",
+                "content": content,
+                "metadata": {
+                    "id": sid,
+                    "title": f"[{stype}] {title} ({owner})",
+                    "org": org,
+                    "dept_id": org,
+                    "ownerName": owner,
+                    "ownerOrg": org,
+                    "participants": parts_names,
+                    "category": stype,
+                    "summary": memo,
+                    "date": sdate
+                }
+            })
+        except Exception as _e:
+            _skip_bad_record('schedule', s, _e)
 
     return docs
 
@@ -723,7 +780,27 @@ def sync_all_vectors(cfg, force=False):
                     embeddings = call_voyage_embeddings(cfg, texts, input_type="document")
 
                     if not embeddings or len(embeddings) != len(batch):
-                        log_line(f"[Vector Store] 배치 임베딩 실패 (batch size: {len(batch)})")
+                        # Lỗi cả batch (ví dụ: có tài liệu quá dài gây HTTP 400).
+                        # Để tránh "poison pill" kéo theo cả lô tài liệu lành bị loại bỏ vĩnh viễn,
+                        # tự động chuyển sang fallback thử từng tài liệu đơn lẻ.
+                        if len(batch) > 1:
+                            log_line(f"[Vector Store] 배치 임베딩 실패 (batch size: {len(batch)}), 개별 재시도(Single-item fallback) 진행...")
+                            batch_success = []
+                            batch_embeddings = []
+                            for single_item in batch:
+                                s_emb = call_voyage_embeddings(cfg, [single_item["content"]], input_type="document")
+                                if s_emb and len(s_emb) == 1:
+                                    batch_success.append(single_item)
+                                    batch_embeddings.append(s_emb[0])
+                                else:
+                                    log_line(f"[Vector Store] 개별 문서 임베딩 실패로 건너뜀 (doc_id={single_item.get('doc_id')})")
+                            batch = batch_success
+                            embeddings = batch_embeddings
+                        else:
+                            log_line(f"[Vector Store] 단일 문서 임베딩 실패로 건너뜀 (doc_id={batch[0].get('doc_id')})")
+                            continue
+
+                    if not embeddings:
                         continue
 
                     dim = len(embeddings[0])

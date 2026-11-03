@@ -18,6 +18,18 @@ _last_product_id = 0
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def _safe_json_loads(val, default=None):
+    if not val:
+        return default
+    try:
+        return json.loads(val)
+    except Exception:
+        return default
+
+
+# ---------------------------------------------------------------------------
 # Departments
 # ---------------------------------------------------------------------------
 def _clean_custom_cats(val):
@@ -145,7 +157,7 @@ def read_records():
             "endDate": r.get("due_date") or r.get("work_date") or "",
             "createdAt": r.get("created_at") or "",
             "summary": r["summary"],
-            "tags": json.loads(r["tags"]) if r["tags"] else [],
+            "tags": _safe_json_loads(r["tags"], []),
             "memo": r["memo"],
             "status": r.get("status") or "진행",
             "priority": r.get("priority") or "보통",
@@ -198,7 +210,7 @@ def get_record_by_id(record_id):
         "endDate": r.get("due_date") or r.get("work_date") or "",
         "createdAt": r.get("created_at") or "",
         "summary": r["summary"],
-        "tags": json.loads(r["tags"]) if r["tags"] else [],
+        "tags": _safe_json_loads(r["tags"], []),
         "memo": r["memo"],
         "status": r.get("status") or "진행",
         "priority": r.get("priority") or "보통",
@@ -272,7 +284,7 @@ def find_record_by_key_or_code(key_or_code):
         "endDate": r.get("due_date") or r.get("work_date") or "",
         "createdAt": r.get("created_at") or "",
         "summary": r["summary"],
-        "tags": json.loads(r["tags"]) if r["tags"] else [],
+        "tags": _safe_json_loads(r["tags"], []),
         "memo": r["memo"],
         "status": r.get("status") or "진행",
         "priority": r.get("priority") or "보통",
@@ -763,7 +775,7 @@ def read_products(include_external=False):
     rows = query("SELECT * FROM products ORDER BY updated_at DESC")
     result = []
     for r in rows:
-        proc_data = json.loads(r["procurement"]) if r["procurement"] else None
+        proc_data = _safe_json_loads(r["procurement"], None)
         price_val = r["price"] if "price" in r and r["price"] is not None else 0
         if not price_val and proc_data and proc_data.get("price"):
             price_val = proc_data.get("price")
@@ -780,7 +792,7 @@ def read_products(include_external=False):
             "memo": r["memo"],
             "price": price_val,
             "currency": currency_val,
-            "specs": json.loads(r["specs"]) if r["specs"] else {},
+            "specs": _safe_json_loads(r["specs"], {}),
             "procurement": proc_data,
             "revision": r["revision"],
             "createdAt": r["created_at"],
