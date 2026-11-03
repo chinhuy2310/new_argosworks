@@ -65,6 +65,11 @@ def _session_cleanup_loop():
             cleanup_expired_sessions()
         except Exception:
             pass
+        try:
+            from services.notification_service import cleanup_old_notifications
+            cleanup_old_notifications()
+        except Exception:
+            pass
         time.sleep(3600)
 
 
@@ -89,8 +94,8 @@ def init_app():
                     log_line(
                         f"[ARCHITECTURE WARNING] Multi-process deployment detected (workers={web_concurrency}). "
                         "In-memory state (SSE notifications, login rate limiting, background schedulers) "
-                        "requires single-process multi-threaded deployment (e.g. Waitress --threads=64 or "
-                        "Gunicorn --workers=1 --threads=64) unless Redis is integrated."
+                        "requires single-process multi-threaded deployment (e.g. Waitress --threads=128 or "
+                        "Gunicorn --workers=1 --threads=128) unless Redis is integrated."
                     )
             except ValueError:
                 pass
@@ -291,4 +296,4 @@ if __name__ == "__main__":
     host = os.environ.get("HOST") or cfg.get("server", {}).get("host", "0.0.0.0")
     port = int(os.environ.get("PORT") or cfg.get("server", {}).get("port", 8080))
     print(f"Starting ARGOS WORKS production WSGI server on http://{host}:{port} via Waitress...")
-    waitress.serve(application, host=host, port=port, threads=64, channel_timeout=60)
+    waitress.serve(application, host=host, port=port, threads=128, channel_timeout=60)

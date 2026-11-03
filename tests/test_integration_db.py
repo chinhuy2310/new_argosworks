@@ -31,7 +31,7 @@ class TestSchemaInitialization:
             "record_comments", "record_jira", "schedule_events",
             "schedule_participants", "products", "product_attachments",
             "chat_sessions", "chat_messages", "activities", "sessions",
-            "notifications", "audit_logs", "license_info", "ai_usage",
+            "notifications", "notification_reads", "audit_logs", "license_info", "ai_usage",
             "jira_issues", "jira_comments", "jira_attachments",
             "login_attempts", "schema_migrations"
         }

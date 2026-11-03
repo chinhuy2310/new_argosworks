@@ -414,9 +414,9 @@ def _run(cfg, host, port, services):
         except ImportError:
             use_waitress = False
     try:
-        workers = int(os.environ.get("ARGOS_WORKER_THREADS", "64"))
+        workers = int(os.environ.get("ARGOS_WORKER_THREADS", "128"))
     except ValueError:
-        workers = 64
+        workers = 128
 
     server = None
     httpd = None

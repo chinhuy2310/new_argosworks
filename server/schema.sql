@@ -213,6 +213,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     id TEXT PRIMARY KEY,
     recipient_email TEXT NOT NULL DEFAULT '',
     recipient_name TEXT NOT NULL DEFAULT '',
+    recipient_user_id INTEGER,
     sender_name TEXT NOT NULL DEFAULT '시스템',
     type TEXT NOT NULL DEFAULT 'assign',
     title TEXT NOT NULL,
@@ -224,6 +225,19 @@ CREATE TABLE IF NOT EXISTS notifications (
     read_at TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
 );
+
+-- Per-user read state. The legacy notifications.is_read column is kept for
+-- compatibility, but this table is authoritative for shared/role notifications
+-- and for cross-device synchronization.
+CREATE TABLE IF NOT EXISTS notification_reads (
+    notification_id TEXT NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    read_at TEXT NOT NULL,
+    PRIMARY KEY (notification_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_notification_reads_user ON notification_reads(user_id, read_at);
+CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_email, is_read, created_at);
+CREATE INDEX IF NOT EXISTS idx_notifications_name ON notifications(recipient_name, is_read, created_at);
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_records_dept ON records(dept_id);

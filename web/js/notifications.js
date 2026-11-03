@@ -23,6 +23,11 @@
   var fetchSeq = 0;
   var fetchTimer = null;
   var sharedAudioCtx = null;
+  var sseRetryDelay = 10000;
+  var notifOffset = 0;
+  var notifHasMore = false;
+  var unreadTotal = 0;
+  var loadMoreBtn = null;
 
   function isSoundEnabled(){
     try {
@@ -194,40 +199,16 @@
     }
   }
 
-  function readStorageKey(){
-    var u = (typeof getCurrentUser === "function" ? getCurrentUser() : null) || window.loggedInUser || {};
-    var identity = (u.email || "").trim().toLowerCase() || (u.name || "").trim().toLowerCase() || "anon";
-    return "argos_read_notifications_v1:" + identity;
-  }
-
-  function getReadIds(){
-    try {
-      var raw = localStorage.getItem(readStorageKey());
-      var parsed = raw ? JSON.parse(raw) : [];
-      // A corrupt value (object/string) previously made ids.indexOf throw and
-      // broke the whole notification list.
-      return Array.isArray(parsed) ? parsed.filter(function(id){ return typeof id === "string"; }) : [];
-    } catch(e) {
-      return [];
-    }
-  }
-
-  function setReadIds(ids){
-    try {
-      localStorage.setItem(readStorageKey(), JSON.stringify(ids));
-    } catch(e) {}
-  }
-
   function markIdAsRead(id){
     if(!id) return;
-    var ids = getReadIds();
-    if(ids.indexOf(id) === -1){
-      ids.push(id);
-      setReadIds(ids);
-    }
+    var wasUnread = false;
     allNotifications.forEach(function(item){
-      if(item.id === id) item.is_read = true;
+      if(item.id === id){
+        wasUnread = !item.is_read;
+        item.is_read = true;
+      }
     });
+    if(wasUnread && unreadTotal > 0) unreadTotal--;
     updateBadge();
     renderList();
     if(typeof apiPost === "function"){
@@ -236,14 +217,10 @@
   }
 
   function markAllAsRead(){
-    var ids = getReadIds();
     allNotifications.forEach(function(item){
       item.is_read = true;
-      if(ids.indexOf(item.id) === -1){
-        ids.push(item.id);
-      }
     });
-    setReadIds(ids);
+    unreadTotal = 0;
     updateBadge();
     renderList();
     if(typeof apiPost === "function"){
@@ -383,18 +360,18 @@
   }
 
   function isItemUnread(item){
-    if(item.is_read) return false;
-    var readIds = getReadIds();
-    return readIds.indexOf(item.id) === -1;
+    // Server-side notification_reads is authoritative and syncs across devices.
+    return !item.is_read;
   }
 
   function updateBadge(){
-    var unreadCount = 0;
+    var loadedUnread = 0;
     allNotifications.forEach(function(item){
       if(isItemUnread(item)){
-        unreadCount++;
+        loadedUnread++;
       }
     });
+    var unreadCount = Math.max(unreadTotal || 0, loadedUnread);
 
     if(notifBadge){
       if(unreadCount > 0){
@@ -543,28 +520,52 @@
     });
   }
 
-  function fetchNotifications(){
+  function fetchNotifications(reset){
     if(typeof apiGet !== "function") return;
+    var append = reset === false;
+    var offset = append ? notifOffset : 0;
+    // Keep the number of already-loaded rows on refresh instead of collapsing
+    // back to 50 every poll.
+    var pageSize = append ? 50 : Math.max(50, Math.min(allNotifications.length, 200));
     var seq = ++fetchSeq;
-    apiGet("/api/notifications")
+    apiGet("/api/notifications?limit=" + pageSize + "&offset=" + offset)
       .then(function(res){
         // A slower, older request must not overwrite a newer notification list.
         if(seq !== fetchSeq) return;
         if(res && res.ok && Array.isArray(res.notifications)){
-          allNotifications = res.notifications;
+          var incoming = res.notifications;
+          if(append){
+            var existing = {};
+            allNotifications.forEach(function(item){ existing[item.id] = true; });
+            incoming.forEach(function(item){
+              if(!existing[item.id]){
+                allNotifications.push(item);
+                existing[item.id] = true;
+              }
+              notifiedIds[item.id] = true;
+            });
+          } else {
+            allNotifications = incoming;
+          }
+          notifOffset = allNotifications.length;
+          notifHasMore = Boolean(res.has_more);
+          if(typeof res.unread === "number") unreadTotal = res.unread;
+          updateLoadMoreButton();
           updateBadge();
           renderList();
 
-          // Check for new unread notifications to alert
+          // Desktop alerts only for a fresh page, never for "load more".
           var newUnreadItems = [];
-          allNotifications.forEach(function(item){
-            if(isItemUnread(item) && !notifiedIds[item.id]){
-              newUnreadItems.push(item);
-              notifiedIds[item.id] = true;
-            }
-          });
+          if(!append){
+            allNotifications.forEach(function(item){
+              if(isItemUnread(item) && !notifiedIds[item.id]){
+                newUnreadItems.push(item);
+                notifiedIds[item.id] = true;
+              }
+            });
+          }
 
-          if(!isFirstFetch && newUnreadItems.length > 0){
+          if(!append && !isFirstFetch && newUnreadItems.length > 0){
             if(newUnreadItems.length === 1){
               triggerDesktopNotification(newUnreadItems[0]);
             } else {
@@ -583,6 +584,16 @@
       .catch(function(err){
         console.warn("Failed to fetch notifications:", err);
       });
+  }
+
+  function updateLoadMoreButton(){
+    if(!loadMoreBtn) return;
+    loadMoreBtn.hidden = !notifHasMore;
+  }
+
+  function loadMoreNotifications(){
+    if(!notifHasMore) return;
+    fetchNotifications(false);
   }
 
   // Coalesce bursts of SSE events (e.g. backfill/fan-out) into one fetch.
@@ -606,7 +617,7 @@
     notifMenu.hidden = false;
     if(notifBtn) notifBtn.setAttribute("aria-expanded", "true");
     updatePushBanner();
-    fetchNotifications();
+    fetchNotifications(true);
   }
 
   function closeNotifMenu(){
@@ -636,10 +647,18 @@
     pushBanner = document.getElementById("notifPushBanner");
     enablePushBtn = document.getElementById("notifEnablePushBtn");
     testPushBtn = document.getElementById("notifTestPushBtn");
+    loadMoreBtn = document.getElementById("notifLoadMoreBtn");
 
     if(!notifBtn || !notifMenu) return;
 
     notifBtn.addEventListener("click", toggleNotifMenu);
+
+    if(loadMoreBtn){
+      loadMoreBtn.addEventListener("click", function(e){
+        e.stopPropagation();
+        loadMoreNotifications();
+      });
+    }
 
     if(markAllBtn){
       markAllBtn.addEventListener("click", function(e){
@@ -734,7 +753,7 @@
     }
 
     // Initial fetch
-    fetchNotifications();
+    fetchNotifications(true);
 
     // Realtime SSE Notification Stream (Tức thì thay vì chờ 45 giây)
     function connectNotificationSSE(){
@@ -747,6 +766,7 @@
       // Catch up on notifications created while the stream was disconnected
       // (network drop, 15-minute connection recycle, or page resume).
       evtSource.addEventListener("connected", function(){
+        sseRetryDelay = 10000;
         scheduleFetchNotifications();
       });
 
@@ -756,11 +776,15 @@
           var curUser = typeof getCurrentUser === "function" ? getCurrentUser() : null;
           var curEmail = (curUser && curUser.email) ? curUser.email.toLowerCase() : "";
           var curName = (curUser && curUser.name) ? curUser.name.trim() : "";
+          var curId = (curUser && (curUser.id || curUser.user_id)) ? String(curUser.id || curUser.user_id) : "";
           var recipientEmail = (data.recipient_email || "").toLowerCase();
+          var recipientId = data.recipient_user_id ? String(data.recipient_user_id) : "";
 
           // Nếu thông báo gửi cho chính mình hoặc gửi chung
           // ("all" là broadcast tường minh; rỗng + tên rỗng cũng là broadcast)
-          if(!recipientEmail || recipientEmail === "all" || recipientEmail === curEmail || data.recipient_name === curName){
+          if((recipientId && (!curId || recipientId === curId)) ||
+             (!recipientId && (!recipientEmail || recipientEmail === "all" ||
+              recipientEmail === curEmail || data.recipient_name === curName))){
             scheduleFetchNotifications(); // Cập nhật lại chuông (debounce khi có burst)
             if(typeof showToast === "function" && data.title){
               showToast("🔔 " + data.title);
@@ -789,15 +813,17 @@
 
       evtSource.onerror = function(){
         evtSource.close();
-        // Tự động kết nối lại sau 10 giây nếu mất mạng
-        setTimeout(connectNotificationSSE, 10000);
+        // Exponential backoff: a full SSE pool must not cause a reconnect storm.
+        var delay = sseRetryDelay;
+        sseRetryDelay = Math.min(60000, sseRetryDelay * 2);
+        setTimeout(connectNotificationSSE, delay);
       };
     }
 
     connectNotificationSSE();
 
-    // Fallback polling dài hơn (120s) dự phòng mạng ngắt SSE
-    setInterval(fetchNotifications, 120000);
+    // Fallback polling (60s) for clients that cannot hold an SSE stream.
+    setInterval(fetchNotifications, 60000);
   }
 
   if(document.readyState === "loading"){

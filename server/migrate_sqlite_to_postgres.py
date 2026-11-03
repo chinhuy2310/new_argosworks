@@ -30,6 +30,7 @@ TABLES = [
     "lounge_messages",
     "sessions",
     "notifications",
+    "notification_reads",
     "sync_meta",
     "jira_issues",
     "jira_comments",

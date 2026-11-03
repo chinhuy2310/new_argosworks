@@ -257,6 +257,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     id VARCHAR(128) PRIMARY KEY,
     recipient_email VARCHAR(255) NOT NULL DEFAULT '',
     recipient_name TEXT NOT NULL DEFAULT '',
+    recipient_user_id INTEGER,
     sender_name TEXT NOT NULL DEFAULT '시스템',
     type VARCHAR(64) NOT NULL DEFAULT 'assign',
     title TEXT NOT NULL,
@@ -270,6 +271,18 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_email, is_read, created_at);
 CREATE INDEX IF NOT EXISTS idx_notifications_name ON notifications(recipient_name, is_read, created_at);
+CREATE INDEX IF NOT EXISTS idx_notifications_recipient_user ON notifications(recipient_user_id, created_at);
+
+-- Per-user read state. The legacy notifications.is_read column is kept for
+-- compatibility, but this table is authoritative for shared/role notifications
+-- and for cross-device synchronization.
+CREATE TABLE IF NOT EXISTS notification_reads (
+    notification_id VARCHAR(128) NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    read_at VARCHAR(64) NOT NULL,
+    PRIMARY KEY (notification_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_notification_reads_user ON notification_reads(user_id, read_at);
 
 -- 18. Jira Sync Metadata
 CREATE TABLE IF NOT EXISTS sync_meta (

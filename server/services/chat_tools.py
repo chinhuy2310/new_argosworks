@@ -1414,11 +1414,25 @@ def _tool_update_issue_status(args, current_user, cfg):
 
         # 1. Update local SQLite DB first (Local-First!)
 
+        old_status = local_rec.get("status") or ""
         update_record_status(local_rec["id"], new_status)
-        if new_status in ("검토", "Review", "검토중"):
+        if new_status != old_status:
             try:
-                from services.notification_service import trigger_review_request_notification
-                trigger_review_request_notification(local_rec, current_user)
+                if new_status in ("검토", "Review", "검토중"):
+                    from services.notification_service import trigger_review_request_notification
+                    trigger_review_request_notification(local_rec, current_user)
+                else:
+                    from services.notification_service import trigger_status_changed_notification
+                    trigger_status_changed_notification(
+                        record_id=local_rec.get("cardCode") or issue_key,
+                        title=local_rec.get("title") or issue_key,
+                        author_name=author_name,
+                        old_status=old_status,
+                        new_status=new_status,
+                        assignee_name=local_rec.get("assignee") or "",
+                        assignee_email=local_rec.get("assigneeEmail") or "",
+                        author_email=current_user.get("email") or "",
+                    )
             except Exception:
                 pass
 
@@ -1640,7 +1654,22 @@ def _tool_add_issue_comment(args, current_user, cfg):
 
         display_key = local_rec.get("cardCode") or issue_key
 
-        
+        try:
+
+            from services.notification_service import trigger_comment_notification
+
+            trigger_comment_notification(
+                record_id=display_key,
+                title=local_rec.get("title") or display_key,
+                author_name=author_name,
+                comment_body=comment,
+                assignee_name=local_rec.get("assignee") or "",
+                assignee_email=local_rec.get("assigneeEmail") or "",
+                author_email=current_user.get("email") or "",
+            )
+
+        except Exception:
+            pass
 
         # 2. Sync to Jira if linked and Jira is active
 
@@ -2057,6 +2086,19 @@ def _tool_create_issue(args, current_user, cfg):
 
         
 
+    assignee_email = current_user.get("email", "") if current_user else ""
+
+    if resolved_assignee and resolved_assignee != submitter_name:
+
+        _assignee_rows = query(
+            "SELECT email FROM users WHERE LOWER(name) = LOWER(?) AND dept_id = ? LIMIT 1",
+            (resolved_assignee, org),
+        )
+
+        if _assignee_rows:
+
+            assignee_email = _assignee_rows[0].get("email") or ""
+
     local_rec_dict = {
 
         "id": created_record_id,
@@ -2071,7 +2113,7 @@ def _tool_create_issue(args, current_user, cfg):
 
         "assignee": resolved_assignee,
 
-        "assigneeEmail": current_user.get("email", "") if current_user else "",
+        "assigneeEmail": assignee_email,
 
         "participants": "",
 
@@ -2117,7 +2159,21 @@ def _tool_create_issue(args, current_user, cfg):
 
     append_record(local_rec_dict)
 
+    try:
 
+        from services.notification_service import trigger_task_assigned_notification
+
+        trigger_task_assigned_notification(
+            record_id=created_key,
+            title=summary,
+            author_name=submitter_name,
+            assignee_name=resolved_assignee,
+            assignee_email=assignee_email,
+            author_email=(current_user.get("email") if current_user else "") or "",
+        )
+
+    except Exception:
+        pass
 
     # Register in local schedule.json for calendar
 

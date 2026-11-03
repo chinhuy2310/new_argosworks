@@ -458,6 +458,57 @@ if ENGINE == "sqlite":
                         conn.execute("ALTER TABLE license_info ADD COLUMN last_seen_ts REAL NOT NULL DEFAULT 0;")
                 conn.execute("INSERT OR IGNORE INTO schema_migrations (version, name) VALUES (9, 'v3.0_license_monotonic_clock');")
                 logger.info("[db] Migration v9 (license monotonic clock) applied.")
+
+            # Migration v10: Per-user notification identity and read state.
+            # recipient_user_id makes the recipient stable across renames/email
+            # changes; notification_reads removes the global is_read race.
+            if 10 not in applied_migrations:
+                n_cols = {row[1] for row in conn.execute("PRAGMA table_info(notifications)").fetchall()}
+                if "recipient_user_id" not in n_cols:
+                    conn.execute("ALTER TABLE notifications ADD COLUMN recipient_user_id INTEGER;")
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS notification_reads (
+                        notification_id TEXT NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        read_at TEXT NOT NULL,
+                        PRIMARY KEY (notification_id, user_id)
+                    );
+                """)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_notification_reads_user ON notification_reads(user_id, read_at);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_recipient_user ON notifications(recipient_user_id, created_at);")
+                conn.execute("""
+                    UPDATE notifications
+                       SET recipient_user_id = (
+                           SELECT id FROM users
+                            WHERE LOWER(users.email) = LOWER(notifications.recipient_email)
+                            LIMIT 1
+                       )
+                     WHERE recipient_user_id IS NULL
+                       AND COALESCE(recipient_email, '') != '';
+                """)
+                conn.execute("""
+                    UPDATE notifications
+                       SET recipient_user_id = (
+                           SELECT id FROM users
+                            WHERE LOWER(users.name) = LOWER(notifications.recipient_name)
+                            LIMIT 1
+                       )
+                     WHERE recipient_user_id IS NULL
+                       AND COALESCE(recipient_email, '') = ''
+                       AND LOWER(COALESCE(recipient_name, '')) NOT IN ('', 'all', '관리자', 'admin')
+                       AND (SELECT COUNT(*) FROM users
+                             WHERE LOWER(name) = LOWER(notifications.recipient_name)) = 1;
+                """)
+                conn.execute("""
+                    INSERT OR IGNORE INTO notification_reads (notification_id, user_id, read_at)
+                    SELECT n.id, n.recipient_user_id,
+                           COALESCE(NULLIF(n.read_at, ''), n.created_at)
+                      FROM notifications n
+                     WHERE n.is_read = 1
+                       AND n.recipient_user_id IS NOT NULL;
+                """)
+                conn.execute("INSERT OR IGNORE INTO schema_migrations (version, name) VALUES (10, 'v3.1_notification_user_read_state');")
+                logger.info("[db] Migration v10 (notification user/read state) applied.")
         except sqlite3.Error as e:
             logger.error(f"Database initialization failed: {e}")
             raise
@@ -931,6 +982,56 @@ else:
                     ON CONFLICT (version) DO NOTHING;
                 """)
                 logger.info("[db/postgres] Migration v9 (license monotonic clock) applied.")
+
+            # Migration 10: Per-user notification identity and read state.
+            if 10 not in applied_versions:
+                cur.execute("""
+                    ALTER TABLE notifications ADD COLUMN IF NOT EXISTS recipient_user_id INTEGER;
+                    CREATE TABLE IF NOT EXISTS notification_reads (
+                        notification_id VARCHAR(128) NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        read_at VARCHAR(64) NOT NULL,
+                        PRIMARY KEY (notification_id, user_id)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_notification_reads_user ON notification_reads(user_id, read_at);
+                    CREATE INDEX IF NOT EXISTS idx_notifications_recipient_user ON notifications(recipient_user_id, created_at);
+                """)
+                cur.execute("""
+                    UPDATE notifications n
+                       SET recipient_user_id = u.id
+                      FROM users u
+                     WHERE n.recipient_user_id IS NULL
+                       AND COALESCE(n.recipient_email, '') != ''
+                       AND LOWER(u.email) = LOWER(n.recipient_email);
+                """)
+                cur.execute("""
+                    UPDATE notifications n
+                       SET recipient_user_id = (
+                           SELECT u.id FROM users u
+                            WHERE LOWER(u.name) = LOWER(n.recipient_name)
+                            LIMIT 1
+                       )
+                     WHERE n.recipient_user_id IS NULL
+                       AND COALESCE(n.recipient_email, '') = ''
+                       AND LOWER(COALESCE(n.recipient_name, '')) NOT IN ('', 'all', '관리자', 'admin')
+                       AND (SELECT COUNT(*) FROM users u
+                             WHERE LOWER(u.name) = LOWER(n.recipient_name)) = 1;
+                """)
+                cur.execute("""
+                    INSERT INTO notification_reads (notification_id, user_id, read_at)
+                    SELECT n.id, n.recipient_user_id,
+                           COALESCE(NULLIF(n.read_at, ''), n.created_at)
+                      FROM notifications n
+                     WHERE n.is_read = 1
+                       AND n.recipient_user_id IS NOT NULL
+                    ON CONFLICT (notification_id, user_id) DO NOTHING;
+                """)
+                cur.execute("""
+                    INSERT INTO schema_migrations (version, name)
+                    VALUES (10, 'v3.1_notification_user_read_state')
+                    ON CONFLICT (version) DO NOTHING;
+                """)
+                logger.info("[db/postgres] Migration v10 (notification user/read state) applied.")
 
             cur.close()
         except psycopg2.Error as e:
