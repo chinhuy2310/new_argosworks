@@ -90,6 +90,26 @@ class TestSearchDegradesToCacheSignal:
         assert issues is None
         assert activities is None
 
+    def test_search_returns_none_when_later_page_fails(self, monkeypatch):
+        calls = {"count": 0}
+
+        def fake_urlopen(req, *args, **kwargs):
+            calls["count"] += 1
+            url = getattr(req, "full_url", "")
+            if calls["count"] == 1 and req.get_method() == "GET":
+                return _FakeResponse({
+                    "issues": [{"key": "TEST-1", "fields": {}}],
+                    "nextPageToken": "next-page"
+                })
+            raise urllib.error.URLError("later page unavailable")
+
+        monkeypatch.setattr(jira_client.urllib.request, "urlopen", fake_urlopen)
+        issues, activities = jira_client.jira_search_issues(
+            _cfg(), max_results=20, page_size=10
+        )
+        assert issues is None
+        assert activities is None
+
 
 # ---------------------------------------------------------------------------
 # Assignee resolution: Jira's /user/search is fuzzy, exact match must win
