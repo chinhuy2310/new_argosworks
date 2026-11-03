@@ -1024,7 +1024,7 @@ if ENGINE == "sqlite":
                 logger.info("[db] Migration v10 (notification user/read state) applied.")
 
             # Migration v11: Reconciliation of records.work_date default and sessions.last_active_at
-            if 11 not in applied_versions:
+            if 11 not in applied_migrations:if 11 not in applied_versions:
                 cur_r = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='records'")
                 if cur_r.fetchone():
                     r_info = {row[1]: row for row in conn.execute("PRAGMA table_info(records)").fetchall()}
