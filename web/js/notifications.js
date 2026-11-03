@@ -16,11 +16,13 @@
 
   var allNotifications = [];
   var currentFilter = "all";
-  var READ_STORAGE_KEY = "argos_read_notifications_v1";
   var SOUND_STORAGE_KEY = "argos_notif_sound_enabled";
 
   var notifiedIds = {};
   var isFirstFetch = true;
+  var fetchSeq = 0;
+  var fetchTimer = null;
+  var sharedAudioCtx = null;
 
   function isSoundEnabled(){
     try {
@@ -51,7 +53,18 @@
     try {
       var AudioCtx = window.AudioContext || window.webkitAudioContext;
       if(!AudioCtx) return;
-      var ctx = new AudioCtx();
+      // Reuse one context. Creating a new AudioContext per notification hits the
+      // browser limit (~6 in Chromium) and makes the chime silently stop.
+      if(!sharedAudioCtx || sharedAudioCtx.state === "closed"){
+        sharedAudioCtx = new AudioCtx();
+      }
+      var ctx = sharedAudioCtx;
+      if(ctx.state === "suspended" && typeof ctx.resume === "function"){
+        var resumePromise = ctx.resume();
+        if(resumePromise && typeof resumePromise.catch === "function"){
+          resumePromise.catch(function(){});
+        }
+      }
       var now = ctx.currentTime;
 
       // Tone 1: D5 (587.33 Hz)
@@ -111,7 +124,7 @@
       } else if(perm === "denied"){
         if(typeof showToast === "function") showToast("⚠️ 브라우저 주소창에서 알림 권한을 허용할 수 있습니다.");
       }
-    });
+    }).catch(function(){});
   }
 
   function triggerDesktopNotification(item){
@@ -135,6 +148,7 @@
 
         var tag = item.tag || "";
         var title = item.title || "";
+        var itemType = String(item.type || "").toLowerCase();
         if(tag === "가입요청" || tag === "가입승인" || title.indexOf("가입 승인") !== -1 || title.indexOf("계정 발급") !== -1){
           if(typeof showTab === "function") showTab("settings");
           if(typeof switchSettingsTab === "function") switchSettingsTab("users");
@@ -146,6 +160,19 @@
             }
             if(typeof loadAdminUsers === "function") loadAdminUsers();
           }, 100);
+          return;
+        }
+
+        // Schedule/approval notifications carry a schedule event id, not a
+        // record id; the canvas endpoint would 404 for them.
+        if(itemType.indexOf("schedule") === 0 || tag.indexOf("일정") !== -1 ||
+           (title.indexOf("일정") !== -1 && (tag.indexOf("결재") !== -1 || tag.indexOf("승인") !== -1 || tag.indexOf("반려") !== -1))){
+          if(typeof showTab === "function") showTab("schedule");
+          return;
+        }
+        if(itemType === "dept_change" || tag === "승인요청"){
+          if(typeof showTab === "function") showTab("settings");
+          if(typeof switchSettingsTab === "function") switchSettingsTab("users");
           return;
         }
 
@@ -167,10 +194,19 @@
     }
   }
 
+  function readStorageKey(){
+    var u = (typeof getCurrentUser === "function" ? getCurrentUser() : null) || window.loggedInUser || {};
+    var identity = (u.email || "").trim().toLowerCase() || (u.name || "").trim().toLowerCase() || "anon";
+    return "argos_read_notifications_v1:" + identity;
+  }
+
   function getReadIds(){
     try {
-      var raw = localStorage.getItem(READ_STORAGE_KEY);
-      return raw ? JSON.parse(raw) : [];
+      var raw = localStorage.getItem(readStorageKey());
+      var parsed = raw ? JSON.parse(raw) : [];
+      // A corrupt value (object/string) previously made ids.indexOf throw and
+      // broke the whole notification list.
+      return Array.isArray(parsed) ? parsed.filter(function(id){ return typeof id === "string"; }) : [];
     } catch(e) {
       return [];
     }
@@ -178,7 +214,7 @@
 
   function setReadIds(ids){
     try {
-      localStorage.setItem(READ_STORAGE_KEY, JSON.stringify(ids));
+      localStorage.setItem(readStorageKey(), JSON.stringify(ids));
     } catch(e) {}
   }
 
@@ -297,7 +333,12 @@
       return "mention";
     }
 
-    // 10. Phân công người phụ trách (Assignment)
+    // 10. Yêu cầu đổi bộ phận (Department change approval)
+    if(type === "dept_change"){
+      return "review";
+    }
+
+    // 11. Phân công người phụ trách (Assignment)
     return "assign";
   }
 
@@ -410,7 +451,7 @@
         tagHtml = '<span class="notif-item-tag ' + tagTypeClass + '">' + escapeHtml(item.tag) + '</span>';
       }
 
-      html += '<div class="notif-item ' + (isUnread ? 'unread' : '') + '" data-id="' + escapeHtml(item.id) + '" data-rec-id="' + escapeHtml(item.record_id || '') + '" data-tag="' + escapeHtml(item.tag || '') + '" data-title="' + escapeHtml(item.title || '') + '">' +
+      html += '<div class="notif-item ' + (isUnread ? 'unread' : '') + '" data-id="' + escapeHtml(item.id) + '" data-rec-id="' + escapeHtml(item.record_id || '') + '" data-tag="' + escapeHtml(item.tag || '') + '" data-title="' + escapeHtml(item.title || '') + '" data-type="' + escapeHtml(item.type || '') + '">' +
         '<div class="notif-item-icon ' + typeClass + '">' + getIconSvg(category, item) + '</div>' +
         '<div class="notif-item-content">' +
           '<div class="notif-item-title">' +
@@ -433,6 +474,7 @@
         var recId = el.getAttribute("data-rec-id");
         var tag = el.getAttribute("data-tag") || "";
         var title = el.getAttribute("data-title") || "";
+        var itemType = (el.getAttribute("data-type") || "").toLowerCase();
         markIdAsRead(id);
         closeNotifMenu();
 
@@ -460,7 +502,30 @@
           return;
         }
 
-        // 2. 업무 카드 알림 클릭 시 -> 대시보드 또는 캔버스 모달 열기
+        // 2. 일정/결재 알림의 record_id는 일정 이벤트 ID이므로 업무 캔버스로
+        // 열면 "/api/issues?key=<event-id>" 404가 난다. 일정 탭으로 이동한다.
+        if(itemType.indexOf("schedule") === 0 || tag.indexOf("일정") !== -1 ||
+           (title.indexOf("일정") !== -1 && (tag.indexOf("결재") !== -1 || tag.indexOf("승인") !== -1 || tag.indexOf("반려") !== -1))){
+          if(typeof showTab === "function"){
+            showTab("schedule");
+          } else if(typeof window.loadSchedule === "function"){
+            window.loadSchedule(true);
+          }
+          return;
+        }
+
+        // 3. 부서 변경 요청/승인 알림은 사용자 관리 화면으로 이동
+        if(itemType === "dept_change" || tag === "승인요청"){
+          if(typeof showTab === "function"){
+            showTab("settings");
+          }
+          if(typeof switchSettingsTab === "function"){
+            switchSettingsTab("users");
+          }
+          return;
+        }
+
+        // 4. 업무 카드 알림 클릭 시 -> 대시보드 또는 캔버스 모달 열기
         if(recId){
           if(typeof window.showIssueInCanvas === "function"){
             window.showIssueInCanvas(recId);
@@ -470,7 +535,7 @@
           return;
         }
 
-        // 3. 기본 일반 알림 -> 대시보드로 이동
+        // 5. 기본 일반 알림 -> 대시보드로 이동
         if(typeof showTab === "function"){
           showTab("dash");
         }
@@ -480,8 +545,11 @@
 
   function fetchNotifications(){
     if(typeof apiGet !== "function") return;
+    var seq = ++fetchSeq;
     apiGet("/api/notifications")
       .then(function(res){
+        // A slower, older request must not overwrite a newer notification list.
+        if(seq !== fetchSeq) return;
         if(res && res.ok && Array.isArray(res.notifications)){
           allNotifications = res.notifications;
           updateBadge();
@@ -515,6 +583,15 @@
       .catch(function(err){
         console.warn("Failed to fetch notifications:", err);
       });
+  }
+
+  // Coalesce bursts of SSE events (e.g. backfill/fan-out) into one fetch.
+  function scheduleFetchNotifications(){
+    if(fetchTimer) clearTimeout(fetchTimer);
+    fetchTimer = setTimeout(function(){
+      fetchTimer = null;
+      fetchNotifications();
+    }, 250);
   }
 
   function openNotifMenu(){
@@ -667,16 +744,24 @@
       var url = "/api/notifications/stream";
       var evtSource = new EventSource(url);
 
+      // Catch up on notifications created while the stream was disconnected
+      // (network drop, 15-minute connection recycle, or page resume).
+      evtSource.addEventListener("connected", function(){
+        scheduleFetchNotifications();
+      });
+
       evtSource.addEventListener("new_notification", function(e){
         try {
           var data = JSON.parse(e.data);
           var curUser = typeof getCurrentUser === "function" ? getCurrentUser() : null;
           var curEmail = (curUser && curUser.email) ? curUser.email.toLowerCase() : "";
           var curName = (curUser && curUser.name) ? curUser.name.trim() : "";
+          var recipientEmail = (data.recipient_email || "").toLowerCase();
 
           // Nếu thông báo gửi cho chính mình hoặc gửi chung
-          if(!data.recipient_email || data.recipient_email === curEmail || data.recipient_name === curName){
-            fetchNotifications(); // Cập nhật lại chuông thông báo ngay lập tức
+          // ("all" là broadcast tường minh; rỗng + tên rỗng cũng là broadcast)
+          if(!recipientEmail || recipientEmail === "all" || recipientEmail === curEmail || data.recipient_name === curName){
+            scheduleFetchNotifications(); // Cập nhật lại chuông (debounce khi có burst)
             if(typeof showToast === "function" && data.title){
               showToast("🔔 " + data.title);
             }

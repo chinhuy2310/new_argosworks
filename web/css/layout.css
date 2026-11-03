@@ -826,6 +826,9 @@ body:has(#viewHome:not([hidden])) .sidebar-toggle-btn {
 .notif-item-tag.tag-mention { background: rgba(225, 29, 72, 0.15); color: #e11d48; font-weight: 600; }
 .notif-item-tag.tag-schedule { background: rgba(8, 145, 178, 0.15); color: #0891b2; font-weight: 600; }
 .notif-item-tag.tag-jira { background: rgba(99, 102, 241, 0.15); color: #6366f1; font-weight: 600; }
+.notif-item-tag.tag-warning { background: rgba(245, 158, 11, 0.15); color: #d97706; font-weight: 600; }
+.notif-item-tag.tag-success { background: rgba(16, 185, 129, 0.15); color: #10b981; font-weight: 600; }
+.notif-item-tag.tag-danger { background: rgba(239, 68, 68, 0.15); color: #ef4444; font-weight: 600; }
 
 .notif-item-desc {
   font-size: 11.5px;

@@ -144,13 +144,17 @@ def handle_schedule_create(handler, raw_body, ip):
             from db import query
             u_dept = (session.get("org") or session.get("dept_id") or "").strip().lower()
             u_name = (session.get("name") or "").strip()
+            u_email = (session.get("email") or "").strip().lower()
+            # Exclude the requester by email, not by display name: two different
+            # managers can share a name, and excluding by name would drop the
+            # other manager's approval notification.
             recipients = query(
                 """SELECT name, email, role, is_admin FROM users
                    WHERE (disabled = 0 OR disabled IS NULL)
                      AND (status = 'active' OR status IS NULL)
                      AND ((LOWER(dept_id) = ? AND role = 'manager') OR role = 'admin' OR is_admin = 1)
-                     AND name != ?""",
-                (u_dept, u_name)
+                     AND (COALESCE(email, '') = '' OR LOWER(email) != LOWER(?))""",
+                (u_dept, u_email)
             )
             range_str = f"{start_date} ~ {end_date}" if start_date != end_date else start_date
             for mgr in (recipients or []):
