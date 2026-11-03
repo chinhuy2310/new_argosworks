@@ -230,8 +230,13 @@ def handle_schedule_update(handler, raw_body, ip):
         )
         session_uid = session.get("id") or session.get("user_id")
         target_uid = target.get("ownerId")
-        if target_uid not in (None, "") and session_uid not in (None, ""):
-            is_owner = str(target_uid) == str(session_uid)
+        if target_uid not in (None, ""):
+            # Once an immutable owner ID exists, never fall back to display-name
+            # matching if the request session lacks an ID or belongs to another user.
+            is_owner = (
+                session_uid not in (None, "")
+                and str(target_uid) == str(session_uid)
+            )
         else:
             # Legacy events without owner_id retain the old name+department key.
             is_owner = (target.get("ownerKey") == owner_key or legacy_owner_match)
@@ -330,8 +335,13 @@ def handle_schedule_delete(handler, raw_body, ip):
         )
         session_uid = session.get("id") or session.get("user_id")
         target_uid = target.get("ownerId")
-        if target_uid not in (None, "") and session_uid not in (None, ""):
-            is_owner = str(target_uid) == str(session_uid)
+        if target_uid not in (None, ""):
+            # Once an immutable owner ID exists, never fall back to display-name
+            # matching if the request session lacks an ID or belongs to another user.
+            is_owner = (
+                session_uid not in (None, "")
+                and str(target_uid) == str(session_uid)
+            )
         else:
             # Legacy events without owner_id retain the old name+department key.
             is_owner = (target.get("ownerKey") == owner_key or legacy_owner_match)
