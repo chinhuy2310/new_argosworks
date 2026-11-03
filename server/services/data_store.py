@@ -978,6 +978,30 @@ def read_product_categories():
         # If empty in DB, provide default template if available
         if not tpl:
             tpl = defaults_by_id.get(r["id"]) or defaults_by_name.get(r["name"]) or []
+        # Sanitize legacy persisted templates on read too: older installations may
+        # contain arbitrary keys written before backend validation existed.
+        import re
+        safe_tpl = []
+        if isinstance(tpl, list):
+            for index, field in enumerate(tpl, 1):
+                if isinstance(field, str):
+                    field = {"group": "기본 사양", "label": field, "key": f"spec_{index}", "maxlen": 200}
+                if not isinstance(field, dict):
+                    continue
+                key = field.get("key")
+                label = field.get("label", "")
+                group = field.get("group", "")
+                maxlen = field.get("maxlen", 200)
+                if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", key):
+                    continue
+                if not isinstance(label, str) or len(label) > 120:
+                    continue
+                if not isinstance(group, str) or len(group) > 120:
+                    continue
+                if not isinstance(maxlen, int) or isinstance(maxlen, bool) or not 1 <= maxlen <= 2000:
+                    field = dict(field, maxlen=200)
+                safe_tpl.append(field)
+        tpl = safe_tpl
         result.append({
             "id": r["id"],
             "name": r["name"],

@@ -929,7 +929,7 @@ def can_view_vector_doc(session, doc_type, meta, ctx=None):
         try:
             from db import get_one
             live_r = get_one(
-                "SELECT id, dept_id, is_private, assignee_id, assignee_name "
+                "SELECT id, dept_id, is_private, assignee_id, assignee_name, participants "
                 "FROM records WHERE id = ? LIMIT 1",
                 (r_id,)
             )
@@ -940,13 +940,34 @@ def can_view_vector_doc(session, doc_type, meta, ctx=None):
         return can_view_record(session, live_r)
 
     if doc_type == "jira":
-        # Jira 캐시 레코드도 일반 레코드와 동일한 부서/담당자/참여자 규칙을 적용한다.
-        rec = dict(meta)
-        rec["assignee_name"] = meta.get("assignee_name") or meta.get("assignee") or ""
-        rec["assignee"] = meta.get("assignee") or ""
-        rec["dept_id"] = meta.get("dept_id") or meta.get("org") or ""
-        rec["org"] = meta.get("org") or ""
-        rec["is_private"] = bool(meta.get("is_private"))
+        # Cached/vector metadata may be stale after Jira permissions or assignments
+        # change. Resolve the current cache row by issue key and fail closed if absent.
+        jira_info = meta.get("jira") if isinstance(meta.get("jira"), dict) else {}
+        jira_key = (meta.get("cardCode") or jira_info.get("key") or "").strip()
+        if not jira_key:
+            raw_id = str(meta.get("id") or "").strip()
+            jira_key = raw_id[5:] if raw_id.startswith("jira-") else raw_id
+        if not jira_key:
+            return False
+        try:
+            import json
+            from db import get_one
+            live_row = get_one(
+                "SELECT raw_json FROM jira_issues WHERE jira_key = ? LIMIT 1",
+                (jira_key,)
+            )
+            if not live_row or not live_row.get("raw_json"):
+                return False
+            rec = json.loads(live_row["raw_json"])
+            if not isinstance(rec, dict):
+                return False
+        except Exception:
+            return False
+        rec = dict(rec)
+        rec["assignee_name"] = rec.get("assignee") or rec.get("assignee_name") or ""
+        rec["dept_id"] = rec.get("dept_id") or rec.get("org") or ""
+        rec["org"] = rec.get("org") or rec.get("dept_id") or ""
+        rec["is_private"] = bool(rec.get("is_private"))
         return can_view_record(session, rec)
 
     if doc_type == "schedule":
