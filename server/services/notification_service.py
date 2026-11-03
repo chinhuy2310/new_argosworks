@@ -31,6 +31,7 @@ _BACKFILL_DONE = False
 def _normalize_identity(identity):
     ident = identity or {}
     return {
+        "user_id": ident.get("user_id") or ident.get("id"),
         "email": (ident.get("email") or "").strip().lower(),
         "name": (ident.get("name") or "").strip(),
         "is_admin": bool(ident.get("is_admin")),
@@ -55,24 +56,49 @@ def _name_base_is_unambiguous(name):
         return False
 
 
-def notification_is_shared(recipient_email, recipient_name):
-    """True for a row whose read state cannot belong to one user.
+def _resolve_recipient_user_id(recipient_email, recipient_name):
+    """Resolve a notification recipient to a stable users.id when possible.
 
-    Broadcasts and role-addressed rows (``관리자``/``admin``) are shared by
-    multiple accounts. Persisting ``is_read`` on those rows makes one user's
-    click clear the badge for everybody, so their read state is kept in the
-    browser (the existing ``localStorage`` cache) instead.
+    Email is authoritative. Name-only resolution is allowed only when the name
+    is unique and is not a role pseudo-name.
     """
+    email = str(recipient_email or "").strip().lower()
+    name = str(recipient_name or "").strip()
+    if email and email != "all":
+        row = query("SELECT id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1", (email,))
+        if row:
+            return row[0].get("id")
+    if not name or name.lower() in ("", "all", "관리자", "admin"):
+        return None
+    rows = query("SELECT id FROM users WHERE LOWER(name) = LOWER(?)", (name,))
+    if len(rows) == 1:
+        return rows[0].get("id")
+    return None
+
+
+def notification_is_shared(recipient_email, recipient_name, recipient_user_id=None):
+    """True for a broadcast/role row whose recipient is not a single user.
+
+    Read state is still stored per user in notification_reads; this helper only
+    keeps the legacy is_read column from being written for shared rows.
+    """
+    if recipient_user_id:
+        return False
     r_email = (recipient_email or "").strip().lower()
     r_name = (recipient_name or "").strip().lower()
     return r_email == "all" or (not r_email and r_name in ("", "all", "관리자", "admin"))
 
 
-def notification_is_for_identity(identity, recipient_email, recipient_name):
+def notification_is_for_identity(identity, recipient_email, recipient_name, recipient_user_id=None):
     """SSE 실시간 이벤트 1건이 해당 구독자(사용자)에게 속하는지 판정한다."""
     ident = _normalize_identity(identity)
     r_email = (recipient_email or "").strip().lower()
     r_name = (recipient_name or "").strip()
+
+    # Stable user id is authoritative. If the event has one, do not fall back
+    # to email/name when the subscriber has no matching id (fail closed).
+    if recipient_user_id:
+        return bool(ident["user_id"] and str(recipient_user_id) == str(ident["user_id"]))
 
     # 전체 공지 / 시스템 브로드캐스트
     if r_email == "all" or (r_email == "" and r_name in ("", "all")):
@@ -111,7 +137,10 @@ def broadcast_notification_event(event_type: str, data: dict):
     dead = []
     for q, identity in subscribers:
         if not notification_is_for_identity(
-            identity, data.get("recipient_email"), data.get("recipient_name")
+            identity,
+            data.get("recipient_email"),
+            data.get("recipient_name"),
+            data.get("recipient_user_id"),
         ):
             continue
         payload = {"type": event_type, "data": data}
@@ -151,6 +180,7 @@ def add_notification(
     broadcast=False,
     notify_external=True,
     realtime=True,
+    recipient_user_id=None,
 ):
     """Insert a new notification record into the notifications table.
 
@@ -166,7 +196,17 @@ def add_notification(
 
     recipient_email = str(recipient_email or "").strip().lower()
     recipient_name = str(recipient_name or "").strip()
-    if not recipient_email and not recipient_name and not broadcast:
+    if recipient_user_id is None:
+        try:
+            recipient_user_id = _resolve_recipient_user_id(recipient_email, recipient_name)
+        except Exception:
+            recipient_user_id = None
+    else:
+        try:
+            recipient_user_id = int(recipient_user_id)
+        except (TypeError, ValueError):
+            recipient_user_id = None
+    if not recipient_email and not recipient_name and not recipient_user_id and not broadcast:
         return None
 
     notif_id = f"notif_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}"
@@ -178,13 +218,14 @@ def add_notification(
 
     execute(
         """INSERT INTO notifications (
-            id, recipient_email, recipient_name, sender_name, type,
+            id, recipient_email, recipient_name, recipient_user_id, sender_name, type,
             title, content, link_id, tag, tag_type, is_read, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
         (
             notif_id,
             recipient_email,
             recipient_name,
+            recipient_user_id,
             clean_sender,
             clean_type,
             clean_title,
@@ -217,6 +258,7 @@ def add_notification(
                 "id": notif_id,
                 "recipient_email": recipient_email,
                 "recipient_name": recipient_name,
+                "recipient_user_id": recipient_user_id,
                 "title": clean_title,
                 "content": clean_content,
                 "type": clean_type,
@@ -230,13 +272,23 @@ def add_notification(
     return notif_id
 
 
-def get_user_notifications(user_email=None, user_name=None, is_admin=False, limit=50):
+def get_user_notifications(user_email=None, user_name=None, is_admin=False, limit=50, user_id=None, offset=0):
     """Retrieve notifications for a specific user from the database.
-    If the table is empty, backfills initial events so the user has immediate context.
+
+    Read state comes from notification_reads (per user, cross-device), with the
+    legacy notifications.is_read fallback only for old direct rows.
     """
     clean_email = (user_email or "").strip().lower()
     clean_name = (user_name or "").strip()
     base_name = assignee_base_name(clean_name) if clean_name else ""
+    try:
+        limit = max(1, min(int(limit), 201))
+    except (TypeError, ValueError):
+        limit = 50
+    try:
+        offset = max(0, int(offset))
+    except (TypeError, ValueError):
+        offset = 0
 
     # Cheap emptiness check. COUNT(*) scanned the whole table on every fetch,
     # while all we need is "is there at least one row?".
@@ -245,60 +297,75 @@ def get_user_notifications(user_email=None, user_name=None, is_admin=False, limi
 
     if not has_any and not _BACKFILL_DONE:
         # Two first-page loads can both observe an empty table. Serialize the
-        # check+backfill in this process so the initial activity rows are not
-        # inserted twice. The flag also avoids re-scanning records/activities
-        # on every poll when there is nothing to backfill yet.
+        # check+backfill in this process so the initial rows are not inserted
+        # twice. The flag also avoids re-scanning records on every poll when
+        # there is nothing to backfill yet.
         with _BACKFILL_LOCK:
             if not _BACKFILL_DONE:
                 _BACKFILL_DONE = True
                 if not query("SELECT 1 FROM notifications LIMIT 1"):
                     backfill_initial_notifications()
 
-    # Query notifications
-    # Name-only matching is disabled when the display name is not unique, otherwise
-    # two employees with the same name in different departments would see (and could
-    # mark as read) each other's notifications.
+    # Name-only matching is disabled when the display name is not unique.
     reserved_admin_name = clean_name.strip().lower() in ("관리자", "admin")
     name_matching = (
         bool(clean_name)
         and not reserved_admin_name
         and _name_is_unambiguous(clean_name)
     )
-    if clean_email or name_matching or is_admin:
-        where_clauses = [
-            "recipient_email = 'all'",
-            "(recipient_email = '' AND (recipient_name = '' OR recipient_name = 'all'))"
-        ]
-        params = []
-        if clean_email:
-            where_clauses.append("recipient_email = ?")
-            params.append(clean_email)
-        if name_matching:
-            # Name matching is only valid for notifications without an email.
-            # Otherwise a notification addressed to alice@x but carrying Bob's
-            # name would be visible to Bob as well.
-            where_clauses.append("(COALESCE(recipient_email, '') = '' AND LOWER(recipient_name) = LOWER(?))")
-            params.append(clean_name)
-        if name_matching and base_name and base_name != clean_name and _name_base_is_unambiguous(clean_name):
-            where_clauses.append("(COALESCE(recipient_email, '') = '' AND LOWER(recipient_name) = LOWER(?))")
-            params.append(base_name)
-        if is_admin:
-            where_clauses.append(
-                "(COALESCE(recipient_email, '') = '' AND LOWER(recipient_name) IN ('관리자', 'admin'))"
-            )
 
-        sql = f"""SELECT * FROM notifications
+    # Rows created after this migration carry recipient_user_id. Legacy rows
+    # (recipient_user_id IS NULL) still use email/name matching.
+    legacy_prefix = "n.recipient_user_id IS NULL AND " if user_id else ""
+    where_clauses = [
+        "n.recipient_email = 'all'",
+        "(n.recipient_email = '' AND (n.recipient_name = '' OR n.recipient_name = 'all'))",
+    ]
+    params = []
+    if user_id:
+        where_clauses.append("n.recipient_user_id = ?")
+        params.append(user_id)
+    if clean_email:
+        where_clauses.append(f"({legacy_prefix}n.recipient_email = ?)")
+        params.append(clean_email)
+    if name_matching:
+        where_clauses.append(
+            f"({legacy_prefix}COALESCE(n.recipient_email, '') = '' AND LOWER(n.recipient_name) = LOWER(?))"
+        )
+        params.append(clean_name)
+    if name_matching and base_name and base_name != clean_name and _name_base_is_unambiguous(clean_name):
+        where_clauses.append(
+            f"({legacy_prefix}COALESCE(n.recipient_email, '') = '' AND LOWER(n.recipient_name) = LOWER(?))"
+        )
+        params.append(base_name)
+    if is_admin:
+        where_clauses.append(
+            "(n.recipient_user_id IS NULL AND COALESCE(n.recipient_email, '') = '' "
+            "AND LOWER(n.recipient_name) IN ('관리자', 'admin'))"
+        )
+
+    join_user_id = user_id if user_id else -1
+    if clean_email or name_matching or is_admin or user_id:
+        sql = f"""SELECT n.*, nr.read_at AS user_read_at
+                  FROM notifications n
+                  LEFT JOIN notification_reads nr
+                    ON nr.notification_id = n.id AND nr.user_id = ?
                   WHERE ({" OR ".join(where_clauses)})
-                  ORDER BY created_at DESC LIMIT ?"""
-        params.append(limit)
-        rows = query(sql, tuple(params))
+                  ORDER BY n.created_at DESC, n.id DESC
+                  LIMIT ? OFFSET ?"""
+        rows = query(sql, tuple([join_user_id] + params + [limit, offset]))
     else:
-        # No email and no unambiguous name: only system/broadcast notifications
+        # No stable user id / email / unambiguous name: only broadcasts.
         rows = query(
-            """SELECT * FROM notifications
-               WHERE recipient_email = 'all' OR (recipient_email = '' AND (recipient_name = '' OR recipient_name = 'all'))
-               ORDER BY created_at DESC LIMIT ?""",
-            (limit,)
+            """SELECT n.*, nr.read_at AS user_read_at
+               FROM notifications n
+               LEFT JOIN notification_reads nr
+                 ON nr.notification_id = n.id AND nr.user_id = ?
+               WHERE n.recipient_email = 'all'
+                  OR (n.recipient_email = '' AND (n.recipient_name = '' OR n.recipient_name = 'all'))
+               ORDER BY n.created_at DESC, n.id DESC
+               LIMIT ? OFFSET ?""",
+            (join_user_id, limit, offset),
         )
 
     result = []
@@ -315,7 +382,17 @@ def get_user_notifications(user_email=None, user_name=None, is_admin=False, limi
                 and _is_same_user(s_name, r_name)):
             continue
 
-        shared = notification_is_shared(r.get("recipient_email"), r.get("recipient_name"))
+        read_at = r.get("user_read_at")
+        if not read_at and user_id:
+            # Legacy direct rows were backfilled into notification_reads; keep
+            # this fallback for a partially migrated database.
+            r_uid = r.get("recipient_user_id")
+            if (r_uid is not None and str(r_uid) == str(user_id)
+                    and bool(r.get("is_read"))):
+                read_at = r.get("read_at") or r.get("created_at")
+        if not user_id:
+            read_at = r.get("read_at") if bool(r.get("is_read")) else None
+
         result.append({
             "id": r["id"],
             "type": r["type"],
@@ -325,46 +402,107 @@ def get_user_notifications(user_email=None, user_name=None, is_admin=False, limi
             "time": r["created_at"],
             "tag": r["tag"],
             "tag_type": r["tag_type"],
-            # Shared rows are per-browser (localStorage) — never report a
-            # global is_read flag that another user may have set.
-            "is_read": False if shared else bool(r["is_read"]),
-            "read_at": None if shared else r["read_at"],
+            "is_read": bool(read_at),
+            "read_at": read_at,
             "record_id": r["link_id"],
             "sender_name": r["sender_name"],
             "recipient_name": r["recipient_name"],
             "recipient_email": r["recipient_email"],
+            "recipient_user_id": r.get("recipient_user_id"),
         })
     return result
 
 
-def mark_notification_as_read(notif_id):
-    """Mark a single notification as read in the database.
+def count_unread_notifications(user_email=None, user_name=None, is_admin=False, user_id=None):
+    """Count unread rows across the whole visible set, not just the first page."""
+    clean_email = (user_email or "").strip().lower()
+    clean_name = (user_name or "").strip()
+    base_name = assignee_base_name(clean_name) if clean_name else ""
+    reserved_admin_name = clean_name.strip().lower() in ("관리자", "admin")
+    name_matching = (
+        bool(clean_name)
+        and not reserved_admin_name
+        and _name_is_unambiguous(clean_name)
+    )
+    legacy_prefix = "n.recipient_user_id IS NULL AND " if user_id else ""
+    where_clauses = [
+        "n.recipient_email = 'all'",
+        "(n.recipient_email = '' AND (n.recipient_name = '' OR n.recipient_name = 'all'))",
+    ]
+    params = []
+    if user_id:
+        where_clauses.append("n.recipient_user_id = ?")
+        params.append(user_id)
+    if clean_email:
+        where_clauses.append(f"({legacy_prefix}n.recipient_email = ?)")
+        params.append(clean_email)
+    if name_matching:
+        where_clauses.append(
+            f"({legacy_prefix}COALESCE(n.recipient_email, '') = '' AND LOWER(n.recipient_name) = LOWER(?))"
+        )
+        params.append(clean_name)
+    if name_matching and base_name and base_name != clean_name and _name_base_is_unambiguous(clean_name):
+        where_clauses.append(
+            f"({legacy_prefix}COALESCE(n.recipient_email, '') = '' AND LOWER(n.recipient_name) = LOWER(?))"
+        )
+        params.append(base_name)
+    if is_admin:
+        where_clauses.append(
+            "(n.recipient_user_id IS NULL AND COALESCE(n.recipient_email, '') = '' "
+            "AND LOWER(n.recipient_name) IN ('관리자', 'admin'))"
+        )
+    join_user_id = user_id if user_id else -1
+    sql = f"""SELECT COUNT(*) AS cnt
+                FROM notifications n
+                LEFT JOIN notification_reads nr
+                  ON nr.notification_id = n.id AND nr.user_id = ?
+               WHERE ({" OR ".join(where_clauses)})
+                 AND COALESCE(NULLIF(nr.read_at, ''), '') = ''"""
+    rows = query(sql, tuple([join_user_id] + params))
+    return int(rows[0]["cnt"]) if rows else 0
 
-    Shared rows (broadcast/role) are not updated globally; their read state is
-    owned by the browser's notification cache.
+
+def mark_notification_as_read(notif_id, user_id=None):
+    """Mark a single notification as read.
+
+    With a user id the authoritative write goes to notification_reads, so the
+    state is per-user and synchronizes across devices. The legacy is_read column
+    is also updated for direct (non-shared) rows for backwards compatibility.
     """
     if not notif_id:
         return False
     row = query(
-        "SELECT recipient_email, recipient_name FROM notifications WHERE id = ?",
+        """SELECT recipient_email, recipient_name, recipient_user_id
+             FROM notifications WHERE id = ?""",
         (notif_id,)
     )
-    if row and notification_is_shared(row[0].get("recipient_email"), row[0].get("recipient_name")):
-        return True
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    execute(
-        "UPDATE notifications SET is_read = 1, read_at = ? WHERE id = ?",
-        (now_str, notif_id)
+    if not row:
+        return True
+    row = row[0]
+    shared = notification_is_shared(
+        row.get("recipient_email"), row.get("recipient_name"), row.get("recipient_user_id")
     )
+    if user_id:
+        execute(
+            """INSERT OR IGNORE INTO notification_reads
+               (notification_id, user_id, read_at) VALUES (?, ?, ?)""",
+            (notif_id, user_id, now_str)
+        )
+    if not shared:
+        execute(
+            "UPDATE notifications SET is_read = 1, read_at = ? WHERE id = ?",
+            (now_str, notif_id)
+        )
     return True
 
 
-def mark_all_notifications_as_read(user_email=None, user_name=None, is_admin=False):
-    """Mark all *direct* notifications as read for a given user.
+def mark_all_notifications_as_read(user_email=None, user_name=None, is_admin=False, user_id=None):
+    """Mark all notifications visible to a user as read.
 
-    Broadcast and role-addressed rows are intentionally excluded: their
-    ``is_read`` column is shared by several users, so updating it here would
-    clear other users' unread badges. The browser cache handles those rows.
+    Per-user rows go to notification_reads (including broadcasts/role rows), so
+    one user clearing their badge cannot clear another user's. The legacy
+    is_read column is updated only for direct rows.
     """
     clean_email = (user_email or "").strip().lower()
     clean_name = (user_name or "").strip()
@@ -377,27 +515,71 @@ def mark_all_notifications_as_read(user_email=None, user_name=None, is_admin=Fal
         and not reserved_admin_name
         and _name_is_unambiguous(clean_name)
     )
-    where_clauses = []
-    params = [now_str]
-    if clean_email:
-        where_clauses.append("recipient_email = ?")
-        params.append(clean_email)
-    if name_matching:
-        # Name matching is only valid for notifications without an email.
-        # Otherwise a notification addressed to alice@x but carrying Bob's
-        # name would be visible to Bob as well.
-        where_clauses.append("(COALESCE(recipient_email, '') = '' AND LOWER(recipient_name) = LOWER(?))")
-        params.append(clean_name)
-    if name_matching and base_name and base_name != clean_name and _name_base_is_unambiguous(clean_name):
-        where_clauses.append("(COALESCE(recipient_email, '') = '' AND LOWER(recipient_name) = LOWER(?))")
-        params.append(base_name)
+    legacy_prefix = "n.recipient_user_id IS NULL AND " if user_id else ""
 
-    if not where_clauses:
-        return True
-    sql = f"""UPDATE notifications
-              SET is_read = 1, read_at = ?
-              WHERE ({" OR ".join(where_clauses)}) AND is_read = 0"""
-    execute(sql, tuple(params))
+    # Rows visible to this user (same predicates as get_user_notifications).
+    access_clauses = [
+        "n.recipient_email = 'all'",
+        "(n.recipient_email = '' AND (n.recipient_name = '' OR n.recipient_name = 'all'))",
+    ]
+    access_params = []
+    if user_id:
+        access_clauses.append("n.recipient_user_id = ?")
+        access_params.append(user_id)
+    if clean_email:
+        access_clauses.append(f"({legacy_prefix}n.recipient_email = ?)")
+        access_params.append(clean_email)
+    if name_matching:
+        access_clauses.append(
+            f"({legacy_prefix}COALESCE(n.recipient_email, '') = '' AND LOWER(n.recipient_name) = LOWER(?))"
+        )
+        access_params.append(clean_name)
+    if name_matching and base_name and base_name != clean_name and _name_base_is_unambiguous(clean_name):
+        access_clauses.append(
+            f"({legacy_prefix}COALESCE(n.recipient_email, '') = '' AND LOWER(n.recipient_name) = LOWER(?))"
+        )
+        access_params.append(base_name)
+    if is_admin:
+        access_clauses.append(
+            "(n.recipient_user_id IS NULL AND COALESCE(n.recipient_email, '') = '' "
+            "AND LOWER(n.recipient_name) IN ('관리자', 'admin'))"
+        )
+
+    if user_id:
+        sql = f"""INSERT OR IGNORE INTO notification_reads
+                  (notification_id, user_id, read_at)
+                  SELECT n.id, ?, ?
+                    FROM notifications n
+                   WHERE ({" OR ".join(access_clauses)})"""
+        execute(sql, tuple([user_id, now_str] + access_params))
+
+    # Backwards-compatible legacy flag for direct rows only.
+    direct_clauses = []
+    direct_params = [now_str]
+    if user_id:
+        direct_clauses.append("recipient_user_id = ?")
+        direct_params.append(user_id)
+    if clean_email:
+        direct_clauses.append("(recipient_user_id IS NULL AND recipient_email = ?)")
+        direct_params.append(clean_email)
+    if name_matching:
+        direct_clauses.append(
+            "(recipient_user_id IS NULL AND COALESCE(recipient_email, '') = '' "
+            "AND LOWER(recipient_name) = LOWER(?))"
+        )
+        direct_params.append(clean_name)
+    if name_matching and base_name and base_name != clean_name and _name_base_is_unambiguous(clean_name):
+        direct_clauses.append(
+            "(recipient_user_id IS NULL AND COALESCE(recipient_email, '') = '' "
+            "AND LOWER(recipient_name) = LOWER(?))"
+        )
+        direct_params.append(base_name)
+
+    if direct_clauses:
+        sql = f"""UPDATE notifications
+                  SET is_read = 1, read_at = ?
+                  WHERE ({" OR ".join(direct_clauses)}) AND is_read = 0"""
+        execute(sql, tuple(direct_params))
     return True
 
 
@@ -468,6 +650,29 @@ def trigger_task_assigned_notification(record_id, title, author_name, assignee_n
                         tag="참여",
                         tag_type="info"
                     )
+
+
+def trigger_participants_added_notification(record_id, title, author_name, added_names,
+                                             assignee_name="", author_email=""):
+    """Notify only participants newly added to an existing card."""
+    prefix = f"[{author_name}] " if author_name else ""
+    for p in (added_names or []):
+        p_clean = str(p or "").strip()
+        if not p_clean or p_clean == assignee_name or p_clean == "없음":
+            continue
+        if _same_person(author_name, author_email, p_clean, ""):
+            continue
+        add_notification(
+            recipient_email="",
+            recipient_name=p_clean,
+            sender_name=author_name or "시스템",
+            notif_type="assign",
+            title="공동 작업자로 참여 요청되었습니다",
+            content=f"{prefix}{title}",
+            link_id=record_id,
+            tag="참여",
+            tag_type="info",
+        )
 
 
 def trigger_status_changed_notification(record_id, title, author_name, old_status, new_status, assignee_name="", assignee_email="", author_email=""):
@@ -562,6 +767,36 @@ def trigger_comment_notification(record_id, title, author_name, comment_body, as
     )
 
 
+def cleanup_old_notifications(days=None):
+    """Delete notifications older than the configured retention window.
+
+    Disabled by default (ARGOS_NOTIFICATION_RETENTION_DAYS=0). Explicit cleanup
+    also removes the matching per-user read rows so no orphaned PII remains.
+    """
+    if days is None:
+        try:
+            days = int(os.environ.get("ARGOS_NOTIFICATION_RETENTION_DAYS", "0") or 0)
+        except (TypeError, ValueError):
+            days = 0
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
+        days = 0
+    if days <= 0:
+        return 0
+    days = min(days, 3650)
+    cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    execute(
+        """DELETE FROM notification_reads
+            WHERE notification_id IN (
+                SELECT id FROM notifications WHERE created_at < ?
+            )""",
+        (cutoff,)
+    )
+    execute("DELETE FROM notifications WHERE created_at < ?", (cutoff,))
+    return 0
+
+
 def _backfill_add(**kwargs):
     """Insert synthetic backfill rows without re-sending webhooks/SSE.
 
@@ -575,7 +810,12 @@ def _backfill_add(**kwargs):
 
 
 def backfill_initial_notifications():
-    """Populate initial notifications from existing records and activities so DB has immediate data."""
+    """Populate targeted deadline/D-Day notifications for existing records.
+
+    Activity backfill was deliberately removed: it created global broadcasts
+    from comments/status changes of every record, leaking private card content
+    to unrelated departments and users.
+    """
     today = datetime.now()
     today_str = today.strftime("%Y-%m-%d")
 
@@ -626,77 +866,3 @@ def backfill_initial_notifications():
                 )
     except Exception as e:
         print(f"[Notification] Warning: Backfill deadline notifications failed: {e}", file=sys.stderr)
-
-    # 2. Backfill recent activities
-    try:
-        acts = query(
-            """SELECT id, issue_key, action_type, action_detail, author_name, author_email, summary, created_at
-               FROM activities
-               ORDER BY created_at DESC LIMIT 25"""
-        )
-        for act in acts:
-            atype = act.get("action_type", "")
-            detail = act.get("action_detail", "") or ""
-            author = act.get("author_name", "") or "시스템"
-            summary = act.get("summary", "") or "업무"
-            created_at = act.get("created_at", "")
-            rec_id = act.get("issue_key", "")
-
-            if atype == "comment":
-                _backfill_add(
-                    broadcast=True,
-                    recipient_email="",
-                    recipient_name="",
-                    sender_name=author,
-                    notif_type="comment",
-                    title=f"{author}님의 새 댓글",
-                    content=f"{summary}: {detail}",
-                    link_id=rec_id,
-                    tag="댓글",
-                    tag_type="info",
-                    created_at=created_at
-                )
-            elif atype == "status_change":
-                _backfill_add(
-                    broadcast=True,
-                    recipient_email="",
-                    recipient_name="",
-                    sender_name=author,
-                    notif_type="status",
-                    title="업무 상태 변경",
-                    content=f"{summary} ({detail})",
-                    link_id=rec_id,
-                    tag="상태",
-                    tag_type="info",
-                    created_at=created_at
-                )
-            elif atype == "created":
-                _backfill_add(
-                    broadcast=True,
-                    recipient_email="",
-                    recipient_name="",
-                    sender_name=author,
-                    notif_type="assign",
-                    title=f"새 업무 등록 ({author})",
-                    content=summary,
-                    link_id=rec_id,
-                    tag="신규",
-                    tag_type="info",
-                    created_at=created_at
-                )
-            elif atype in ("jira_push", "jira_sync"):
-                _backfill_add(
-                    broadcast=True,
-                    recipient_email="",
-                    recipient_name="",
-                    sender_name="Jira 연동",
-                    notif_type="jira",
-                    title="Jira 동기화 완료",
-                    content=f"{summary} ({rec_id})",
-                    link_id=rec_id,
-                    tag="Jira",
-                    tag_type="done",
-                    created_at=created_at
-                )
-    except Exception as e:
-        print(f"[Notification] Warning: Backfill activity notifications failed: {e}", file=sys.stderr)

@@ -136,17 +136,25 @@ def test_shared_broadcast_read_state_does_not_clear_for_everyone(tmp_db):
         content="hello",
     )
     lead_rows = get_user_notifications(
-        user_email=lead["email"], user_name=lead["name"], is_admin=False
+        user_email=lead["email"], user_name=lead["name"], is_admin=False, user_id=lead["id"]
     )
     assert any(r["id"] == notif_id and r["is_read"] is False for r in lead_rows)
 
-    mark_notification_as_read(notif_id)
+    mark_notification_as_read(notif_id, user_id=lead["id"])
 
-    # The shared row must not be flipped globally. Both users still get the
-    # per-browser read state; this test only asserts the DB is untouched.
+    # The shared row must not be flipped globally, but the lead's own read row
+    # must make it read for the lead only.
     assert get_one("SELECT is_read FROM notifications WHERE id = ?", (notif_id,))["is_read"] == 0
+    assert query(
+        "SELECT 1 FROM notification_reads WHERE notification_id = ? AND user_id = ?",
+        (notif_id, lead["id"])
+    )
+    lead_rows = get_user_notifications(
+        user_email=lead["email"], user_name=lead["name"], is_admin=False, user_id=lead["id"]
+    )
+    assert any(r["id"] == notif_id and r["is_read"] is True for r in lead_rows)
     member_rows = get_user_notifications(
-        user_email=member["email"], user_name=member["name"], is_admin=False
+        user_email=member["email"], user_name=member["name"], is_admin=False, user_id=member["id"]
     )
     assert any(r["id"] == notif_id and r["is_read"] is False for r in member_rows)
 
@@ -175,3 +183,111 @@ def test_sse_queue_overflow_keeps_subscriber_and_newest_event(tmp_db):
         assert q in _NOTIF_SUBSCRIBERS
     finally:
         unsubscribe_notifications(q)
+
+
+def test_cleanup_old_notifications_removes_expired_rows_and_reads(tmp_db):
+    from services.notification_service import cleanup_old_notifications
+    from db import execute
+    u = _mk_user("Retention User", "retention_u", "retention@test.local")
+    nid = add_notification(
+        recipient_email=u["email"],
+        recipient_name=u["name"],
+        sender_name="system",
+        title="EXPIRED-NOTIF",
+        content="should be purged",
+        created_at="2020-01-01 10:00:00",
+    )
+    mark_notification_as_read(nid, user_id=u["id"])
+    assert query("SELECT 1 FROM notifications WHERE id = ?", (nid,))
+    assert query("SELECT 1 FROM notification_reads WHERE notification_id = ?", (nid,))
+
+    cleanup_old_notifications(days=30)
+    assert not query("SELECT 1 FROM notifications WHERE id = ?", (nid,))
+    assert not query("SELECT 1 FROM notification_reads WHERE notification_id = ?", (nid,))
+
+
+def test_pagination_and_unread_count(tmp_db):
+    from services.notification_service import count_unread_notifications
+    u = _mk_user("Page User", "page_u", "page@test.local")
+    ids = []
+    for i in range(15):
+        nid = add_notification(
+            recipient_email=u["email"],
+            recipient_name=u["name"],
+            sender_name="system",
+            title=f"PAGE-NOTIF-{i:02d}",
+            content=f"content {i}",
+            created_at=f"2026-11-01 10:{i:02d}:00",
+        )
+        ids.append(nid)
+
+    assert count_unread_notifications(user_email=u["email"], user_name=u["name"], user_id=u["id"]) == 15
+
+    page1 = get_user_notifications(user_email=u["email"], user_name=u["name"], limit=5, offset=0, user_id=u["id"])
+    assert len(page1) == 5
+
+    page2 = get_user_notifications(user_email=u["email"], user_name=u["name"], limit=5, offset=5, user_id=u["id"])
+    assert len(page2) == 5
+
+    # Distinct pages
+    p1_ids = {r["id"] for r in page1}
+    p2_ids = {r["id"] for r in page2}
+    assert p1_ids.isdisjoint(p2_ids)
+
+
+def test_trigger_status_changed_and_participants_added(tmp_db):
+    from services.notification_service import (
+        trigger_status_changed_notification,
+        trigger_participants_added_notification,
+    )
+    assignee = _mk_user("Worker", "worker_u", "worker@test.local")
+    author = _mk_user("Manager", "manager_u", "manager@test.local", role="manager")
+    p1 = _mk_user("Helper One", "helper1_u", "helper1@test.local")
+
+    # 1. Status change trigger
+    trigger_status_changed_notification(
+        record_id="CARD-100",
+        title="Card 100 Title",
+        author_name=author["name"],
+        old_status="진행",
+        new_status="완료",
+        assignee_name=assignee["name"],
+        assignee_email=assignee["email"],
+        author_email=author["email"],
+    )
+    notifs = get_user_notifications(user_email=assignee["email"], user_name=assignee["name"], user_id=assignee["id"])
+    assert any("업무 상태가 변경되었습니다" in r["title"] for r in notifs)
+
+    # 2. Participants added trigger
+    trigger_participants_added_notification(
+        record_id="CARD-100",
+        title="Card 100 Title",
+        author_name=author["name"],
+        added_names=[p1["name"]],
+        assignee_name=assignee["name"],
+        author_email=author["email"],
+    )
+    p1_notifs = get_user_notifications(user_email=p1["email"], user_name=p1["name"], user_id=p1["id"])
+    assert any("참여 요청되었습니다" in r["title"] for r in p1_notifs)
+
+
+def test_sse_slot_cap_prevents_thread_exhaustion():
+    from router import _acquire_sse_slot, _release_sse_slot, _SSE_LOCK
+    import router
+
+    original_max = router._SSE_MAX_PER_USER
+    router._SSE_MAX_PER_USER = 1
+    try:
+        user_key = "test_sse_cap_user"
+        # First connection acquired
+        assert _acquire_sse_slot(user_key) is True
+        # Second connection from same user is rejected (saves Waitress worker thread)
+        assert _acquire_sse_slot(user_key) is False
+
+        # Release restores slot
+        _release_sse_slot(user_key)
+        assert _acquire_sse_slot(user_key) is True
+        _release_sse_slot(user_key)
+    finally:
+        router._SSE_MAX_PER_USER = original_max
+

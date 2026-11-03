@@ -5,6 +5,7 @@ Dispatches notifications asynchronously to Slack, Microsoft Teams, Discord, Tele
 
 import os
 import json
+import queue
 import threading
 import urllib.request
 import urllib.parse
@@ -13,6 +14,9 @@ from typing import Dict, Any, Optional
 from utils.ssrf import validate_external_url, safe_urlopen
 
 _ALLOWED_SCHEMES = ("http", "https")
+_WEBHOOK_QUEUE = queue.Queue(maxsize=200)
+_WEBHOOK_LOCK = threading.Lock()
+_WEBHOOK_WORKER_STARTED = False
 
 
 def validate_webhook_target(url: str):
@@ -158,19 +162,49 @@ def dispatch_notification_webhook(title: str, content: str, sender: str = "ARGOS
     if not (slack_url or teams_url or generic_url):
         return
 
-    def _worker():
-        if slack_url:
-            _send_http_post(slack_url, format_slack_payload(title, content, sender, link_id, tag))
-        if teams_url:
-            _send_http_post(teams_url, format_teams_payload(title, content, sender, link_id, tag))
-        if generic_url:
-            _send_http_post(generic_url, {
-                "event": "notification.created",
-                "title": title,
-                "content": content,
-                "sender": sender,
-                "link_id": link_id,
-                "tag": tag
-            })
+    job = {
+        "slack_url": slack_url,
+        "teams_url": teams_url,
+        "generic_url": generic_url,
+        "title": title,
+        "content": content,
+        "sender": sender,
+        "link_id": link_id,
+        "tag": tag,
+    }
 
-    threading.Thread(target=_worker, daemon=True, name="WebhookDispatch").start()
+    def _worker():
+        while True:
+            item = _WEBHOOK_QUEUE.get()
+            try:
+                if item["slack_url"]:
+                    _send_http_post(item["slack_url"], format_slack_payload(
+                        item["title"], item["content"], item["sender"], item["link_id"], item["tag"]))
+                if item["teams_url"]:
+                    _send_http_post(item["teams_url"], format_teams_payload(
+                        item["title"], item["content"], item["sender"], item["link_id"], item["tag"]))
+                if item["generic_url"]:
+                    _send_http_post(item["generic_url"], {
+                        "event": "notification.created",
+                        "title": item["title"],
+                        "content": item["content"],
+                        "sender": item["sender"],
+                        "link_id": item["link_id"],
+                        "tag": item["tag"]
+                    })
+            except Exception:
+                pass
+            finally:
+                _WEBHOOK_QUEUE.task_done()
+
+    global _WEBHOOK_WORKER_STARTED
+    with _WEBHOOK_LOCK:
+        if not _WEBHOOK_WORKER_STARTED:
+            threading.Thread(target=_worker, daemon=True, name="WebhookDispatch").start()
+            _WEBHOOK_WORKER_STARTED = True
+    try:
+        _WEBHOOK_QUEUE.put_nowait(job)
+    except queue.Full:
+        # Better to lose an external webhook than to create unbounded threads
+        # or block the request that created the notification.
+        pass

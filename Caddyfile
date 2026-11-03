@@ -14,9 +14,15 @@
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-For {remote_host}
         header_up X-Forwarded-Proto https
+        # SSE must be flushed immediately; do not let the proxy buffer events.
+        flush_interval -1
     }
 
-    encode gzip zstd
+    # gzip/zstd can buffer an event stream. Keep compression for normal assets.
+    @compress {
+        not path /api/notifications/stream
+    }
+    encode @compress gzip zstd
 
     # Enterprise Hardened Security Headers
     header {

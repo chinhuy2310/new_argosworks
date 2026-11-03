@@ -37,7 +37,7 @@ CANONICAL_TABLES = {
     "departments", "users", "records", "record_attachments", "record_comments",
     "record_jira", "schedule_events", "schedule_participants", "products",
     "product_attachments", "product_categories", "chat_sessions", "chat_messages",
-    "activities", "lounge_messages", "sessions", "notifications", "jira_issues",
+    "activities", "lounge_messages", "sessions", "notifications", "notification_reads", "jira_issues",
     "jira_comments", "jira_attachments", "jira_changelog", "audit_logs",
     "license_info", "ai_usage", "login_attempts", "schema_migrations",
     "card_sequences",

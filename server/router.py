@@ -28,11 +28,11 @@ from services.jira_client import (
 )
 import threading
 from config import SPEC_TEMPLATES, PRODUCT_CATEGORIES
-from services.auth import account_key, read_accounts, is_admin_user
+from services.auth import account_key, read_accounts, is_admin_user, get_session
 from services.activity_store import get_daily_activities, get_recent_activity_dates
 from services.notification_service import (
     get_user_notifications, mark_notification_as_read, mark_all_notifications_as_read,
-    trigger_comment_notification, trigger_status_changed_notification
+    count_unread_notifications, trigger_comment_notification, trigger_status_changed_notification
 )
 from utils.text import assignee_base_name, sanitize_label
 from services.vector_store import (
@@ -508,18 +508,91 @@ def handle_get_notifications(handler, parsed, ip):
         return
     user_name = session.get("name")
     user_email = session.get("email")
+    user_id = session.get("id") or session.get("user_id")
     from services.auth import is_admin_user
     is_adm = is_admin_user(session)
 
-    notifs = get_user_notifications(user_email=user_email, user_name=user_name, is_admin=is_adm, limit=50)
-    unread_count = sum(1 for n in notifs if not n.get("is_read"))
+    qs = parse_qs(parsed.query)
+    try:
+        page_limit = max(1, min(int(qs.get("limit", ["50"])[0]), 200))
+    except (TypeError, ValueError):
+        page_limit = 50
+    try:
+        offset = min(10000, max(0, int(qs.get("offset", ["0"])[0])))
+    except (TypeError, ValueError):
+        offset = 0
+
+    # Fetch one extra row to compute has_more without a second COUNT query.
+    rows = get_user_notifications(
+        user_email=user_email, user_name=user_name, is_admin=is_adm,
+        limit=page_limit + 1, offset=offset, user_id=user_id
+    )
+    has_more = len(rows) > page_limit
+    notifs = rows[:page_limit]
+    unread_count = count_unread_notifications(
+        user_email=user_email, user_name=user_name, is_admin=is_adm, user_id=user_id
+    )
     handler._send_json(200, {
         "ok": True,
         "notifications": notifs,
         "total": len(notifs),
-        "unread": unread_count
+        "unread": unread_count,
+        "has_more": has_more,
+        "offset": offset,
+        "limit": page_limit,
     })
     access_log(ip, "notifications", 200, f"user={user_name} total={len(notifs)} unread={unread_count}")
+
+# SSE holds one Waitress thread for the lifetime of the stream. Cap the total
+# number of streams and per-user streams so one user/tab cannot exhaust the pool.
+_SSE_LOCK = threading.Lock()
+_SSE_ACTIVE_TOTAL = 0
+_SSE_ACTIVE_BY_USER = {}
+
+
+def _sse_env_int(name, default):
+    try:
+        return max(0, int(os.environ.get(name, str(default)) or default))
+    except (TypeError, ValueError):
+        return default
+
+
+_WORKER_THREADS = _sse_env_int("ARGOS_WORKER_THREADS", 128)
+# Leave at least half the workers for normal HTTP requests after SSE streams.
+_SSE_MAX_TOTAL = _sse_env_int("ARGOS_SSE_MAX_CONNECTIONS", max(8, _WORKER_THREADS // 2))
+_SSE_MAX_PER_USER = _sse_env_int("ARGOS_SSE_PER_USER", 1)
+
+
+def _sse_user_key(session):
+    return str(
+        session.get("id") or session.get("user_id")
+        or session.get("email") or session.get("name") or "unknown"
+    )
+
+
+def _acquire_sse_slot(user_key):
+    global _SSE_ACTIVE_TOTAL
+    with _SSE_LOCK:
+        if _SSE_MAX_TOTAL <= 0 or _SSE_ACTIVE_TOTAL >= _SSE_MAX_TOTAL:
+            return False
+        current = _SSE_ACTIVE_BY_USER.get(user_key, 0)
+        if _SSE_MAX_PER_USER > 0 and current >= _SSE_MAX_PER_USER:
+            return False
+        _SSE_ACTIVE_TOTAL += 1
+        _SSE_ACTIVE_BY_USER[user_key] = current + 1
+        return True
+
+
+def _release_sse_slot(user_key):
+    global _SSE_ACTIVE_TOTAL
+    with _SSE_LOCK:
+        _SSE_ACTIVE_TOTAL = max(0, _SSE_ACTIVE_TOTAL - 1)
+        current = _SSE_ACTIVE_BY_USER.get(user_key, 0)
+        if current <= 1:
+            _SSE_ACTIVE_BY_USER.pop(user_key, None)
+        else:
+            _SSE_ACTIVE_BY_USER[user_key] = current - 1
+
 
 def handle_get_notifications_stream(handler, parsed, ip):
     """GET /api/notifications/stream - Realtime Server-Sent Events (SSE) notification stream"""
@@ -528,38 +601,63 @@ def handle_get_notifications_stream(handler, parsed, ip):
         return
     user_name = session.get("name", "")
     user_email = session.get("email", "")
+    sse_key = _sse_user_key(session)
 
-    handler._start_sse()
+    if not _acquire_sse_slot(sse_key):
+        # Do not tie up another Waitress worker. The frontend falls back to
+        # polling and retries with backoff.
+        handler._send_json(
+            503,
+            {"ok": False, "error": "실시간 알림 연결이 포화 상태입니다. 잠시 후 다시 시도합니다."},
+            extra_headers=[("Retry-After", "60")],
+        )
+        return
+
     import queue
     from services.notification_service import subscribe_notifications, unsubscribe_notifications
 
-    q = queue.Queue(maxsize=32)
-    # Each subscriber only receives its own notifications (no cross-user fan-out).
+    q = None
     try:
-        is_notif_admin = is_admin_user(session)
-    except Exception:
-        is_notif_admin = False
-    subscribe_notifications(q, {
-        "email": user_email,
-        "name": user_name,
-        "is_admin": is_notif_admin,
-    })
+        handler._start_sse()
+        q = queue.Queue(maxsize=32)
+        try:
+            is_notif_admin = is_admin_user(session)
+        except Exception:
+            is_notif_admin = False
+        subscribe_notifications(q, {
+            "user_id": session.get("id") or session.get("user_id"),
+            "email": user_email,
+            "name": user_name,
+            "is_admin": is_notif_admin,
+        })
 
-    # Initial ping (named event so the client can distinguish the handshake)
-    if not handler._send_sse_event(
-        {"user": user_name, "time": datetime.now().isoformat()},
-        event="connected",
-    ):
-        unsubscribe_notifications(q)
-        return
+        # Initial ping (named event so the client can distinguish the handshake)
+        if not handler._send_sse_event(
+            {"user": user_name, "time": datetime.now().isoformat()},
+            event="connected",
+        ):
+            return
 
-    # Cycle the connection every 15 minutes so one long-lived tab cannot pin a
-    # worker thread forever. The deadline is time-based: counting events meant a
-    # burst of >45 notifications closed the stream early and then left the
-    # socket half-open until the HTTP timeout.
-    deadline = time.monotonic() + 15 * 60
-    try:
+        # Cycle the connection every 15 minutes so one long-lived tab cannot pin
+        # a worker thread forever. The deadline is time-based: counting events
+        # meant a burst of >45 notifications closed the stream early and then
+        # left the socket half-open until the HTTP timeout.
+        deadline = time.monotonic() + 15 * 60
+        try:
+            sse_token = handler._extract_token()
+        except Exception:
+            sse_token = None
+        next_auth_check = time.monotonic() + 5 * 60
         while time.monotonic() < deadline:
+            if time.monotonic() >= next_auth_check:
+                next_auth_check = time.monotonic() + 5 * 60
+                # A logout/revoked session in another tab must not keep
+                # receiving notifications until the connection deadline.
+                try:
+                    if sse_token and not get_session(sse_token):
+                        break
+                except Exception:
+                    pass
             try:
                 event = q.get(timeout=20)
                 # Keep the event type in the SSE ``event:`` field and send the
@@ -575,7 +673,9 @@ def handle_get_notifications_stream(handler, parsed, ip):
         if not is_client_disconnect(e):
             raise
     finally:
-        unsubscribe_notifications(q)
+        if q is not None:
+            unsubscribe_notifications(q)
+        _release_sse_slot(sse_key)
         # Wake the client immediately instead of leaving it waiting for the
         # 60s socket timeout after the deadline.
         try:
@@ -607,7 +707,9 @@ def handle_post_notification_read(handler, raw_body, ip):
         handler._send_json(404, {"ok": False, "error": "알림을 찾을 수 없습니다."})
         return
 
-    ok = mark_notification_as_read(notif_id)
+    ok = mark_notification_as_read(
+        notif_id, user_id=session.get("id") or session.get("user_id")
+    )
     handler._send_json(200, {"ok": ok})
     access_log(ip, "notif_read", 200, f"id={notif_id} by {session.get('name')}")
 
@@ -620,7 +722,10 @@ def handle_post_notification_read_all(handler, raw_body, ip):
     from services.auth import is_admin_user
     is_adm = is_admin_user(session)
 
-    ok = mark_all_notifications_as_read(user_email=user_email, user_name=user_name, is_admin=is_adm)
+    ok = mark_all_notifications_as_read(
+        user_email=user_email, user_name=user_name, is_admin=is_adm,
+        user_id=session.get("id") or session.get("user_id")
+    )
     handler._send_json(200, {"ok": ok})
     access_log(ip, "notif_read_all", 200, f"user={user_name}")
 
@@ -1474,6 +1579,9 @@ def handle_post_issue_comment(handler, raw_body, ip):
                 "assignee_dept": local_rec.get("org") or "연구소",
                 "source": "jarvis"
             })
+        except Exception:
+            pass
+        try:
             trigger_comment_notification(
                 record_id=issue_key,
                 title=local_rec.get("title") or issue_key,
@@ -1565,10 +1673,22 @@ def handle_post_issue_transition(handler, raw_body, ip):
             return
         old_status = local_rec.get("status")
         update_record_status(local_rec["id"], status)
-        if status in ("검토", "Review", "검토중"):
+        if status != old_status:
             try:
-                from services.notification_service import trigger_review_request_notification
-                trigger_review_request_notification(local_rec, session)
+                if status in ("검토", "Review", "검토중"):
+                    from services.notification_service import trigger_review_request_notification
+                    trigger_review_request_notification(local_rec, session)
+                else:
+                    trigger_status_changed_notification(
+                        record_id=local_rec.get("cardCode") or issue_key,
+                        title=local_rec.get("title") or issue_key,
+                        author_name=session.get("name") or "사용자",
+                        old_status=old_status or "",
+                        new_status=status,
+                        assignee_name=local_rec.get("assignee") or "",
+                        assignee_email=local_rec.get("assigneeEmail") or local_rec.get("assignee_email") or "",
+                        author_email=session.get("email") or "",
+                    )
             except Exception:
                 pass
         try:
@@ -1852,7 +1972,34 @@ def handle_post_record_update(handler, raw_body, ip):
     title = body.get("title")
     memo = body.get("memo") or body.get("description")
     assignee = body.get("assignee") if "assignee" in body else body.get("assignee_name")
-    assignee_email = body.get("assigneeEmail") or body.get("assignee_email") or ""
+    # A partial update must not silently clear the stored email. Only pass ""
+    # when the caller explicitly supplied an empty email.
+    assignee_email = None
+    if "assigneeEmail" in body:
+        assignee_email = body.get("assigneeEmail") or ""
+    elif "assignee_email" in body:
+        assignee_email = body.get("assignee_email") or ""
+    elif assignee is not None:
+        a_clean = str(assignee).strip()
+        if a_clean:
+            from db import query as _dq
+            r_dept = old_rec.get("dept_id") or old_rec.get("org") or ""
+            rows = _dq(
+                "SELECT email FROM users WHERE LOWER(name) = LOWER(?) AND dept_id = ? LIMIT 2",
+                (a_clean, r_dept)
+            )
+            if not rows:
+                rows = _dq(
+                    "SELECT email FROM users WHERE LOWER(name) = LOWER(?) LIMIT 2",
+                    (a_clean,)
+                )
+            if len(rows) == 1:
+                assignee_email = rows[0].get("email") or ""
+            else:
+                # Ambiguous/unknown: keep the old value instead of clearing it.
+                assignee_email = None
+        else:
+            assignee_email = ""
     participants = body.get("participants")
     start_date = body.get("startDate") or body.get("start_date")
     due_date = body.get("dueDate") or body.get("due_date")
@@ -1925,6 +2072,36 @@ def handle_post_record_update(handler, raw_body, ip):
                 # re-notify every existing participant as if they were newly
                 # added whenever only the assignee changes.
                 participants=""
+            )
+    except Exception:
+        pass
+
+    # 2b. Notify only participants that were newly added.
+    try:
+        from services.notification_service import trigger_participants_added_notification
+        old_participants = old_rec.get("participants") or ""
+        new_participants = updated_rec.get("participants") or ""
+        old_set = {
+            p.strip().lower()
+            for p in re.split(r"[,;/\n]+", str(old_participants))
+            if p.strip()
+        }
+        added = []
+        for p in re.split(r"[,;/\n]+", str(new_participants)):
+            name = p.strip()
+            if not name or name.lower() in old_set:
+                continue
+            if new_assignee and name.lower() == str(new_assignee).lower():
+                continue
+            added.append(name)
+        if added:
+            trigger_participants_added_notification(
+                record_id=key,
+                title=updated_rec.get("title") or "업무",
+                author_name=session_name,
+                added_names=added,
+                assignee_name=new_assignee,
+                author_email=session_email or "",
             )
     except Exception:
         pass

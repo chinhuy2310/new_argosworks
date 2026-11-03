@@ -239,7 +239,17 @@ def safe_delete_user(user_id):
         cur.execute("DELETE FROM schedule_participants WHERE user_name = ?", (user_name,))
         # 4. 세션 만료
         cur.execute("DELETE FROM sessions WHERE user_name = ? AND user_dept_id = ?", (user_name, user_dept))
-        # 5. 사용자 삭제
+        # 5. Notification read state + direct notifications belonging to the user.
+        cur.execute("DELETE FROM notification_reads WHERE user_id = ?", (user_id,))
+        cur.execute(
+            """DELETE FROM notifications
+                WHERE recipient_user_id = ?
+                   OR (recipient_user_id IS NULL
+                       AND COALESCE(recipient_email, '') != ''
+                       AND LOWER(recipient_email) = LOWER(?))""",
+            (user_id, user.get("email") or "")
+        )
+        # 6. 사용자 삭제
         cur.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
     transaction(_do_del)
@@ -701,8 +711,15 @@ def user_can_access_notification(user_or_session, notification):
     email = (user_or_session.get("email") or "").strip().lower()
     name = (user_or_session.get("name") or "").strip()
     base = assignee_base_name(name) if name else ""
+    uid = user_or_session.get("id") or user_or_session.get("user_id")
     r_email = (notification.get("recipient_email") or "").strip().lower()
     r_name = (notification.get("recipient_name") or "").strip()
+    r_uid = notification.get("recipient_user_id")
+
+    # Stable user id is authoritative. If a notification has one, do not fall
+    # back to email/name when the caller has no matching id (fail closed).
+    if r_uid:
+        return bool(uid and str(r_uid) == str(uid))
 
     # Thông báo broadcast cho toàn hệ thống
     if r_email == "all" or (r_email == "" and r_name in ("", "all")):
