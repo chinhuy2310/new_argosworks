@@ -69,7 +69,7 @@ def upsert_jira_records(records, replace_existing=False):
                 params = tuple(batch)
                 cur.execute(f"DELETE FROM jira_comments WHERE jira_key IN ({placeholders})", params)
                 cur.execute(f"DELETE FROM jira_attachments WHERE jira_key IN ({placeholders})", params)
-                cur.execute(f"DELETE FROM jira_activities WHERE issue_key IN ({placeholders})", params)
+                cur.execute(f"DELETE FROM jira_changelog WHERE issue_key IN ({placeholders})", params)
                 cur.execute(f"DELETE FROM jira_issues WHERE jira_key IN ({placeholders})", params)
         for r in records or []:
             jira_info = r.get("jira") or {}
