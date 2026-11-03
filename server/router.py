@@ -2173,8 +2173,78 @@ def handle_delete_record(handler, raw_body, ip):
 
     rec_id = rec["id"]
 
-    # 1. DB에서 레코드 및 관련 댓글, 첨부파일, Jira 매핑 삭제
-    delete_record(rec_id)
+    # Quarantine the attachment directory before deleting the SQL row. If the
+    # SQL transaction fails, the directory can be restored atomically.
+    import shutil
+    import uuid
+    from utils.file_ops import safe_join
+    rec_attach_dir = safe_join(ATTACH_DIR, str(rec_id))
+    if not rec_attach_dir:
+        handler._send_json(500, {"ok": False, "error": "첨부파일 경로를 검증하지 못해 삭제를 취소했습니다."})
+        return
+
+    quarantine_dir = None
+    if os.path.lexists(rec_attach_dir):
+        quarantine_dir = safe_join(
+            ATTACH_DIR, ".deleting-record-" + uuid.uuid4().hex
+        )
+        if not quarantine_dir:
+            handler._send_json(500, {"ok": False, "error": "첨부파일 격리 경로를 만들 수 없습니다."})
+            return
+        try:
+            os.replace(rec_attach_dir, quarantine_dir)
+        except OSError as move_error:
+            log_line("레코드 첨부파일 격리 실패:", move_error)
+            handler._send_json(500, {"ok": False, "error": "첨부파일을 안전하게 격리하지 못해 삭제를 취소했습니다."})
+            return
+
+    try:
+        # 1. DB에서 레코드 및 관련 댓글, 첨부파일, Jira 매핑 삭제
+        delete_record(rec_id)
+    except Exception as delete_error:
+        rollback_error = None
+        if quarantine_dir and os.path.lexists(quarantine_dir):
+            try:
+                os.replace(quarantine_dir, rec_attach_dir)
+            except OSError as restore_error:
+                rollback_error = restore_error
+        log_line("레코드 DB 삭제 실패:", delete_error)
+        if rollback_error:
+            log_line("레코드 첨부파일 복구 실패:", rollback_error)
+            message = "DB 삭제와 첨부파일 복구가 모두 실패했습니다. 관리자 확인이 필요합니다."
+        else:
+            message = "DB 삭제에 실패하여 첨부파일을 원래 위치로 복구했습니다."
+        handler._send_json(500, {"ok": False, "error": message})
+        return
+
+    cleanup_pending = False
+
+    # SQL row is now deleted. Remove the quarantined directory; a cleanup
+    # failure leaves it outside the serving path and is reported to the caller.
+    if quarantine_dir and os.path.lexists(quarantine_dir):
+        try:
+            if os.path.islink(quarantine_dir):
+                os.unlink(quarantine_dir)
+            else:
+                shutil.rmtree(quarantine_dir)
+        except OSError as cleanup_error:
+            cleanup_pending = True
+            log_line("레코드 첨부파일 격리본 정리 실패:", cleanup_error)
+
+    # 2. Remove its vector. If direct deletion fails, request a full sync;
+    # strict source collection prevents that sync from purging on partial reads.
+    try:
+        delete_vector_document(f"record:{rec_id}")
+    except Exception as vector_error:
+        cleanup_pending = True
+        log_line("벡터 문서 삭제 실패; 전체 동기화를 요청합니다:", vector_error)
+        try:
+            from services.vector_store import trigger_async_vector_sync
+            trigger_async_vector_sync(handler.cfg)
+        except Exception as sync_error:
+            log_line("벡터 전체 동기화 요청 실패:", sync_error)
+
+    # 3. Audit event
     try:
         from services.audit_logger import log_audit
         log_audit(
@@ -2185,23 +2255,9 @@ def handle_delete_record(handler, raw_body, ip):
             target_id=str(rec_id),
             details={"title": rec.get("title"), "card_code": rec.get("card_code")}
         )
-    except Exception:
-        pass
-
-    # 2. 로컬 디스크 첨부파일 디렉토리 정리
-    import shutil
-    rec_attach_dir = os.path.join(ATTACH_DIR, str(rec_id))
-    if os.path.exists(rec_attach_dir):
-        try:
-            shutil.rmtree(rec_attach_dir)
-        except Exception as e:
-            log_line("로컬 첨부파일 삭제 중 경고:", e)
-
-    # 3. 벡터 DB에서 해당 임베딩 제거
-    try:
-        delete_vector_document(f"record:{rec_id}")
-    except Exception as e:
-        log_line("벡터 문서 삭제 중 경고:", e)
+    except Exception as audit_error:
+        cleanup_pending = True
+        log_line("레코드 삭제 감사 로그 기록 실패:", audit_error)
 
     # 4. 활동 로그 기록
     try:
@@ -2220,7 +2276,12 @@ def handle_delete_record(handler, raw_body, ip):
         pass
 
     access_log(ip, "record_delete", 200, f"id={rec_id} by {session.get('name')}")
-    handler._send_json(200, {"ok": True, "message": f"레코드 #{rec_id}가 삭제되었습니다.", "id": rec_id})
+    handler._send_json(200, {
+        "ok": True,
+        "message": f"레코드 #{rec_id}가 삭제되었습니다.",
+        "id": rec_id,
+        "cleanupPending": cleanup_pending
+    })
 
 
 def _push_single_local_record_to_jira(cfg, session, rec, parent_jira_key=None, custom_breadcrumb=None):
