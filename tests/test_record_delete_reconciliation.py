@@ -33,7 +33,7 @@ class TestRecordDeleteReconciliation:
 
         with (
             patch("router.ATTACH_DIR", root),
-            patch("router.is_system_read_only", create=True, return_value=False),
+            patch("services.license_manager.is_system_read_only", return_value=False),
             patch("router.find_record_by_key_or_code", return_value=record),
             patch("services.auth.can_delete_record", return_value=True),
             patch("router.delete_record", side_effect=delete_side_effect),
