@@ -403,42 +403,75 @@ def restore_backup(backup_filename):
         temp_restore_db = os.path.join(bdir, "argos_restore_temp.dump" if is_postgres else "argos_restore_temp.db")
         temp_extract_dir = os.path.join(bdir, f"extract_temp_{int(time.time())}")
 
-        # 1. 안전 사전 백업 생성 (Pre-restore Safety Backup)
+        # 1. Create and verify a safety snapshot before any destructive restore.
         safety_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         safety_name = f"argos_safety_before_restore_{safety_ts}"
         safety_path = os.path.join(bdir, f"{safety_name}.tar.gz")
+        safety_tmp = os.path.join(
+            bdir, f"{safety_name}.dump" if is_postgres else f"{safety_name}.tmp.db"
+        )
         try:
             if is_postgres:
-                safety_tmp = os.path.join(bdir, f"{safety_name}.dump")
-                try:
-                    res = subprocess.run([_find_pg_tool("pg_dump"), "-Fc", "-d", DATABASE_URL, "-f", safety_tmp], capture_output=True)
-                    if res.returncode == 0:
-                        with tarfile.open(safety_path, "w:gz", compresslevel=6) as star:
-                            star.add(safety_tmp, arcname="argos.dump")
-                            if os.path.exists(ATTACH_DIR):
-                                star.add(ATTACH_DIR, arcname="attachments")
-                except FileNotFoundError:
-                    logger.warning("pg_dump를 찾을 수 없어 사전 안전 백업 생성을 건너뜁니다.")
-                if os.path.exists(safety_tmp):
-                    os.remove(safety_tmp)
-            elif os.path.exists(src_db_path):
-                safety_tmp_db = os.path.join(bdir, f"{safety_name}.tmp.db")
-                s_conn = sqlite3.connect(src_db_path)
-                d_conn = sqlite3.connect(safety_tmp_db)
-                with d_conn:
-                    s_conn.backup(d_conn)
-                d_conn.close()
-                s_conn.close()
-
+                dump_cmd = [
+                    _find_pg_tool("pg_dump"), "-Fc", "-d", DATABASE_URL, "-f", safety_tmp
+                ]
+                dump_res = subprocess.run(dump_cmd, capture_output=True, text=True)
+                if dump_res.returncode != 0 or not os.path.isfile(safety_tmp) or os.path.getsize(safety_tmp) == 0:
+                    raise RuntimeError(
+                        f"복원 전 PostgreSQL 안전 백업 생성 실패 (code {dump_res.returncode}): "
+                        f"{dump_res.stderr}"
+                    )
+                verify_cmd = [_find_pg_tool("pg_restore"), "--list", safety_tmp]
+                verify_res = subprocess.run(verify_cmd, capture_output=True, text=True)
+                if verify_res.returncode != 0:
+                    raise RuntimeError(
+                        f"복원 전 PostgreSQL 안전 백업 검증 실패: {verify_res.stderr}"
+                    )
                 with tarfile.open(safety_path, "w:gz", compresslevel=6) as star:
-                    star.add(safety_tmp_db, arcname="argos.db")
+                    star.add(safety_tmp, arcname="argos.dump")
+                    if os.path.exists(ATTACH_DIR):
+                        star.add(ATTACH_DIR, arcname="attachments")
+            else:
+                if not os.path.isfile(src_db_path):
+                    raise RuntimeError("복원 전 SQLite 안전 백업을 만들 원본 DB 파일이 없습니다.")
+                source_conn = sqlite3.connect(src_db_path)
+                snapshot_conn = sqlite3.connect(safety_tmp)
+                try:
+                    with snapshot_conn:
+                        source_conn.backup(snapshot_conn)
+                    check = snapshot_conn.execute("PRAGMA integrity_check;").fetchone()
+                    if not check or check[0] != "ok":
+                        raise RuntimeError(f"복원 전 SQLite 안전 백업 무결성 검사 실패: {check}")
+                finally:
+                    snapshot_conn.close()
+                    source_conn.close()
+                with tarfile.open(safety_path, "w:gz", compresslevel=6) as star:
+                    star.add(safety_tmp, arcname="argos.db")
                     if os.path.exists(ATTACH_DIR):
                         star.add(ATTACH_DIR, arcname="attachments")
 
-                if os.path.exists(safety_tmp_db):
-                    os.remove(safety_tmp_db)
-        except Exception as se:
-            logger.warning(f"안전 백업 생성 중 경고: {se}")
+            if not os.path.isfile(safety_path) or os.path.getsize(safety_path) == 0:
+                raise RuntimeError("복원 전 안전 백업 아카이브가 생성되지 않았습니다.")
+            with tarfile.open(safety_path, "r:gz") as check_tar:
+                names = check_tar.getnames()
+                expected_member = "argos.dump" if is_postgres else "argos.db"
+                if expected_member not in names:
+                    raise RuntimeError("복원 전 안전 백업에 데이터베이스 파일이 포함되지 않았습니다.")
+        except Exception as safety_error:
+            try:
+                if os.path.exists(safety_path):
+                    os.remove(safety_path)
+            except OSError:
+                pass
+            raise RuntimeError(
+                f"안전 스냅샷을 검증하지 못해 데이터 복원을 중단했습니다: {safety_error}"
+            ) from safety_error
+        finally:
+            try:
+                if os.path.exists(safety_tmp):
+                    os.remove(safety_tmp)
+            except OSError:
+                pass
 
         try:
             # 2. 압축 해제 및 DB 파일 준비
