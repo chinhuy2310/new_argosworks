@@ -480,8 +480,10 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None)
                 if first_page:
                     log_line("Jira 이슈 목록 조회 실패(이전 캐시 유지):", e, e2)
                     return None, None
-                log_line("Jira 이슈 목록 추가 페이지 조회 실패(그때까지 받은 %d건만 사용):" % len(all_issues), e)
-                break
+                # A partial page set is not a complete snapshot. Returning it as
+                # success could make full-sync reconciliation delete valid issues.
+                log_line("Jira 이슈 목록 추가 페이지 조회 실패 — 이전 캐시를 유지합니다:", e, e2)
+                return None, None
         first_page = False
         issues = data.get("issues", []) or []
         all_issues.extend(issues)
@@ -831,20 +833,28 @@ def sync_jira_cache(cfg, force_full=False):
         records, activities = res, []
     now = datetime.now().isoformat()
 
-    # DB에 UPSERT 저장
+    # Persist only complete results. A first/forced full sync reconciles deleted
+    # Jira issues after every page has been fetched successfully.
     if records is not None:
-        if records:
-            upsert_jira_records(records)
-            try:
-                from services.vector_store import trigger_async_vector_sync
-                trigger_async_vector_sync(cfg)
-            except Exception:
-                pass
-        if activities:
-            upsert_jira_activities(activities)
-        set_last_sync_time(now)
-        all_records = load_all_jira_from_db()
-        all_activities = load_all_jira_activities_from_db()
+        full_sync = last_sync is None
+        saved = True
+        if records or full_sync:
+            saved = upsert_jira_records(records, replace_existing=full_sync)
+        if saved:
+            if activities:
+                upsert_jira_activities(activities)
+            set_last_sync_time(now)
+            if records or full_sync:
+                try:
+                    from services.vector_store import trigger_async_vector_sync
+                    trigger_async_vector_sync(cfg)
+                except Exception:
+                    pass
+            all_records = load_all_jira_from_db()
+            all_activities = load_all_jira_activities_from_db()
+        else:
+            all_records = None
+            all_activities = None
     else:
         all_records = None
         all_activities = None
