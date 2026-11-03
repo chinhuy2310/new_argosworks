@@ -1314,8 +1314,8 @@ def cleanup_expired_sessions():
     try:
         execute(
             """DELETE FROM sessions
-               WHERE COALESCE(NULLIF(CAST(last_active_at AS REAL), 0), CAST(created_at AS REAL)) < ?
-                  OR (CAST(created_at AS REAL) > 0 AND CAST(created_at AS REAL) < ?)""",
+               WHERE COALESCE(NULLIF(CAST(last_active_at AS DOUBLE PRECISION), 0), CAST(created_at AS DOUBLE PRECISION)) < ?
+                  OR (CAST(created_at AS DOUBLE PRECISION) > 0 AND CAST(created_at AS DOUBLE PRECISION) < ?)""",
             (sliding_cutoff, max_age_cutoff)
         )
     except Exception as e:

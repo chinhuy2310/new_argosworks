@@ -222,8 +222,9 @@ def test_append_record_atomic_transaction_rollback(tmp_db):
     }
 
     # Must raise IntegrityError on attachment insert
-    with pytest.raises(sqlite3.IntegrityError):
+    with pytest.raises(Exception) as exc_info:
         append_record(record_fail)
+    assert "filename" in str(exc_info.value).lower()
 
     # In atomic transaction, failure MUST roll back the entire record and attachments!
     saved_rec = get_one("SELECT * FROM records WHERE id = ?", (rec_id,))
