@@ -140,7 +140,7 @@ def handle_submit(handler, raw_body, ip):
     saved_attachments = []
     record_attach_dir = os.path.join(ATTACH_DIR, str(record_id))
     if files:
-        from utils.image_optimizer import optimize_and_save_file
+        from utils.image_optimizer import optimize_and_save_file, ImageTooLargeError
         from utils.file_ops import safe_join
         os.makedirs(record_attach_dir, exist_ok=True)
         try:
@@ -151,6 +151,10 @@ def handle_submit(handler, raw_body, ip):
                     raise ValueError("잘못된 첨부파일 이름입니다.")
                 optimize_and_save_file(f["data"], dest)
                 saved_attachments.append(fname)
+        except ImageTooLargeError as image_error:
+            shutil.rmtree(record_attach_dir, ignore_errors=True)
+            handler._send_json(400, {"ok": False, "error": str(image_error)})
+            return
         except Exception:
             shutil.rmtree(record_attach_dir, ignore_errors=True)
             raise
