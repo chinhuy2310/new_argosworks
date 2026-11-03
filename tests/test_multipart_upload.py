@@ -48,13 +48,13 @@ def test_parse_multipart_preserves_boundary_token_inside_binary_content():
     boundary = "boundary-123"
     payload = b"prefix--boundary-123-middle"
     body = (
-        f"--{boundary}\\r\\n"
-        'Content-Disposition: form-data; name="files"; filename="binary.bin"\\r\\n'
-        "Content-Type: application/octet-stream\\r\\n\\r\\n"
-    ).encode("utf-8") + payload + f"\\r\\n--{boundary}--\\r\\n".encode("ascii")
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="files"; filename="binary.bin"\r\n'
+        "Content-Type: application/octet-stream\r\n\r\n"
+    ).encode("utf-8") + payload + f"\r\n--{boundary}--\r\n".encode("ascii")
     _, files = parse_multipart(body, boundary)
     assert files[0]["data"] == payload
 
 
 def test_parse_multipart_accepts_empty_closed_form():
-    assert parse_multipart(b"--boundary-123--\\r\\n", "boundary-123") == ({}, [])
+    assert parse_multipart(b"--boundary-123--\r\n", "boundary-123") == ({}, [])
