@@ -113,9 +113,12 @@ class TestPostgresBackupRestore(unittest.TestCase):
         called_commands = []
         def fake_run(cmd, **kwargs):
             called_commands.append(cmd)
+            if "pg_dump" in os.path.basename(cmd[0]) and "-f" in cmd:
+                with open(cmd[cmd.index("-f") + 1], "wb") as dump_file:
+                    dump_file.write(b"VALID_PG_DUMP")
             res = MagicMock()
             res.returncode = 0
-            res.stdout = ""
+            res.stdout = "archive contents" if "--list" in cmd else ""
             res.stderr = ""
             return res
 
@@ -150,7 +153,14 @@ class TestPostgresBackupRestore(unittest.TestCase):
 
         def fake_run(cmd, **kwargs):
             res = MagicMock()
-            res.returncode = 0 if "pg_dump" in os.path.basename(cmd[0]) else 1
+            if "pg_dump" in os.path.basename(cmd[0]):
+                with open(cmd[cmd.index("-f") + 1], "wb") as dump_file:
+                    dump_file.write(b"VALID_PG_DUMP")
+                res.returncode = 0
+            elif "--list" in cmd:
+                res.returncode = 0
+            else:
+                res.returncode = 1
             res.stdout = ""
             res.stderr = "restore encountered errors"
             return res
@@ -182,6 +192,8 @@ class TestPostgresBackupRestore(unittest.TestCase):
 
         def fake_run(cmd, **kwargs):
             if "pg_dump" in os.path.basename(cmd[0]):
+                with open(cmd[cmd.index("-f") + 1], "wb") as dump_file:
+                    dump_file.write(b"VALID_PG_DUMP")
                 res = MagicMock()
                 res.returncode = 0
                 return res
