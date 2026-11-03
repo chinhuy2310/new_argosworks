@@ -234,7 +234,11 @@ def handle_post_setup_complete(handler, raw_body, ip):
     # 5. 라이선스 정보 활성화 반영
     #    Activation MUST succeed: a verified key that cannot be anchored/activated
     #    would otherwise leave a half-written licence row behind.
-    act_ok, act_msg = activate_license(license_key)
+    try:
+        act_ok, act_msg = activate_license(license_key)
+    except Exception as activation_error:
+        log_line("[Setup] License activation raised an exception:", activation_error)
+        act_ok, act_msg = False, "라이선스 활성화 처리 중 오류가 발생했습니다. 다시 시도해주세요."
     if not act_ok:
         # The admin/departments transaction has already committed. Remove the
         # bootstrap account so check_needs_setup() remains true and the wizard
@@ -242,6 +246,8 @@ def handle_post_setup_complete(handler, raw_body, ip):
         try:
             if admin_user and admin_user.get("id") is not None:
                 execute("DELETE FROM users WHERE id = ? AND username = ?", (admin_user["id"], username))
+            else:
+                execute("DELETE FROM users WHERE username = ?", (username,))
         except Exception as cleanup_error:
             log_line("[Setup] Failed to roll back bootstrap admin after license activation failure:", cleanup_error)
         handler._send_json(400, {"ok": False, "error": act_msg})
