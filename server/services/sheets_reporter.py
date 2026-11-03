@@ -37,6 +37,15 @@ def get_report_columns(lang="ko"):
     """Returns report column headers in Korean or English (default: Korean)"""
     return REPORT_COLUMNS_I18N.get(str(lang).lower().strip(), REPORT_COLUMNS_I18N["ko"])
 
+def _excel_safe_value(value):
+    """Prevent spreadsheet formula execution for untrusted text values."""
+    if not isinstance(value, str):
+        return value
+    probe = value.lstrip(" \t\r\n\x00\x0b\x0c")
+    if probe.startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
+
 # Default fallback
 COLUMNS = REPORT_COLUMNS_I18N["ko"]
 
@@ -454,7 +463,7 @@ def _generate_xlsx(rows, filepath, start_date, end_date, cfg=None, lang="ko"):
     ws.merge_cells('A1:L1')
     title_cell = ws['A1']
     title_text = f"{ws_name} Weekly Work Report ({start_date} ~ {end_date})" if lang == "en" else f"{ws_name} 주간 업무 보고서 ({start_date} ~ {end_date})"
-    title_cell.value = title_text
+    title_cell.value = _excel_safe_value(title_text)
     title_cell.font = Font(name='Malgun Gothic', size=14, bold=True)
     title_cell.alignment = Alignment(horizontal='center', vertical='center')
     
@@ -495,7 +504,7 @@ def _generate_xlsx(rows, filepath, start_date, end_date, cfg=None, lang="ko"):
         
         for col_idx, col_name in enumerate(COLUMNS, 1):
             cell = ws.cell(row=row_idx, column=col_idx)
-            cell.value = r.get(col_name, '')
+            cell.value = _excel_safe_value(r.get(col_name, ''))
             cell.font = base_font
             cell.border = thin_border
             
@@ -776,7 +785,7 @@ def _render_custom_template(template_path, rows, filepath, start_date, end_date,
                         if s_tag in new_val:
                             new_val = new_val.replace(s_tag, s_rep)
                     if new_val != val:
-                        cell.value = new_val
+                        cell.value = _excel_safe_value(new_val)
 
         if is_row_template and template_row_idx is None:
             template_row_idx = r_idx
@@ -816,7 +825,7 @@ def _render_custom_template(template_path, rows, filepath, start_date, end_date,
 
             field = row_tag_cols.get(c_idx)
             if field:
-                c.value = row_data.get(field, "")
+                c.value = _excel_safe_value(row_data.get(field, ""))
             else:
                 c.value = ""
 
