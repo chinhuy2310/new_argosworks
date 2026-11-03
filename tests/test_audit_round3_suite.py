@@ -272,5 +272,27 @@ class TestAuditRound3Suite(unittest.TestCase):
         self.assertEqual(rec_relinked["parentKey"], "DEV-1")
 
 
+    def test_invalid_expected_version_is_rejected_without_mutation(self):
+        """잘못된 expected_version은 락 검증을 우회하지 않고 레코드를 변경하지 않아야 함."""
+        from services.data_store import update_record_details
+        record_id = 911003
+        title = "TEST_ROUND3_INVALID_VERSION"
+        execute(
+            "INSERT OR REPLACE INTO records (id, dept_id, category, title, project, assignee_name, card_code, parent_key) VALUES (?, 'dev', '개발', ?, 'P', 'Mem', 'DEV-INVALID-VERSION', '')",
+            (record_id, title)
+        )
+        before = get_one("SELECT title, version FROM records WHERE id = ?", (record_id,))
+        updated, error = update_record_details(
+            "DEV-INVALID-VERSION",
+            title="MUST_NOT_BE_SAVED",
+            expected_version="not-a-version"
+        )
+        after = get_one("SELECT title, version FROM records WHERE id = ?", (record_id,))
+        self.assertIsNone(updated)
+        self.assertIn("유효하지 않은 버전", error)
+        self.assertEqual(after["title"], before["title"])
+        self.assertEqual(after["version"], before["version"])
+
+
 if __name__ == "__main__":
     unittest.main()

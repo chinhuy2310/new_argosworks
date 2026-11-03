@@ -1130,7 +1130,7 @@ def update_record_details(record_id_or_code, title=None, memo=None, assignee_nam
             if exp_v != current_version:
                 return None, f"CONFLICT: 다른 사용자가 이 카드를 이미 수정했습니다 (현재 v{current_version}, 클라이언트 v{exp_v}). 최신 정보를 다시 불러와주세요."
         except (ValueError, TypeError):
-            pass
+            return None, "유효하지 않은 버전 값입니다. 최신 정보를 다시 불러온 후 다시 시도해주세요."
 
     updates = []
     params = []
