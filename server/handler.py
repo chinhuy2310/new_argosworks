@@ -389,11 +389,22 @@ class ArgosHandler(BaseHTTPRequestHandler):
         self.send_header('X-Accel-Buffering', 'no')
         self.end_headers()
 
-    def _send_sse_event(self, data):
-        """하나의 SSE 이벤트를 전송한다. 클라이언트 접속 종료 시 False 반환."""
+    def _send_sse_event(self, data, event=None):
+        """하나의 SSE 이벤트를 전송한다. 클라이언트 접속 종료 시 False 반환.
+
+        ``event``가 주어지면 SSE 표준 ``event:`` 필드를 함께 보낸다. 이 필드가
+        없으면 브라우저는 항상 ``message`` 이벤트로 디스패치하므로, 클라이언트의
+        ``addEventListener("new_notification", ...)`` 같은 이름 기반 리스너는
+        절대 호출되지 않는다.
+        """
         try:
             payload = json.dumps(data, ensure_ascii=False)
-            self.wfile.write(f"data: {payload}\n\n".encode('utf-8'))
+            if event:
+                event_name = str(event).replace("\r", "").replace("\n", "")
+                wire = f"event: {event_name}\ndata: {payload}\n\n"
+            else:
+                wire = f"data: {payload}\n\n"
+            self.wfile.write(wire.encode('utf-8'))
             self.wfile.flush()
             return True
         except Exception as e:

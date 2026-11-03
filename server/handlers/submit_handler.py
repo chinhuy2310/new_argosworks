@@ -250,7 +250,8 @@ def handle_submit(handler, raw_body, ip):
             author_name=author_name or "사용자",
             assignee_name=assignee_name,
             assignee_email=assignee_email,
-            participants=participants
+            participants=participants,
+            author_email=(session.get("email") if session else "") or ""
         )
     except Exception:
         pass

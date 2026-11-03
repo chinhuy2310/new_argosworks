@@ -660,10 +660,39 @@ def is_display_name_unique(name):
     return int(row.get("c") or 0) == 1
 
 
+def is_display_name_base_unique(name):
+    """True when exactly one account has this base display name.
+
+    ``assignee_base_name`` strips a title suffix (e.g. "홍길동 팀장" -> "홍길동").
+    Using that fallback when another account is literally named "홍길동" makes
+    the two accounts share each other's notifications, so it is allowed only
+    when the base name itself is unambiguous.
+    """
+    from utils.text import assignee_base_name
+
+    base = assignee_base_name((name or "").strip()).strip().lower()
+    if not base:
+        return False
+    try:
+        rows = query("SELECT name FROM users")
+    except Exception:
+        return False
+    matches = 0
+    for row in rows:
+        if assignee_base_name((row.get("name") or "").strip()).strip().lower() == base:
+            matches += 1
+    return matches == 1
+
+
 def user_can_access_notification(user_or_session, notification):
     """Notification có thuộc về user hiện tại không (chống IDOR).
 
-    이름 기반 매칭은 동명이인이 존재하면 사용하지 않는다(타 사용자 알림 조작 방지).
+    Quy tắc:
+    - Broadcast ("all") cho mọi người.
+    - Có recipient_email thì email là nguồn xác thực duy nhất; không fallback
+      sang tên, vì tên trong notification có thể không khớp email.
+    - Chỉ khi recipient_email rỗng mới dùng tên; tên (và base name) phải
+      không trùng với tài khoản khác.
     """
     if not user_or_session or not notification:
         return False
@@ -678,15 +707,15 @@ def user_can_access_notification(user_or_session, notification):
     # Thông báo broadcast cho toàn hệ thống
     if r_email == "all" or (r_email == "" and r_name in ("", "all")):
         return True
-    if email and r_email == email:
-        return True
-    if is_admin_user(user_or_session) and r_name in ("관리자", "admin"):
-        return True
-    if not is_display_name_unique(name):
+    if r_email:
+        return bool(email and r_email == email)
+    if r_name.strip().lower() in ("관리자", "admin"):
+        return bool(is_admin_user(user_or_session))
+    if not name or not is_display_name_unique(name):
         return False
-    if name and r_name == name:
+    if r_name.lower() == name.lower():
         return True
-    if base and r_name == base:
+    if base and r_name.lower() == base.lower() and is_display_name_base_unique(name):
         return True
     return False
 

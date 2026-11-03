@@ -545,17 +545,28 @@ def handle_get_notifications_stream(handler, parsed, ip):
         "is_admin": is_notif_admin,
     })
 
-    # Initial ping
-    handler._send_sse_event({"event": "connected", "user": user_name, "time": datetime.now().isoformat()})
+    # Initial ping (named event so the client can distinguish the handshake)
+    if not handler._send_sse_event(
+        {"user": user_name, "time": datetime.now().isoformat()},
+        event="connected",
+    ):
+        unsubscribe_notifications(q)
+        return
 
+    # Cycle the connection every 15 minutes so one long-lived tab cannot pin a
+    # worker thread forever. The deadline is time-based: counting events meant a
+    # burst of >45 notifications closed the stream early and then left the
+    # socket half-open until the HTTP timeout.
+    deadline = time.monotonic() + 15 * 60
     try:
-        cycles = 0
-        max_cycles = 45  # 15 minutes max per SSE connection to cycle HTTP threads
-        while cycles < max_cycles:
-            cycles += 1
+        while time.monotonic() < deadline:
             try:
                 event = q.get(timeout=20)
-                handler._send_sse_event({"event": event["type"], "data": event["data"]})
+                # Keep the event type in the SSE ``event:`` field and send the
+                # notification payload itself as ``data`` — the client parses
+                # data.recipient_email / data.title directly.
+                if not handler._send_sse_event(event["data"], event=event["type"]):
+                    break
             except queue.Empty:
                 # Keep-alive heartbeat comment every 20 seconds
                 handler.wfile.write(b": ping\n\n")
@@ -565,6 +576,12 @@ def handle_get_notifications_stream(handler, parsed, ip):
             raise
     finally:
         unsubscribe_notifications(q)
+        # Wake the client immediately instead of leaving it waiting for the
+        # 60s socket timeout after the deadline.
+        try:
+            handler.close_connection = True
+        except Exception:
+            pass
 
 def handle_post_notification_read(handler, raw_body, ip):
     session = handler._get_session_or_401()
@@ -578,9 +595,10 @@ def handle_post_notification_read(handler, raw_body, ip):
     except Exception:
         body = {}
     notif_id = body.get("id", "")
-    if not notif_id:
+    if not isinstance(notif_id, str) or not notif_id.strip():
         handler._send_json(400, {"ok": False, "error": "알림 ID가 필요합니다."})
         return
+    notif_id = notif_id.strip()
     # Chống IDOR: chỉ chủ sở hữu notification (hoặc broadcast) mới được đánh dấu đã đọc
     from db import get_one
     from services.auth import user_can_access_notification
@@ -1462,7 +1480,8 @@ def handle_post_issue_comment(handler, raw_body, ip):
                 author_name=session.get("name") or "사용자",
                 comment_body=comment,
                 assignee_name=local_rec.get("assignee") or "",
-                assignee_email=local_rec.get("assignee_email") or ""
+                assignee_email=local_rec.get("assigneeEmail") or local_rec.get("assignee_email") or "",
+                author_email=session.get("email") or ""
             )
         except Exception:
             pass
@@ -1892,16 +1911,20 @@ def handle_post_record_update(handler, raw_body, ip):
     # 2. Trigger notification to new assignee if changed
     try:
         from services.notification_service import trigger_task_assigned_notification
-        old_assignee = old_rec.get("assignee_name") or ""
-        new_assignee = updated_rec.get("assignee_name") or ""
+        old_assignee = old_rec.get("assignee") or old_rec.get("assignee_name") or ""
+        new_assignee = updated_rec.get("assignee") or updated_rec.get("assignee_name") or ""
         if new_assignee and new_assignee != old_assignee:
             trigger_task_assigned_notification(
                 record_id=key,
                 title=updated_rec.get("title") or "업무",
                 author_name=session_name,
                 assignee_name=new_assignee,
-                assignee_email=updated_rec.get("assignee_email") or "",
-                participants=updated_rec.get("participants") or ""
+                assignee_email=updated_rec.get("assigneeEmail") or updated_rec.get("assignee_email") or "",
+                author_email=session_email or "",
+                # The participants list is unchanged here; passing it would
+                # re-notify every existing participant as if they were newly
+                # added whenever only the assignee changes.
+                participants=""
             )
     except Exception:
         pass
@@ -2993,8 +3016,23 @@ def handle_post_admin_user_approve(handler, raw_body, ip):
     log_audit(session, ip, "USER_APPROVE", "user", target_user.get("username"), details={"name": target_user.get("name"), "dept": target_user.get("dept_id"), "role": role})
 
     try:
-        from services.notification_service import create_notification
-        create_notification("user", f"계정 '{target_user.get('name')}'({target_user.get('username')})의 가입 요청이 승인되었습니다.", "success")
+        # Notify the approved user in-app. (There is no ``create_notification``
+        # helper; the old call raised ImportError and was silently swallowed, so
+        # the user never received any approval notice.)
+        from services.notification_service import add_notification
+        add_notification(
+            recipient_email=(target_user.get("email") or "").strip(),
+            recipient_name=(target_user.get("name") or "").strip(),
+            sender_name="시스템",
+            notif_type="signup",
+            title="가입 신청이 승인되었습니다",
+            content=(
+                f"계정 '{target_user.get('name')}'({target_user.get('username')})의 "
+                "가입 신청이 승인되었습니다. 이제 로그인하실 수 있습니다."
+            ),
+            tag="승인완료",
+            tag_type="done",
+        )
     except Exception:
         pass
 
