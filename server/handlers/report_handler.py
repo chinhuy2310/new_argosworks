@@ -17,7 +17,7 @@ def _excel_safe_value(value):
         text = value
         # Excel treats cells beginning with these characters (possibly after
         # whitespace/control characters) as formulas in common spreadsheet apps.
-        probe = text.lstrip(" \t\r\n\x00")
+        probe = text.lstrip(" \t\r\n\x00\x0b\x0c")
         if probe.startswith(("=", "+", "-", "@")):
             return "'" + text
         return text

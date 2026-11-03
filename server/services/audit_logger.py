@@ -112,7 +112,8 @@ def build_audit_export(logs, export_format="csv"):
 
     def _safe(value):
         text = "" if value is None else str(value)
-        if text[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        probe = text.lstrip(" \\t\\r\\n\\x00\\x0b\\x0c")
+        if probe.startswith(("=", "+", "-", "@")):
             text = "'" + text
         return text
 
