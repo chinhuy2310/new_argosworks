@@ -229,20 +229,65 @@ if ENGINE == "sqlite":
         logger.info(f"Initializing SQLite database at {db_path}")
         _check_sql_params_debug()
 
-        # Pre-migration safety snapshot: Protect on-premise customer data before DDL
+        # Snapshot only when the database has not reached the current migration
+        # level. The previous unconditional snapshot on every startup leaked one
+        # full database copy per worker/restart and exhausted disk over time.
+        needs_migration_snapshot = False
         if os.path.exists(db_path) and os.path.getsize(db_path) > 0:
             try:
-                from datetime import datetime
-                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                data_dir = os.path.dirname(db_path)
-                snap_dir = os.path.join(data_dir, "backups")
-                os.makedirs(snap_dir, exist_ok=True)
-                snap_file = os.path.join(snap_dir, f"argos_safety_before_migration_{ts}.tmp.db")
-                with sqlite3.connect(db_path) as s_conn, sqlite3.connect(snap_file) as d_conn:
-                    s_conn.backup(d_conn)
+                with sqlite3.connect(db_path) as probe:
+                    migration_table = probe.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
+                    ).fetchone()
+                    if not migration_table:
+                        needs_migration_snapshot = True
+                    else:
+                        current_version = probe.execute(
+                            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
+                        ).fetchone()[0]
+                        needs_migration_snapshot = int(current_version or 0) < 11
+            except Exception:
+                # An unreadable migration state is treated as needing protection.
+                needs_migration_snapshot = True
+
+        if needs_migration_snapshot:
+            from datetime import datetime
+            data_dir = os.path.dirname(db_path)
+            snap_dir = os.path.join(data_dir, "backups")
+            os.makedirs(snap_dir, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            snap_file = os.path.join(snap_dir, f"argos_safety_before_migration_{ts}.db")
+            try:
+                with sqlite3.connect(db_path) as source_conn, sqlite3.connect(snap_file) as snapshot_conn:
+                    source_conn.backup(snapshot_conn)
+                    integrity = snapshot_conn.execute("PRAGMA integrity_check").fetchone()
+                if not integrity or integrity[0] != "ok":
+                    raise RuntimeError(f"SQLite safety snapshot integrity check failed: {integrity}")
                 logger.info(f"[db] Pre-migration safety snapshot created: {snap_file}")
+
+                # Retain only the newest ten verified migration snapshots.
+                snapshots = sorted(
+                    (
+                        os.path.join(snap_dir, name)
+                        for name in os.listdir(snap_dir)
+                        if name.startswith("argos_safety_before_migration_") and name.endswith(".db")
+                    ),
+                    key=os.path.getmtime,
+                    reverse=True
+                )
+                for obsolete in snapshots[10:]:
+                    try:
+                        os.remove(obsolete)
+                    except OSError as cleanup_error:
+                        logger.warning(f"[db] Could not remove old safety snapshot {obsolete}: {cleanup_error}")
             except Exception as e:
-                logger.warning(f"[db] Pre-migration safety snapshot notice: {e}")
+                try:
+                    if os.path.exists(snap_file):
+                        os.remove(snap_file)
+                except OSError:
+                    pass
+                logger.warning(f"[db] Pre-migration safety snapshot failed: {e}")
+                raise RuntimeError("SQLite migration stopped because a verified pre-migration snapshot could not be created.") from e
 
         conn = sqlite3.connect(db_path, isolation_level=None)
         try:
