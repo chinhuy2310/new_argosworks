@@ -175,7 +175,7 @@ def handle_product_attachment_upload(handler, raw_body, ip):
                 attachments.append(entry)
                 added.append(entry)
             write_products(products)
-        except Exception:
+        except Exception as upload_error:
             # Roll back files written before a later file or metadata save failed.
             for saved_path in saved_paths:
                 try:
@@ -183,6 +183,10 @@ def handle_product_attachment_upload(handler, raw_body, ip):
                         os.remove(saved_path)
                 except OSError:
                     pass
+            from utils.image_optimizer import ImageTooLargeError
+            if isinstance(upload_error, ImageTooLargeError):
+                handler._send_json(400, {"ok": False, "error": str(upload_error)})
+                return
             raise
     access_log(ip, "product_attachment_upload", 200, "%s +%d" % (pid, len(added)))
     handler._send_json(200, {"ok": True, "product": product, "added": added})
