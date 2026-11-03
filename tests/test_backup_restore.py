@@ -96,6 +96,18 @@ class TestBackupRestoreRoundTrip:
 
         assert _marker_exists(db_module, marker_id), "restored database must contain the row again"
 
+    def test_import_accepts_verified_sqlite_archive(self, isolated_backup_env):
+        from services import backup_manager
+
+        result = backup_manager.create_backup(note="import validation", backup_type="manual")
+        archive_path = os.path.join(isolated_backup_env["backup_dir"], result["filename"])
+        with open(archive_path, "rb") as archive_file:
+            imported = backup_manager.import_backup_file(
+                archive_file.read(), "customer_uploaded_backup.tar.gz"
+            )
+        assert imported["ok"] is True
+        assert imported["filename"] == "customer_uploaded_backup.tar.gz"
+
     def test_restore_creates_safety_snapshot(self, isolated_backup_env):
         import db as db_module
         from services import backup_manager
