@@ -78,7 +78,7 @@ class TestAuditCsvExport:
         assert ext == "json"
         assert "application/json" in content_type
         parsed = json.loads(body.decode("utf-8"))
-        assert len(parsed) == 2
+        assert len(parsed) == 3
         assert parsed[1]["action"] == "LOGIN_FAILED"
 
     def test_empty_log_set(self):
