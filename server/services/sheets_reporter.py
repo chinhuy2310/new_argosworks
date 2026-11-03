@@ -772,14 +772,23 @@ def _render_custom_template(template_path, rows, filepath, start_date, end_date,
             if isinstance(val, str):
                 val_clean = val.strip()
                 matched_field = None
+                matched_tag = None
                 for tag, field in TAG_FIELD_MAP.items():
                     if tag in val_clean:
                         matched_field = field
+                        matched_tag = tag
                         break
                 if matched_field:
-                    is_row_template = True
                     detected_tags[c_idx] = matched_field
-                else:
+                    # {{assignee}} is also used in the report subtitle. It is
+                    # a row-template marker only when accompanied by another
+                    # row-specific marker in the same row.
+                    if matched_tag not in ("{{assignee}}", "{{담당자}}"):
+                        is_row_template = True
+
+                # Ambiguous assignee placeholders in title/subtitle rows are
+                # scalar substitutions, not enough to identify a data row.
+                if (not matched_field) or (matched_tag in ("{{assignee}}", "{{담당자}}")):
                     new_val = val
                     for s_tag, s_rep in scalar_replacements.items():
                         if s_tag in new_val:
