@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import unittest
+from unittest import mock
 import json
 import os
 import sys
@@ -195,7 +196,7 @@ class TestEnterpriseSetupWizard(unittest.TestCase):
             ]
         }
 
-        with unittest.mock.patch(
+        with mock.patch(
             "services.license_manager.activate_license",
             return_value=(False, "activation failed")
         ):
