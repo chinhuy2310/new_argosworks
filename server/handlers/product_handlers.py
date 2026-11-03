@@ -140,7 +140,11 @@ def handle_product_attachment_upload(handler, raw_body, ip):
     
     from utils.multipart import parse_multipart
     from utils.file_ops import unique_attachment_name, safe_join
-    fields, files = parse_multipart(raw_body, m.group(1))
+    try:
+        fields, files = parse_multipart(raw_body, m.group(1))
+    except ValueError as multipart_error:
+        handler._send_json(400, {"ok": False, "error": str(multipart_error)})
+        return
     pid = (fields.get("id") or "").strip()
     if not pid:
         handler._send_json(400, {"ok": False, "error": "제품 id가 필요합니다."})
