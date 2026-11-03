@@ -487,8 +487,9 @@ def restore_backup(backup_filename):
                         "PostgreSQL 복원 도구(pg_restore)가 시스템에 설치되어 있지 않습니다. "
                         "Dockerfile 또는 호스트에 postgresql-client 패키지를 설치해주세요."
                     )
-                # pg_restore may return 1 on warnings (e.g. notices), returncode > 1 is failure
-                if res.returncode > 1:
+                # pg_restore returns non-zero when restore errors occurred; never report
+                # a potentially partial restore as successful.
+                if res.returncode != 0:
                     raise RuntimeError(f"PostgreSQL pg_restore 복원 실패 (code {res.returncode}): {res.stderr}")
             else:
                 # SQLite integrity check & restore

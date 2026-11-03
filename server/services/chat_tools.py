@@ -2899,6 +2899,14 @@ def execute_tool(name, args, current_user, cfg, allow_write=False):
 
     # 하드 블록 2단계: 런타임 차단 (사용자 명시 승인 없이 쓰기 도구 호출 시 즉시 거부)
 
+    if name in WRITE_TOOL_NAMES:
+        # UI confirmation is necessary but not sufficient: enforce RBAC at the
+        # execution boundary so a Viewer cannot invoke a write action by replaying
+        # or forging an approved action request.
+        from services.auth import can_write_data
+        if not can_write_data(current_user):
+            return {"error": "조회 전용(Viewer) 권한의 사용자는 AI 작업을 통해 데이터를 변경할 수 없습니다."}
+
     if name in WRITE_TOOL_NAMES and not allow_write:
 
         log_line(f"[Security Guard] AI의 쓰기 도구 직접 실행 시도 차단: {name} (사용자: {current_user.get('name')})")

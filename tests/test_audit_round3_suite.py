@@ -294,5 +294,16 @@ class TestAuditRound3Suite(unittest.TestCase):
         self.assertEqual(after["version"], before["version"])
 
 
+    def test_excel_export_values_are_not_interpreted_as_formulas(self):
+        """내보내기 셀의 사용자 입력은 Excel 수식으로 실행되지 않아야 함."""
+        from handlers.report_handler import _excel_safe_value
+        for payload in ("=1+1", "+cmd|' /C calc'!A0", "-1+2", "@SUM(A1:A2)", "  =1+1"):
+            safe = _excel_safe_value(payload)
+            self.assertTrue(safe.startswith("'"))
+        self.assertEqual(_excel_safe_value("ordinary text"), "ordinary text")
+        self.assertEqual(_excel_safe_value(42), 42)
+
+
+
 if __name__ == "__main__":
     unittest.main()

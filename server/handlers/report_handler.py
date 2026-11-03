@@ -9,6 +9,21 @@ from services.auth import get_session
 from config import DATA_DIR
 
 
+def _excel_safe_value(value):
+    """Prevent spreadsheet formula injection for user-controlled exported values."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        text = value
+        # Excel treats cells beginning with these characters (possibly after
+        # whitespace/control characters) as formulas in common spreadsheet apps.
+        probe = text.lstrip(" \t\r\n\x00")
+        if probe.startswith(("=", "+", "-", "@")):
+            return "'" + text
+        return text
+    return value
+
+
 def handle_get_weekly_report(handler, parsed, ip):
     """GET /api/reports/weekly?assignee=all&period=this_week&start=&end=
     주간 업무 보고서를 생성하고 메타데이터를 반환한다."""
@@ -271,7 +286,7 @@ def handle_get_export_records_excel(handler, parsed, ip):
         e_date = r.get("endDate") or r.get("end_date") or r.get("dueDate") or r.get("due_date") or ""
         jira_k = (r.get("jira") or {}).get("key") or ""
 
-        row_vals = [code, title, cat, assignee, dept, status, s_date, e_date, jira_k]
+        row_vals = [_excel_safe_value(v) for v in [code, title, cat, assignee, dept, status, s_date, e_date, jira_k]]
         ws.append(row_vals)
         curr_row = ws.max_row
         ws.row_dimensions[curr_row].height = 20
