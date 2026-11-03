@@ -929,7 +929,7 @@ def can_view_vector_doc(session, doc_type, meta, ctx=None):
         try:
             from db import get_one
             live_r = get_one(
-                "SELECT id, dept_id, is_private, assignee_id, assignee_name, participants "
+                "SELECT id, dept_id, is_private, assignee_id, assignee_name, assignee_email, participants "
                 "FROM records WHERE id = ? LIMIT 1",
                 (r_id,)
             )
