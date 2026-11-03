@@ -998,6 +998,15 @@ def save_product_category(cat_id, name, spec_template):
     if not name:
         return False, "카테고리 이름을 입력해주세요."
     
+    # Older versions accepted a list of labels. Normalize that legacy shape
+    # into explicit safe keys while preserving label-based value lookup.
+    if isinstance(spec_template, list):
+        spec_template = [
+            {"group": "기본 사양", "label": item, "key": f"spec_{index}", "maxlen": 200}
+            if isinstance(item, str) else item
+            for index, item in enumerate(spec_template, 1)
+        ]
+
     # Template keys are used in HTML attributes by the PIM editor.
     # Validate all persisted template fields at the backend boundary.
     import re

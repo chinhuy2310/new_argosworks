@@ -20,6 +20,19 @@ from db import execute, query
 class TestAiChatDataPermissions(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        # The records table enforces assignee_id -> users(id). Create the minimal
+        # referenced sales account when running against a fresh CI database.
+        cls.created_sales_user = False
+        existing = query("SELECT id FROM users WHERE id = 6")
+        if not existing:
+            execute(
+                """INSERT INTO users
+                   (id, username, name, dept_id, email, salt, password_hash, is_admin, role, disabled, status)
+                   VALUES (6, 'ai_perm_sales', '강동원', 'sales', 'ai_perm_sales@test.local',
+                           'test', 'test', 0, 'member', 0, 'active')"""
+            )
+            cls.created_sales_user = True
+
         # Create test records in database
         execute("DELETE FROM records WHERE id >= 999900")
         # 1. Dept Dev: public record
@@ -51,6 +64,8 @@ class TestAiChatDataPermissions(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         execute("DELETE FROM records WHERE id >= 999900")
+        if cls.created_sales_user:
+            execute("DELETE FROM users WHERE id = 6")
 
     def setUp(self):
         self.cfg = {"jira": {"enabled": False}}

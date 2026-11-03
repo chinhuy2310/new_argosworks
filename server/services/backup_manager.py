@@ -463,6 +463,8 @@ def restore_backup(backup_filename):
                     os.remove(safety_path)
             except OSError:
                 pass
+            if isinstance(safety_error, FileNotFoundError):
+                raise
             raise RuntimeError(
                 f"안전 스냅샷을 검증하지 못해 데이터 복원을 중단했습니다: {safety_error}"
             ) from safety_error
