@@ -2275,8 +2275,9 @@ def handle_delete_record(handler, raw_body, ip):
             "status": "삭제됨",
             "source": "jarvis"
         })
-    except Exception:
-        pass
+    except Exception as activity_error:
+        cleanup_pending = True
+        log_line("레코드 삭제 활동 로그 기록 실패:", activity_error)
 
     access_log(ip, "record_delete", 200, f"id={rec_id} by {session.get('name')}")
     handler._send_json(200, {
