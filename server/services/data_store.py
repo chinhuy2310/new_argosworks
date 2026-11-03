@@ -998,6 +998,25 @@ def save_product_category(cat_id, name, spec_template):
     if not name:
         return False, "카테고리 이름을 입력해주세요."
     
+    # Template keys are used in HTML attributes by the PIM editor.
+    # Validate all persisted template fields at the backend boundary.
+    import re
+    if not isinstance(spec_template, list) or len(spec_template) > 100:
+        return False, "규격 템플릿 형식이 올바르지 않습니다."
+    for field in spec_template:
+        if not isinstance(field, dict):
+            return False, "규격 템플릿 항목 형식이 올바르지 않습니다."
+        key = field.get("key")
+        if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", key):
+            return False, "규격 항목 key는 영문, 숫자, 밑줄, 하이픈만 사용할 수 있습니다. (1~64자)"
+        for field_name in ("label", "group"):
+            field_value = field.get(field_name, "")
+            if not isinstance(field_value, str) or len(field_value) > 120:
+                return False, "규격 항목 label/group 값이 올바르지 않습니다."
+        maxlen = field.get("maxlen", 200)
+        if not isinstance(maxlen, int) or isinstance(maxlen, bool) or not 1 <= maxlen <= 2000:
+            return False, "규격 항목 maxlen은 1~2000 사이의 정수여야 합니다."
+
     cats = read_product_categories()
     # Check duplicate name
     if any(c["name"].lower() == name.lower() and c["id"] != cat_id for c in cats):
