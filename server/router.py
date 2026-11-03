@@ -1200,7 +1200,7 @@ def _mask_product_prices(value):
         masked = {}
         for key, item in value.items():
             normalized = str(key).replace("_", "").lower()
-            if normalized in ("price", "unitprice"):
+            if normalized.endswith("price"):
                 masked[key] = 0
             else:
                 masked[key] = _mask_product_prices(item)
