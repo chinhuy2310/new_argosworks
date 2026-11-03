@@ -223,7 +223,12 @@ def handle_schedule_update(handler, raw_body, ip):
         is_admin = bool(role == "admin" or session.get("is_admin") == 1)
         u_dept = (session.get("org") or session.get("dept_id") or "").strip().lower()
         t_dept = (target.get("ownerOrg") or "").strip().lower()
-        is_owner = (target.get("ownerKey") == owner_key or target.get("ownerName") == session.get("name"))
+        legacy_owner_match = (
+            not target.get("ownerKey")
+            and target.get("ownerName") == session.get("name")
+            and t_dept == u_dept
+        )
+        is_owner = (target.get("ownerKey") == owner_key or legacy_owner_match)
         is_dept_manager = (role == "manager" and bool(u_dept and t_dept and u_dept == t_dept))
 
         if not (is_owner or is_admin or is_dept_manager):
@@ -250,11 +255,14 @@ def handle_schedule_update(handler, raw_body, ip):
         if "participants" in payload:
             raw_participants = payload.get("participants") or []
             participants = []
+            # Keep the event creator as owner when a Manager edits participants.
+            owner_name = (target.get("ownerName") or session["name"]).strip()
+            owner_org = (target.get("ownerOrg") or session["org"]).strip()
             owner_entry = {
-                "name": session["name"],
-                "org": session["org"],
-                "email": session.get("email", ""),
-                "key": account_key(session["name"], session["org"]),
+                "name": owner_name,
+                "org": owner_org,
+                "email": (target.get("ownerEmail") or "").strip(),
+                "key": target.get("ownerKey") or account_key(owner_name, owner_org),
                 "isOwner": True
             }
             participants.append(owner_entry)
@@ -309,7 +317,12 @@ def handle_schedule_delete(handler, raw_body, ip):
         is_admin = bool(role == "admin" or session.get("is_admin") == 1)
         u_dept = (session.get("org") or session.get("dept_id") or "").strip().lower()
         t_dept = (target.get("ownerOrg") or "").strip().lower()
-        is_owner = (target.get("ownerKey") == owner_key or target.get("ownerName") == session.get("name"))
+        legacy_owner_match = (
+            not target.get("ownerKey")
+            and target.get("ownerName") == session.get("name")
+            and t_dept == u_dept
+        )
+        is_owner = (target.get("ownerKey") == owner_key or legacy_owner_match)
         is_dept_manager = (role == "manager" and bool(u_dept and t_dept and u_dept == t_dept))
 
         if not (is_owner or is_admin or is_dept_manager):
