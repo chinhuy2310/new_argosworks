@@ -420,7 +420,17 @@ def delete_record_attachment(record_id, attachment_id):
     rec_dir = safe_join(ATTACH_DIR, str(record_id))
     fpath = safe_join(rec_dir, fname) if rec_dir else None
     if not fpath:
-        return False, "첨부파일 경로가 올바르지 않아 삭제를 중단했습니다."
+        # Preserve the historical safe behavior for corrupt legacy metadata:
+        # remove only the DB reference and never touch a path outside the record
+        # directory. No filesystem path is opened or deleted in this branch.
+        log_line(
+            f"[Attachment] Invalid attachment path; deleting metadata only: record_id={record_id}, fname={fname}"
+        )
+        execute(
+            "DELETE FROM record_attachments WHERE id = ? AND record_id = ?",
+            (attachment_id, record_id)
+        )
+        return True, None
 
     quarantine_path = None
     if os.path.isfile(fpath):
