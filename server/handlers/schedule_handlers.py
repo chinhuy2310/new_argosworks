@@ -257,7 +257,7 @@ def handle_schedule_update(handler, raw_body, ip):
             participants = []
             # Keep the event creator as owner when a Manager edits participants.
             owner_name = (target.get("ownerName") or session["name"]).strip()
-            owner_org = (target.get("ownerOrg") or session["org"]).strip()
+            owner_org = (target.get("ownerOrg") or target.get("org") or session["org"]).strip()
             owner_entry = {
                 "name": owner_name,
                 "org": owner_org,
