@@ -797,6 +797,11 @@ def _schedule_event_matches(user_or_session, event, user_dept_map, user_name, us
 
     # Cross-department personal access must use an unambiguous identity.
     user_email = (user_or_session.get("email") or "").strip().lower()
+    user_id = user_or_session.get("id") or user_or_session.get("user_id")
+    event_owner_id = event.get("ownerId")
+    if user_id not in (None, "") and event_owner_id not in (None, ""):
+        if str(user_id) == str(event_owner_id):
+            return True
     user_key = account_key(user_name, user_dept) if user_name and user_dept else ""
     owner_key = (event.get("ownerKey") or "").strip()
     owner_email = (event.get("ownerEmail") or "").strip().lower()

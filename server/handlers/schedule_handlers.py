@@ -228,7 +228,13 @@ def handle_schedule_update(handler, raw_body, ip):
             and target.get("ownerName") == session.get("name")
             and t_dept == u_dept
         )
-        is_owner = (target.get("ownerKey") == owner_key or legacy_owner_match)
+        session_uid = session.get("id") or session.get("user_id")
+        target_uid = target.get("ownerId")
+        if target_uid not in (None, "") and session_uid not in (None, ""):
+            is_owner = str(target_uid) == str(session_uid)
+        else:
+            # Legacy events without owner_id retain the old name+department key.
+            is_owner = (target.get("ownerKey") == owner_key or legacy_owner_match)
         is_dept_manager = (role == "manager" and bool(u_dept and t_dept and u_dept == t_dept))
 
         if not (is_owner or is_admin or is_dept_manager):
@@ -322,7 +328,13 @@ def handle_schedule_delete(handler, raw_body, ip):
             and target.get("ownerName") == session.get("name")
             and t_dept == u_dept
         )
-        is_owner = (target.get("ownerKey") == owner_key or legacy_owner_match)
+        session_uid = session.get("id") or session.get("user_id")
+        target_uid = target.get("ownerId")
+        if target_uid not in (None, "") and session_uid not in (None, ""):
+            is_owner = str(target_uid) == str(session_uid)
+        else:
+            # Legacy events without owner_id retain the old name+department key.
+            is_owner = (target.get("ownerKey") == owner_key or legacy_owner_match)
         is_dept_manager = (role == "manager" and bool(u_dept and t_dept and u_dept == t_dept))
 
         if not (is_owner or is_admin or is_dept_manager):
