@@ -12,6 +12,7 @@
 import os
 import sys
 import unittest
+import json
 from unittest import mock
 
 # Ensure server module is in sys.path
@@ -187,13 +188,23 @@ class TestAiChatRbacHardening(unittest.TestCase):
             self.user_dev_member, "record",
             {"id": 999901, "dept_id": "dev", "is_private": False, "assignee_name": "park.sj"}, ctx_dev
         ))
-        # Jira 문서: 타 부서 차단 / 같은 부서 허용
-        self.assertFalse(can_view_vector_doc(
-            self.user_dev_member, "jira", {"org": "sales", "assignee": "강동원"}, ctx_dev
-        ))
-        self.assertTrue(can_view_vector_doc(
-            self.user_dev_member, "jira", {"org": "dev", "assignee": "이도현"}, ctx_dev
-        ))
+        # Jira 문서 권한은 stale vector metadata가 아니라 현재 DB cache row로 판정한다.
+        with mock.patch("db.get_one", return_value={"raw_json": json.dumps({
+            "dept_id": "sales", "org": "sales", "assignee": "강동원", "is_private": True
+        })}):
+            self.assertFalse(can_view_vector_doc(
+                self.user_dev_member, "jira", {"cardCode": "SALES-901", "org": "dev"}, ctx_dev
+            ))
+        with mock.patch("db.get_one", return_value={"raw_json": json.dumps({
+            "dept_id": "dev", "org": "dev", "assignee": "이도현", "is_private": False
+        })}):
+            self.assertTrue(can_view_vector_doc(
+                self.user_dev_member, "jira", {"cardCode": "DEV-901", "org": "sales"}, ctx_dev
+            ))
+        with mock.patch("db.get_one", return_value=None):
+            self.assertFalse(can_view_vector_doc(
+                self.user_dev_member, "jira", {"cardCode": "DELETED-ISSUE", "org": "dev"}, ctx_dev
+            ))
         # 일정 문서: 타 부서 차단 / 같은 부서 허용
         self.assertFalse(can_view_vector_doc(
             self.user_dev_member, "schedule",
