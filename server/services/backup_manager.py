@@ -464,7 +464,10 @@ def restore_backup(backup_filename):
             except OSError:
                 pass
             if isinstance(safety_error, FileNotFoundError):
-                raise
+                raise FileNotFoundError(
+                    "PostgreSQL 안전 백업 검증 도구(pg_restore)가 시스템에 설치되어 있지 않습니다. "
+                    "Dockerfile 또는 호스트에 postgresql-client 패키지를 설치해주세요."
+                ) from safety_error
             raise RuntimeError(
                 f"안전 스냅샷을 검증하지 못해 데이터 복원을 중단했습니다: {safety_error}"
             ) from safety_error
