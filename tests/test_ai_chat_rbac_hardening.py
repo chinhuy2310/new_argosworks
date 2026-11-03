@@ -185,7 +185,7 @@ class TestAiChatRbacHardening(unittest.TestCase):
         # 같은 부서 공개 레코드
         self.assertTrue(can_view_vector_doc(
             self.user_dev_member, "record",
-            {"dept_id": "dev", "is_private": False, "assignee_name": "park.sj"}, ctx_dev
+            {"id": 999901, "dept_id": "dev", "is_private": False, "assignee_name": "park.sj"}, ctx_dev
         ))
         # Jira 문서: 타 부서 차단 / 같은 부서 허용
         self.assertFalse(can_view_vector_doc(
