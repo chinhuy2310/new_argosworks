@@ -124,75 +124,120 @@ def update_backup_config(new_dir):
 
 def import_backup_file(file_bytes, original_filename, note="외부 업로드 백업"):
     """
-    사용자가 로컬 PC/외부 드라이브에서 업로드한 백업 파일(.tar.gz, .db.gz 또는 .db)을 검증하고 
-    현재 백업 디렉토리에 정식 백업본으로 안전하게 등록한다.
+    Validate and register a user-uploaded SQLite or PostgreSQL backup archive.
+    PostgreSQL archives are checked with pg_restore --list; they are never
+    silently interpreted as SQLite files.
     """
     with _backup_lock:
         bdir = _ensure_backup_dir()
         safe_name = os.path.basename(original_filename).replace(" ", "_")
-        
+
         is_tar = safe_name.endswith(".tar.gz")
         is_gz = safe_name.endswith(".db.gz")
         is_raw_db = safe_name.endswith(".db")
-
         if not (is_tar or is_gz or is_raw_db):
             raise ValueError("지원하지 않는 백업 파일 형식입니다. (.tar.gz, .db.gz 또는 .db 파일만 가능합니다)")
 
-        if is_raw_db:
-            final_name = safe_name + ".gz"
-        else:
-            final_name = safe_name
-
+        final_name = safe_name + ".gz" if is_raw_db else safe_name
         dest_path = os.path.join(bdir, final_name)
         if os.path.exists(dest_path):
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             final_name = f"imported_{ts}_{final_name}"
             dest_path = os.path.join(bdir, final_name)
 
-        # 1. 파일 저장
         if is_raw_db:
-            with gzip.open(dest_path, "wb", compresslevel=6) as f_out:
-                f_out.write(file_bytes)
+            with gzip.open(dest_path, "wb", compresslevel=6) as output_file:
+                output_file.write(file_bytes)
         else:
-            with open(dest_path, "wb") as f_out:
-                f_out.write(file_bytes)
+            with open(dest_path, "wb") as output_file:
+                output_file.write(file_bytes)
 
-        # 2. SQLite 무결성 검사
-        chk_tmp = os.path.join(bdir, f"chk_import_{datetime.now().strftime('%H%M%S')}.tmp.db")
+        check_suffix = ".dump" if ENGINE == "postgres" else ".tmp.db"
+        chk_tmp = os.path.join(bdir, f"chk_import_{datetime.now().strftime('%H%M%S_%f')}{check_suffix}")
         try:
+            detected_engine = "sqlite"
             if is_tar:
-                with tarfile.open(dest_path, "r:gz") as tar:
-                    db_member = None
-                    for m in tar.getmembers():
-                        if m.name.endswith(".db") or m.name.endswith(".sqlite"):
-                            db_member = m
-                            break
-                    if not db_member:
-                        raise RuntimeError("백업 아카이브(.tar.gz) 내에 유효한 SQLite 데이터베이스가 없습니다.")
-                    with open(chk_tmp, "wb") as f_out:
-                        extracted = tar.extractfile(db_member)
-                        shutil.copyfileobj(extracted, f_out)
-            else:
-                with gzip.open(dest_path, "rb") as f_in, open(chk_tmp, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out)
+                with tarfile.open(dest_path, "r:gz") as archive:
+                    members = [m for m in archive.getmembers() if m.isfile()]
+                    dump_members = [m for m in members if os.path.basename(m.name) == "argos.dump" or m.name.endswith(".dump")]
+                    sqlite_members = [m for m in members if os.path.basename(m.name) in ("argos.db", "argos.sqlite") or m.name.endswith(".sqlite")]
+                    if dump_members and sqlite_members:
+                        raise RuntimeError("백업 아카이브에 PostgreSQL과 SQLite 데이터베이스가 함께 포함되어 있습니다.")
+                    if dump_members:
+                        db_member = dump_members[0]
+                        detected_engine = "postgres"
+                    elif sqlite_members:
+                        db_member = sqlite_members[0]
+                        detected_engine = "sqlite"
+                    else:
+                        raise RuntimeError("백업 아카이브에 검증 가능한 데이터베이스 파일이 없습니다.")
 
-            conn = sqlite3.connect(chk_tmp)
-            cur = conn.cursor()
-            cur.execute("PRAGMA integrity_check;")
-            res = cur.fetchone()
-            conn.close()
-            if not res or res[0] != "ok":
+                    manifest_member = next(
+                        (m for m in members if os.path.basename(m.name) == "backup_manifest.json"),
+                        None
+                    )
+                    if manifest_member:
+                        manifest_file = archive.extractfile(manifest_member)
+                        if manifest_file:
+                            try:
+                                embedded_manifest = json.loads(manifest_file.read().decode("utf-8"))
+                                declared_engine = embedded_manifest.get("database_engine")
+                                if declared_engine and declared_engine != detected_engine:
+                                    raise RuntimeError("백업 Manifest의 DB 엔진 정보가 실제 파일과 일치하지 않습니다.")
+                            except json.JSONDecodeError as manifest_error:
+                                raise RuntimeError("백업 Manifest JSON이 손상되었습니다.") from manifest_error
+
+                    extracted = archive.extractfile(db_member)
+                    if extracted is None:
+                        raise RuntimeError("백업 데이터베이스 파일을 읽을 수 없습니다.")
+                    with open(chk_tmp, "wb") as output_file:
+                        shutil.copyfileobj(extracted, output_file)
+            else:
+                with gzip.open(dest_path, "rb") as source_file, open(chk_tmp, "wb") as output_file:
+                    shutil.copyfileobj(source_file, output_file)
+
+            if detected_engine != ENGINE:
+                raise ValueError(
+                    f"백업 DB 엔진({detected_engine})이 현재 서버 엔진({ENGINE})과 다릅니다. "
+                    "동일한 DB 엔진의 서버에서 가져오세요."
+                )
+
+            if detected_engine == "postgres":
+                try:
+                    verify = subprocess.run(
+                        [_find_pg_tool("pg_restore"), "--list", chk_tmp],
+                        capture_output=True,
+                        text=True
+                    )
+                except FileNotFoundError as tool_error:
+                    raise FileNotFoundError(
+                        "PostgreSQL 백업 검증 도구(pg_restore)가 없습니다. postgresql-client 패키지를 설치해주세요."
+                    ) from tool_error
+                if verify.returncode != 0:
+                    raise RuntimeError(f"가져온 PostgreSQL 백업 검증 실패: {verify.stderr}")
+            else:
+                conn = sqlite3.connect(chk_tmp)
+                try:
+                    result = conn.execute("PRAGMA integrity_check;").fetchone()
+                finally:
+                    conn.close()
+                if not result or result[0] != "ok":
+                    raise RuntimeError(f"가져온 SQLite 백업 무결성 검증 실패: {result}")
+
+        except Exception:
+            try:
                 if os.path.exists(dest_path):
                     os.remove(dest_path)
-                raise RuntimeError(f"가져온 백업 파일의 CSDL 무결성 검증 실패: {res}")
+            except OSError:
+                pass
+            raise
         finally:
-            if os.path.exists(chk_tmp):
-                try:
+            try:
+                if os.path.exists(chk_tmp):
                     os.remove(chk_tmp)
-                except Exception:
-                    pass
+            except OSError:
+                pass
 
-        # 3. Manifest 등록
         now = datetime.now()
         manifest = _read_manifest()
         manifest[final_name] = {
@@ -201,7 +246,8 @@ def import_backup_file(file_bytes, original_filename, note="외부 업로드 백
             "type": "imported",
             "note": note,
             "gz_size": os.path.getsize(dest_path),
-            "format": "tar.gz" if is_tar else "db.gz"
+            "format": "tar.gz" if is_tar else "db.gz",
+            "database_engine": ENGINE
         }
         _write_manifest(manifest)
 
@@ -283,6 +329,7 @@ def create_backup(note="수동 백업", backup_type="manual"):
             meta_data = {
                 "version": "2.0",
                 "app": "ARGOS WORKS",
+                "database_engine": "postgres" if is_postgres else "sqlite",
                 "created_at": now.isoformat(),
                 "type": backup_type,
                 "note": note,
