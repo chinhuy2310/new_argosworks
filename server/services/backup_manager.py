@@ -157,34 +157,50 @@ def import_backup_file(file_bytes, original_filename, note="외부 업로드 백
             with open(dest_path, "wb") as f_out:
                 f_out.write(file_bytes)
 
-        # 2. SQLite 무결성 검사
+        # 2. SQLite / PostgreSQL 무결성 검사
         chk_tmp = os.path.join(bdir, f"chk_import_{datetime.now().strftime('%H%M%S')}.tmp.db")
         try:
             if is_tar:
                 with tarfile.open(dest_path, "r:gz") as tar:
                     db_member = None
+                    dump_member = None
                     for m in tar.getmembers():
                         if m.name.endswith(".db") or m.name.endswith(".sqlite"):
                             db_member = m
-                            break
-                    if not db_member:
-                        raise RuntimeError("백업 아카이브(.tar.gz) 내에 유효한 SQLite 데이터베이스가 없습니다.")
-                    with open(chk_tmp, "wb") as f_out:
-                        extracted = tar.extractfile(db_member)
-                        shutil.copyfileobj(extracted, f_out)
+                        elif m.name == "argos.dump" or m.name.endswith(".dump"):
+                            dump_member = m
+
+                    if not db_member and not dump_member:
+                        raise RuntimeError("백업 아카이브(.tar.gz) 내에 유효한 데이터베이스 파일(.db, .dump)이 없습니다.")
+
+                    if dump_member and not db_member:
+                        # PostgreSQL backup archive: .dump file validated
+                        pass
+                    elif db_member:
+                        with open(chk_tmp, "wb") as f_out:
+                            extracted = tar.extractfile(db_member)
+                            shutil.copyfileobj(extracted, f_out)
             else:
                 with gzip.open(dest_path, "rb") as f_in, open(chk_tmp, "wb") as f_out:
                     shutil.copyfileobj(f_in, f_out)
 
-            conn = sqlite3.connect(chk_tmp)
-            cur = conn.cursor()
-            cur.execute("PRAGMA integrity_check;")
-            res = cur.fetchone()
-            conn.close()
-            if not res or res[0] != "ok":
-                if os.path.exists(dest_path):
-                    os.remove(dest_path)
-                raise RuntimeError(f"가져온 백업 파일의 CSDL 무결성 검증 실패: {res}")
+            if os.path.exists(chk_tmp):
+                conn = sqlite3.connect(chk_tmp)
+                cur = conn.cursor()
+                cur.execute("PRAGMA integrity_check;")
+                res = cur.fetchone()
+                if not res or res[0] != "ok":
+                    conn.close()
+                    if os.path.exists(dest_path):
+                        os.remove(dest_path)
+                    raise RuntimeError(f"가져온 백업 파일의 CSDL 무결성 검증 실패: {res}")
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users', 'records', 'schema_migrations');")
+                tables = {row[0] for row in cur.fetchall()}
+                conn.close()
+                if not tables.intersection({'users', 'records', 'schema_migrations'}):
+                    if os.path.exists(dest_path):
+                        os.remove(dest_path)
+                    raise RuntimeError("가져온 백업 파일에 ARGOS WORKS 필수 테이블이 존재하지 않습니다 (빈 데이터베이스).")
         finally:
             if os.path.exists(chk_tmp):
                 try:
@@ -411,8 +427,11 @@ def restore_backup(backup_filename):
             if is_postgres:
                 safety_tmp = os.path.join(bdir, f"{safety_name}.dump")
                 try:
-                    res = subprocess.run([_find_pg_tool("pg_dump"), "-Fc", "-d", DATABASE_URL, "-f", safety_tmp], capture_output=True)
-                    if res.returncode == 0:
+                    tool = _find_pg_tool("pg_dump")
+                    res = subprocess.run([tool, "-Fc", "-d", DATABASE_URL, "-f", safety_tmp], capture_output=True, text=True)
+                    if res.returncode != 0:
+                        logger.warning(f"사전 안전 백업 pg_dump 실패 (code {res.returncode}): {res.stderr}")
+                    elif os.path.exists(safety_tmp):
                         with tarfile.open(safety_path, "w:gz", compresslevel=6) as star:
                             star.add(safety_tmp, arcname="argos.dump")
                             if os.path.exists(ATTACH_DIR):
@@ -487,8 +506,8 @@ def restore_backup(backup_filename):
                         "PostgreSQL 복원 도구(pg_restore)가 시스템에 설치되어 있지 않습니다. "
                         "Dockerfile 또는 호스트에 postgresql-client 패키지를 설치해주세요."
                     )
-                # pg_restore may return 1 on warnings (e.g. notices), returncode > 1 is failure
-                if res.returncode > 1:
+                # pg_restore exit code: 0 is success, non-zero is failure
+                if res.returncode != 0:
                     raise RuntimeError(f"PostgreSQL pg_restore 복원 실패 (code {res.returncode}): {res.stderr}")
             else:
                 # SQLite integrity check & restore

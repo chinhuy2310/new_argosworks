@@ -155,6 +155,7 @@ def upsert_jira_records(records):
         transaction(_do_upsert)
     except Exception as e:
         log_line("Error upserting Jira records to SQLite:", e)
+        raise
 
 
 def load_all_jira_from_db():
@@ -220,6 +221,7 @@ def upsert_jira_activities(activities):
         transaction(_do_upsert_act)
     except Exception as e:
         log_line("Error upserting Jira activities to SQLite:", e)
+        raise
 
 
 def load_all_jira_activities_from_db():

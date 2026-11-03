@@ -25,13 +25,18 @@ def append_activity(act):
         return
     if "created_at" not in act:
         act["created_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    act_id = act.get("id")
+    if not act_id:
+        import uuid
+        act_id = f"act_{uuid.uuid4().hex}"
+        act["id"] = act_id
     execute(
         """INSERT OR IGNORE INTO activities(id, issue_key, action_type, action_detail,
            author_name, author_email, summary, status, priority,
            issue_type, assignee_name, assignee_dept, source, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            act.get("id", ""),
+            act_id,
             act.get("issue_key", ""),
             act.get("action_type", ""),
             act.get("action_detail", ""),

@@ -1206,7 +1206,19 @@ def handle_get_products(handler, parsed, ip):
     filtered = search_products(products, q)
     from services.auth import can_view_pim_price
     if not can_view_pim_price(session):
-        filtered = [dict(p, price=0, priceHidden=True) for p in filtered]
+        masked_list = []
+        for p in filtered:
+            item = dict(p, price=0, priceHidden=True)
+            if item.get("procurement") and isinstance(item["procurement"], dict):
+                proc = dict(item["procurement"])
+                if "price" in proc:
+                    proc["price"] = 0
+                if "unitPrice" in proc:
+                    proc["unitPrice"] = 0
+                proc["priceHidden"] = True
+                item["procurement"] = proc
+            masked_list.append(item)
+        filtered = masked_list
     handler._send_json(200, {"ok": True, "products": filtered, "total": len(filtered)})
 
 def handle_get_products_attachment(handler, parsed, ip):
@@ -1384,21 +1396,35 @@ def handle_get_jira_attachment(handler, parsed, ip):
         with urllib.request.urlopen(req, timeout=15) as resp:
             content_type = resp.headers.get("Content-Type") or "application/octet-stream"
             content_disposition = resp.headers.get("Content-Disposition") or ""
-            data = resp.read()
+            clen = resp.headers.get("Content-Length")
+            if clen and int(clen) > 50 * 1024 * 1024:
+                handler._send_json(413, {"ok": False, "error": "첨부파일이 너무 큽니다 (최대 50MB)."})
+                return
+            data = resp.read(50 * 1024 * 1024 + 1)
+            if len(data) > 50 * 1024 * 1024:
+                handler._send_json(413, {"ok": False, "error": "첨부파일이 너무 큽니다 (최대 50MB)."})
+                return
 
         qs = parse_qs(parsed.query)
         preview = qs.get("preview", ["0"])[0] == "1"
 
-        if preview or content_type.startswith(("image/", "text/", "application/pdf")):
-            fname_match = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', content_disposition)
-            fname = fname_match.group(1) if fname_match else f"attachment_{attach_id}"
+        fname_match = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', content_disposition)
+        fname = fname_match.group(1) if fname_match else f"attachment_{attach_id}"
+
+        # Only allow safe media types inline (block HTML/SVG/XML inline to prevent Stored XSS)
+        base_ctype = content_type.split(";")[0].strip().lower()
+        SAFE_INLINE_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "application/pdf"}
+        if (preview or base_ctype in SAFE_INLINE_TYPES) and base_ctype in SAFE_INLINE_TYPES:
             content_disposition = f"inline; filename*=UTF-8''{urllib.parse.quote(fname)}"
+        else:
+            content_disposition = f"attachment; filename*=UTF-8''{urllib.parse.quote(fname)}"
 
         handler.send_response(200)
         handler.send_header("Content-Type", content_type)
         handler.send_header("Content-Length", str(len(data)))
-        if content_disposition:
-            handler.send_header("Content-Disposition", content_disposition)
+        handler.send_header("Content-Disposition", content_disposition)
+        handler.send_header("X-Content-Type-Options", "nosniff")
+        handler.send_header("Content-Security-Policy", "sandbox; default-src 'none'")
         handler.send_header("Access-Control-Allow-Origin", "*")
         handler.end_headers()
         handler.wfile.write(data)
@@ -1486,6 +1512,15 @@ def handle_get_local_attachment(handler, parsed, ip):
     # 파일이 저장된 디렉터리는 항상 레코드의 실제 ID 기준이다.
     # (URL 세그먼트가 카드 코드일 수 있으므로 record_id 문자열을 그대로 쓰면 404/혼동 발생)
     rec_attach_dir = os.path.join(ATTACH_DIR, str(rec["id"]))
+
+    # Defense in depth: Verify the file is registered in record_attachments for this record
+    from db import get_one
+    has_att_records = get_one("SELECT 1 FROM record_attachments WHERE record_id = ? LIMIT 1", (rec["id"],))
+    if has_att_records:
+        att_row = get_one("SELECT 1 FROM record_attachments WHERE record_id = ? AND filename = ? LIMIT 1", (rec["id"], os.path.basename(filename)))
+        if not att_row:
+            handler._send_json(404, {"ok": False, "error": "첨부파일을 찾을 수 없습니다."})
+            return
 
     # Strict Directory Traversal Defense: the resolved path must stay inside the
     # record's attachment directory (safe_join applies realpath + commonpath).
@@ -1602,15 +1637,35 @@ def handle_post_issue_comment(handler, raw_body, ip):
         handler._send_json(200, {"ok": True, "issue_key": issue_key, "comment": comment})
         return
 
+    from db import query
+    iss_info = query("SELECT summary, status_name, issue_type, assignee_name, dept_id FROM jira_issues WHERE UPPER(jira_key) = UPPER(?)", (issue_key,))
+    jira_rec = iss_info[0] if iss_info else None
+    if not jira_rec and handler.cfg:
+        try:
+            from services.jira_client import get_cached_jira_records
+            for r in (get_cached_jira_records(handler.cfg).get("records") or []):
+                jk = ((r.get("jira") or {}).get("key") or "").strip().upper()
+                if issue_key.upper() == jk:
+                    jira_rec = {"summary": r.get("title"), "status_name": r.get("status"), "issue_type": r.get("category"), "assignee_name": r.get("assignee"), "dept_id": r.get("org") or r.get("dept_id")}
+                    break
+        except Exception:
+            pass
+
+    if jira_rec:
+        from services.auth import can_view_record, is_admin_user
+        if not is_admin_user(session):
+            rec_like = {"dept_id": jira_rec.get("dept_id"), "assignee_name": jira_rec.get("assignee_name"), "is_private": 0}
+            if not can_view_record(session, rec_like):
+                handler._send_json(403, {"ok": False, "error": "해당 Jira 이슈에 댓글을 작성할 권한이 없습니다."})
+                return
+
     res, err = add_jira_comment(handler.cfg, issue_key, comment, author_name=session.get("name"))
     if err:
         handler._send_json(500, {"ok": False, "error": err})
         return
     try:
         from services.activity_store import append_activity
-        from db import query
-        iss_info = query("SELECT summary, status_name, issue_type, assignee_name, dept_id FROM jira_issues WHERE jira_key = ?", (issue_key,))
-        iss_row = iss_info[0] if iss_info else {}
+        iss_row = jira_rec or {}
         append_activity({
             "issue_key": issue_key,
             "action_type": "comment",
@@ -1710,6 +1765,29 @@ def handle_post_issue_transition(handler, raw_body, ip):
         handler._send_json(403, {"ok": False, "error": "조회 전용(Viewer) 권한의 사용자는 상태를 변경할 수 없습니다."})
         return
 
+    from db import query
+    iss_info = query("SELECT summary, issue_type, assignee_name, dept_id, status_name FROM jira_issues WHERE UPPER(jira_key) = UPPER(?)", (issue_key,))
+    jira_rec = iss_info[0] if iss_info else None
+    if not jira_rec and handler.cfg:
+        try:
+            from services.jira_client import get_cached_jira_records
+            for r in (get_cached_jira_records(handler.cfg).get("records") or []):
+                jk = ((r.get("jira") or {}).get("key") or "").strip().upper()
+                if issue_key.upper() == jk:
+                    jira_rec = {"summary": r.get("title"), "status_name": r.get("status"), "issue_type": r.get("category"), "assignee_name": r.get("assignee"), "dept_id": r.get("org") or r.get("dept_id")}
+                    break
+        except Exception:
+            pass
+
+    if jira_rec:
+        from services.auth import can_transition_status, is_admin_user
+        if not is_admin_user(session):
+            rec_like = {"dept_id": jira_rec.get("dept_id"), "assignee_name": jira_rec.get("assignee_name"), "status": jira_rec.get("status_name")}
+            can_trans, trans_err = can_transition_status(session, rec_like, status)
+            if not can_trans:
+                handler._send_json(403, {"ok": False, "error": trans_err or "해당 Jira 이슈의 상태를 변경할 권한이 없습니다."})
+                return
+
     ok, note = transition_jira_issue(handler.cfg, issue_key, status)
     if not ok:
         handler._send_json(400, {"ok": False, "error": note})
@@ -1718,9 +1796,7 @@ def handle_post_issue_transition(handler, raw_body, ip):
     # Log status transition activity to JARVIS activity store under current logged-in user
     try:
         from services.activity_store import append_activity
-        from db import query
-        iss_info = query("SELECT summary, issue_type, assignee_name, dept_id FROM jira_issues WHERE jira_key = ?", (issue_key,))
-        iss_row = iss_info[0] if iss_info else {}
+        iss_row = jira_rec or {}
         append_activity({
             "id": f"jarvis_canvas_status_{issue_key}_{int(datetime.now().timestamp()*1000)}",
             "issue_key": issue_key,
@@ -1782,13 +1858,14 @@ def handle_post_issue_attachment(handler, raw_body, ip):
             handler._send_json(403, {"ok": False, "error": deny_err})
             return
 
-        from utils.file_ops import sanitize_filename, safe_join
+        from utils.file_ops import sanitize_filename, safe_join, unique_attachment_name
         from utils.image_optimizer import optimize_and_save_file
         record_attach_dir = os.path.join(ATTACH_DIR, str(local_rec["id"]))
         os.makedirs(record_attach_dir, exist_ok=True)
         uploaded_files = []
         for f in files:
             fname = sanitize_filename(f.get("filename") or "file")
+            fname = unique_attachment_name(record_attach_dir, fname)
             fdata = f.get("data") or b""
             fpath = safe_join(record_attach_dir, fname)
             if not fpath:
@@ -1840,6 +1917,28 @@ def handle_post_issue_attachment(handler, raw_body, ip):
         handler._send_json(403, {"ok": False, "error": "조회 전용(Viewer) 권한의 사용자는 첨부파일을 업로드할 수 없습니다."})
         return
 
+    from db import query
+    iss_info = query("SELECT summary, status_name, issue_type, assignee_name, dept_id FROM jira_issues WHERE UPPER(jira_key) = UPPER(?)", (issue_key,))
+    jira_rec = iss_info[0] if iss_info else None
+    if not jira_rec and handler.cfg:
+        try:
+            from services.jira_client import get_cached_jira_records
+            for r in (get_cached_jira_records(handler.cfg).get("records") or []):
+                jk = ((r.get("jira") or {}).get("key") or "").strip().upper()
+                if issue_key.upper() == jk:
+                    jira_rec = {"summary": r.get("title"), "status_name": r.get("status"), "issue_type": r.get("category"), "assignee_name": r.get("assignee"), "dept_id": r.get("org") or r.get("dept_id")}
+                    break
+        except Exception:
+            pass
+
+    if jira_rec:
+        from services.auth import can_modify_record, is_admin_user
+        if not is_admin_user(session):
+            rec_like = {"dept_id": jira_rec.get("dept_id"), "assignee_name": jira_rec.get("assignee_name")}
+            if not can_modify_record(session, rec_like):
+                handler._send_json(403, {"ok": False, "error": "해당 Jira 이슈에 첨부파일을 업로드할 권한이 없습니다."})
+                return
+
     uploaded_files = []
     errors = []
     for f in files:
@@ -1865,9 +1964,7 @@ def handle_post_issue_attachment(handler, raw_body, ip):
     if uploaded_files:
         try:
             from services.activity_store import append_activity
-            from db import query
-            iss_info = query("SELECT summary, status_name, issue_type, assignee_name, dept_id FROM jira_issues WHERE jira_key = ?", (issue_key,))
-            iss_row = iss_info[0] if iss_info else {}
+            iss_row = jira_rec or {}
             append_activity({
                 "id": f"jarvis_canvas_att_{issue_key}_{int(datetime.now().timestamp()*1000)}",
                 "issue_key": issue_key,

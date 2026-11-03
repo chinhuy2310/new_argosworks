@@ -260,16 +260,21 @@ def handle_get_export_records_excel(handler, parsed, ip):
         cell.border = thin_border
     ws.row_dimensions[1].height = 26
 
+    def _sanitize_cell(val):
+        if isinstance(val, str) and val.startswith(("=", "+", "-", "@", "\t", "\r")):
+            return "'" + val
+        return val
+
     for r in records:
-        code = r.get("cardCode") or (r.get("jira") or {}).get("key") or f"REC-{r.get('id', '')}"
-        title = r.get("title") or r.get("summary") or ""
-        cat = r.get("category") or ""
-        assignee = r.get("assignee_name") or r.get("assignee") or ""
-        dept = r.get("dept_id") or r.get("org") or ""
-        status = r.get("status") or "진행"
-        s_date = r.get("startDate") or r.get("start_date") or r.get("work_date") or ""
-        e_date = r.get("endDate") or r.get("end_date") or r.get("dueDate") or r.get("due_date") or ""
-        jira_k = (r.get("jira") or {}).get("key") or ""
+        code = _sanitize_cell(r.get("cardCode") or (r.get("jira") or {}).get("key") or f"REC-{r.get('id', '')}")
+        title = _sanitize_cell(r.get("title") or r.get("summary") or "")
+        cat = _sanitize_cell(r.get("category") or "")
+        assignee = _sanitize_cell(r.get("assignee_name") or r.get("assignee") or "")
+        dept = _sanitize_cell(r.get("dept_id") or r.get("org") or "")
+        status = _sanitize_cell(r.get("status") or "진행")
+        s_date = _sanitize_cell(r.get("startDate") or r.get("start_date") or r.get("work_date") or "")
+        e_date = _sanitize_cell(r.get("endDate") or r.get("end_date") or r.get("dueDate") or r.get("due_date") or "")
+        jira_k = _sanitize_cell((r.get("jira") or {}).get("key") or "")
 
         row_vals = [code, title, cat, assignee, dept, status, s_date, e_date, jira_k]
         ws.append(row_vals)

@@ -221,8 +221,15 @@ def test_append_record_atomic_transaction_rollback(tmp_db):
         "jira": {"key": "ARGOS-101", "status": "Open", "url": "https://jira.local/ARGOS-101"}
     }
 
-    # Must raise IntegrityError on attachment insert
-    with pytest.raises(sqlite3.IntegrityError):
+    # Must raise IntegrityError on attachment insert (sqlite3 or postgresql)
+    expected_errs = [sqlite3.IntegrityError]
+    try:
+        import psycopg2
+        expected_errs.extend([psycopg2.IntegrityError, psycopg2.DatabaseError])
+    except ImportError:
+        pass
+
+    with pytest.raises(tuple(expected_errs)):
         append_record(record_fail)
 
     # In atomic transaction, failure MUST roll back the entire record and attachments!
