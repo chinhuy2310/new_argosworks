@@ -10,6 +10,9 @@ def parse_multipart(body, boundary):
     if not boundary or len(boundary) > 200 or any(ch in boundary for ch in "\r\n"):
         raise ValueError("multipart boundary가 올바르지 않습니다.")
 
+    if not body:
+        return {}, []
+
     fields, files = {}, []
     boundary_bytes = ("--" + boundary).encode("utf-8")
     # A truncated HTTP body can still contain a syntactically plausible first
