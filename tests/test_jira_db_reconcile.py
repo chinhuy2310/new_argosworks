@@ -41,3 +41,10 @@ def test_empty_successful_full_sync_clears_jira_cache(tmp_db):
     assert upsert_jira_records([_jira_record("OLD-2")], replace_existing=True)
     assert upsert_jira_records([], replace_existing=True)
     assert not query("SELECT jira_key FROM jira_issues WHERE jira_key = 'OLD-2'")
+
+
+def test_malformed_full_sync_row_does_not_delete_existing_cache(tmp_db):
+    assert upsert_jira_records([_jira_record("KEEP-2")], replace_existing=True)
+    malformed = {"id": "", "title": "Issue without a stable Jira key"}
+    assert not upsert_jira_records([malformed], replace_existing=True)
+    assert query("SELECT jira_key FROM jira_issues WHERE jira_key = 'KEEP-2'")
