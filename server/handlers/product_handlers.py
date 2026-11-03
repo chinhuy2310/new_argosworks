@@ -161,18 +161,29 @@ def handle_product_attachment_upload(handler, raw_body, ip):
         os.makedirs(product_dir, exist_ok=True)
         attachments = product.setdefault("attachments", [])
         added = []
+        saved_paths = []
         from utils.image_optimizer import optimize_and_save_file
-        for f in files:
-            fname = unique_attachment_name(product_dir, f["filename"])
-            dest = safe_join(product_dir, fname)
-            if not dest:
-                handler._send_json(400, {"ok": False, "error": "잘못된 파일 이름입니다."})
-                return
-            fsize = optimize_and_save_file(f["data"], dest)
-            entry = {"name": fname, "size": fsize, "uploadedAt": datetime.now().isoformat()}
-            attachments.append(entry)
-            added.append(entry)
-        write_products(products)
+        try:
+            for f in files:
+                fname = unique_attachment_name(product_dir, f["filename"])
+                dest = safe_join(product_dir, fname)
+                if not dest:
+                    raise ValueError("잘못된 파일 이름입니다.")
+                fsize = optimize_and_save_file(f["data"], dest)
+                saved_paths.append(dest)
+                entry = {"name": fname, "size": fsize, "uploadedAt": datetime.now().isoformat()}
+                attachments.append(entry)
+                added.append(entry)
+            write_products(products)
+        except Exception:
+            # Roll back files written before a later file or metadata save failed.
+            for saved_path in saved_paths:
+                try:
+                    if os.path.isfile(saved_path):
+                        os.remove(saved_path)
+                except OSError:
+                    pass
+            raise
     access_log(ip, "product_attachment_upload", 200, "%s +%d" % (pid, len(added)))
     handler._send_json(200, {"ok": True, "product": product, "added": added})
 
