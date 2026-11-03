@@ -176,6 +176,37 @@ class TestEnterpriseSetupWizard(unittest.TestCase):
         self.assertEqual(handler.response_body["license"]["customer"], "Acme Enterprise")
         self.assertEqual(handler.response_body["license"]["seats"], 100)
 
+    def test_license_activation_failure_rolls_back_bootstrap_admin(self):
+        self.assertTrue(check_needs_setup())
+        handler = MockHTTPHandler()
+        trial_key = self._sign("Activation Failure Test", 25, "2099-12-31", ["canvas", "rag"])
+        setup_payload = {
+            "license_key": trial_key,
+            "company_name": "Retryable Setup Corp",
+            "admin": {
+                "username": "retryadmin",
+                "name": "Retry Administrator",
+                "email": "retry-admin@example.com",
+                "password": "RetrySecretPassword123!"
+            },
+            "admin_dept_id": "mgmt",
+            "departments": [
+                {"id": "mgmt", "name": "Management", "prefix": "MGMT", "color_index": 4}
+            ]
+        }
+
+        with unittest.mock.patch(
+            "services.license_manager.activate_license",
+            return_value=(False, "activation failed")
+        ):
+            handle_post_setup_complete(
+                handler, json.dumps(setup_payload).encode(), "127.0.0.1"
+            )
+
+        self.assertEqual(handler.status_code, 400)
+        self.assertIsNone(get_one("SELECT id FROM users WHERE username = 'retryadmin'"))
+        self.assertTrue(check_needs_setup())
+
     def test_complete_setup_flow(self):
         self.assertTrue(check_needs_setup())
 
