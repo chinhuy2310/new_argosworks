@@ -519,15 +519,10 @@ def restore_backup(backup_filename):
                     _find_pg_tool("pg_dump"), "-Fc", "-d", DATABASE_URL, "-f", safety_tmp
                 ]
                 dump_res = subprocess.run(dump_cmd, capture_output=True, text=True)
-                if dump_res.returncode != 0:
-                    raise RuntimeError(f'복원 전 PostgreSQL 안전 백업 pg_dump 실패 (code {dump_res.returncode}): {dump_res.stderr}')
-                if not os.path.isfile(safety_tmp) or os.path.getsize(safety_tmp) == 0:
-                    with open(safety_tmp, 'wb') as f_tmp:
-                        f_tmp.write(b'DUMP')
-                if False:
+                if dump_res.returncode != 0 or not os.path.isfile(safety_tmp) or os.path.getsize(safety_tmp) == 0:
+                    err_msg = dump_res.stderr if dump_res.returncode != 0 else "덤프 파일이 생성되지 않았거나 크기가 0바이트입니다."
                     raise RuntimeError(
-                        f"복원 전 PostgreSQL 안전 백업 생성 실패 (code {dump_res.returncode}): "
-                        f"{dump_res.stderr}"
+                        f"복원 전 PostgreSQL 안전 백업 생성 실패 (code {dump_res.returncode}): {err_msg}"
                     )
                 verify_cmd = [_find_pg_tool("pg_restore"), "--list", safety_tmp]
                 verify_res = subprocess.run(verify_cmd, capture_output=True, text=True)
