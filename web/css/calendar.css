@@ -1279,6 +1279,21 @@
 }
 
 /* ─── 5. Agenda View Styles (일정 목록) ─── */
+#schedAgendaPane.active {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+#schedAgendaPane::-webkit-scrollbar {
+  width: 6px;
+}
+#schedAgendaPane::-webkit-scrollbar-thumb {
+  background: var(--line-strong, #cbd5e1);
+  border-radius: 4px;
+}
+#schedAgendaPane::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-faint, #94a3b8);
+}
+
 .cal-agenda-container {
   display: flex;
   flex-direction: column;
@@ -1286,6 +1301,8 @@
   max-width: 900px;
   margin: 0 auto;
   width: 100%;
+  padding: 16px 20px 48px;
+  box-sizing: border-box;
 }
 .agenda-day-group {
   background: var(--surface);

@@ -481,6 +481,42 @@ def is_manager_or_admin(user_or_session):
     return role in ("admin", "manager")
 
 
+def _is_shared_identity_token(token, memo=None):
+    """True when two or more ACTIVE accounts use ``token`` as display name or username.
+
+    Name-only matching (records without assignee_id/email, Jira records, participant
+    lists) cannot tell such accounts apart, so it must not grant cross-department
+    access. The comparison is done in Python with the same str.lower() normalisation
+    as can_view_record(): SQLite's LOWER() folds ASCII only and would miss non-ASCII
+    case variants (e.g. 'Đông' / 'ĐÔNG'). Accounts that cannot log in (disabled,
+    pending, rejected) cannot use the match and are not counted. Fails closed
+    (returns True) when the users table cannot be read.
+    """
+    clean = (token or "").strip().lower()
+    if not clean:
+        return True
+    if memo is not None and clean in memo:
+        return memo[clean]
+    try:
+        rows = query(
+            "SELECT name, username FROM users "
+            "WHERE COALESCE(disabled, 0) = 0 AND (status IS NULL OR status = 'active')"
+        )
+    except Exception:
+        return True
+    count = 0
+    for row in rows:
+        idents = {(row.get("name") or "").strip().lower(), (row.get("username") or "").strip().lower()}
+        if clean in idents:
+            count += 1
+            if count >= 2:
+                break
+    shared = count >= 2
+    if memo is not None:
+        memo[clean] = shared
+    return shared
+
+
 def can_view_record(user_or_session, record):
     """
     레코드 열람 권한 판정:
@@ -513,21 +549,37 @@ def can_view_record(user_or_session, record):
     is_same_dept = bool(u_dept and u_dept == rec_dept)
     is_private = bool(record.get("is_private"))
 
+    shared_memo = user_or_session.get("_shared_name_memo")
+    if not isinstance(shared_memo, dict):
+        shared_memo = None
+
+    def _name_match_ok(token):
+        # 같은 부서이거나 부서 미지정 레코드: 기존 규칙 그대로 허용
+        if is_same_dept or not rec_dept:
+            return True
+        # 비공개 레코드는 타 부서 이름 단독 매칭 불가 (기존 규칙)
+        if is_private:
+            return False
+        # 공개 레코드의 타 부서 이름 매칭: 그 이름을 쓰는 활성 계정이 2개 이상이면 누구인지
+        # 구분할 수 없으므로 거부한다 (동명이인 전원에게 열람/수정 권한이 생기는 것 방지)
+        return not _is_shared_identity_token(token, shared_memo)
+
     # 정확한 담당자/참여자 매칭:
     # 비공개 레코드(is_private=1)는 동명이인 타 부서 유출 방지를 위해 이름 단독 매칭 시 동일 부서 필수 검증
+    # 공개 레코드의 타 부서 이름 매칭은 그 이름이 활성 계정 2개 이상에서 쓰이지 않을 때만 허용
     is_involved = False
     if u_id and rec_assignee_id and str(u_id) == str(rec_assignee_id):
         is_involved = True
     elif u_email and rec_assignee_email and u_email == rec_assignee_email:
         is_involved = True
     elif u_name and u_name == rec_assignee:
-        if not is_private or is_same_dept or not rec_dept:
+        if _name_match_ok(u_name):
             is_involved = True
     elif u_username and u_username in parts:
-        if not is_private or is_same_dept or not rec_dept:
+        if _name_match_ok(u_username):
             is_involved = True
     elif u_name and u_name in parts:
-        if not is_private or is_same_dept or not rec_dept:
+        if _name_match_ok(u_name):
             is_involved = True
 
     is_same_dept = bool(u_dept and u_dept == rec_dept)
@@ -581,7 +633,11 @@ def can_modify_record(user_or_session, record):
             return True
     elif u_name and u_name == rec_assignee:
         is_private = bool(record.get("is_private"))
-        if not is_private or u_dept == rec_dept or not rec_dept:
+        if u_dept == rec_dept or not rec_dept:
+            return True
+        # 공개 레코드의 타 부서 이름 매칭은 이름이 모호하지 않을 때만 (can_view_record 와 동일 규칙)
+        memo = user_or_session.get("_shared_name_memo")
+        if not is_private and not _is_shared_identity_token(u_name, memo if isinstance(memo, dict) else None):
             return True
 
     return False
@@ -768,6 +824,8 @@ def visible_records(session, records=None):
     role = get_user_role(session)
     sess_cached = dict(session)
     sess_cached["role"] = role
+    # 이름 모호성 판정은 목록 필터링 1회 동안만 재사용한다 (레코드마다 users 를 다시 읽지 않음)
+    sess_cached["_shared_name_memo"] = {}
     return [r for r in records if can_view_record(sess_cached, r)]
 
 

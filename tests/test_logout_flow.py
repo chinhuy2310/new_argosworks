@@ -69,6 +69,12 @@ class TestLogoutRouting(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(match_get(path)[0], "notfound")
 
+    def test_logout_all_not_in_public_whitelist_to_enforce_csrf(self):
+        """Logout-all mutates all sessions and must NOT be in PUBLIC_API_WHITELIST so it requires CSRF."""
+        for path in LOGOUT_ALL_PATHS:
+            with self.subTest(path=path):
+                self.assertNotIn(path, PUBLIC_API_WHITELIST)
+
     def test_every_whitelisted_endpoint_is_routed(self):
         """A path listed in PUBLIC_API_WHITELIST that no router branch handles is a 404."""
         unrouted = [

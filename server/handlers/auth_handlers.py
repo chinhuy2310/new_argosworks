@@ -557,9 +557,9 @@ def handle_account_update_profile(handler, raw_body, ip):
                 # they are using.
                 cur.execute(
                     """DELETE FROM sessions
-                       WHERE (user_id = ? OR user_name = ? OR user_name = ?)
+                       WHERE (user_id = ? OR (user_id IS NULL AND user_dept_id = ? AND user_name IN (?, ?)))
                          AND token != ?""",
-                    (user_id, cur_name, new_name, token_hash or "")
+                    (user_id, cur_org, cur_name, new_name, token_hash or "")
                 )
                 revoked["sessions"] = cur.rowcount if (cur.rowcount or 0) > 0 else 0
         transaction(_update)
@@ -683,7 +683,8 @@ def handle_account_me(handler, parsed, ip):
 # ---- /api/account/csrf (GET) — CSRF 토큰 발급/갱신 ----
 def handle_account_csrf(handler, parsed, ip):
     token = handler._extract_token() if hasattr(handler, "_extract_token") else None
-    if not token:
+    from services.auth import get_session
+    if not token or not get_session(token):
         handler._send_json(401, {"ok": False, "error": "인증 세션이 없습니다."})
         return
     from middleware_security import generate_csrf_token

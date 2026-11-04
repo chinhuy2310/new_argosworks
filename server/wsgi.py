@@ -25,7 +25,7 @@ if SERVER_DIR not in sys.path:
 
 from config import load_config, ensure_dirs, ensure_seed_files, DATA_DIR, is_client_disconnect
 from db import init_db, close_connection
-from handler import ArgosHandler, JarvisHandler
+from handler import ArgosHandler, JarvisHandler, is_trusted_proxy_peer
 from services.auth import cleanup_expired_sessions
 from utils.logging import log_line
 
@@ -113,7 +113,7 @@ def init_app():
 
         # Backup scheduler
         from services.backup_manager import start_backup_scheduler
-        start_backup_scheduler(interval_hours=24)
+        start_backup_scheduler()
 
         # Vector sync if configured
         from services.vector_store import is_voyage_configured, sync_all_vectors
@@ -202,8 +202,11 @@ class ArgosWSGIHandler(ArgosHandler):
             return True
         if self.environ.get("HTTPS") in ("on", "1"):
             return True
+        # Same rule as ArgosHandler._is_secure: a client talking to the server
+        # directly must not be able to force Secure cookies onto plain HTTP by
+        # sending X-Forwarded-Proto itself — only a TRUSTED_PROXIES peer may.
         proto = (self.headers.get("X-Forwarded-Proto") or "").lower()
-        if proto == "https":
+        if proto == "https" and is_trusted_proxy_peer(self.client_address[0]):
             return True
         return False
 

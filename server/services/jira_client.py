@@ -422,7 +422,7 @@ def jira_ongoing_records_for(cfg, name, org, email=None):
         })
     return out
 
-def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None):
+def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None, return_complete_flag=False):
     """config.json의 project_map에 연결된 모든 Jira 프로젝트에서 실제로 등록되어 있는
     이슈를 그대로 가져와, JARVIS 대시보드가 쓰는 '기록' 형태로 변환해 돌려준다.
 
@@ -439,10 +439,10 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None)
         부분 결과가 낫다)."""
     j = cfg.get("jira", {})
     if not j.get("enabled") or not j.get("api_token") or not j.get("email"):
-        return [], []
+        return ([], [], True) if return_complete_flag else ([], [])
     keys = jira_project_keys(cfg)
     if not keys:
-        return [], []
+        return ([], [], True) if return_complete_flag else ([], [])
 
     base_url = j["base_url"].rstrip("/")
     if since_updated:
@@ -479,9 +479,11 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None)
             except Exception as e2:
                 if first_page:
                     log_line("Jira 이슈 목록 조회 실패(이전 캐시 유지):", e, e2)
-                    return None, None
-                log_line("Jira 이슈 목록 추가 페이지 조회 실패(그때까지 받은 %d건만 사용):" % len(all_issues), e)
-                break
+                    return (None, None, False) if return_complete_flag else (None, None)
+                # A partial page set is not a complete snapshot. Returning it as
+                # success could make full-sync reconciliation delete valid issues.
+                log_line("Jira 이슈 목록 추가 페이지 조회 실패 — 이전 캐시를 유지합니다:", e, e2)
+                return (None, None, False) if return_complete_flag else (None, None)
         first_page = False
         issues = data.get("issues", []) or []
         all_issues.extend(issues)
@@ -495,7 +497,7 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None)
         auth_ok, auth_err = _verify_jira_auth(j)
         if not auth_ok:
             log_line("Jira 인증 확인 실패 — 이전 캐시를 유지합니다:", auth_err)
-            return None, None
+            return (None, None, False) if return_complete_flag else (None, None)
 
     out = []
     activities = []
@@ -743,7 +745,9 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None)
             })
 
     activities.sort(key=lambda a: a.get("created_at", ""), reverse=True)
-    return out, activities
+    has_more = bool(next_token and len(all_issues) >= max_results)
+    is_complete = not has_more
+    return (out, activities, is_complete) if return_complete_flag else (out, activities)
 
 def jira_fetch_project_categories(cfg, project_key):
     """해당 Jira 프로젝트("스페이스")에 실제로 설정되어 있는 이슈 타입 목록을 그대로
@@ -824,18 +828,28 @@ def sync_jira_cache(cfg, force_full=False):
     )
 
     last_sync = None if force_full else get_last_sync_time()
-    res = jira_search_issues(cfg, since_updated=last_sync)
-    if isinstance(res, tuple) and len(res) == 2:
-        records, activities = res
+    res = jira_search_issues(cfg, since_updated=last_sync, return_complete_flag=True)
+    is_complete = True
+    if isinstance(res, tuple):
+        if len(res) == 3:
+            records, activities, is_complete = res
+        elif len(res) == 2:
+            records, activities = res
+            is_complete = False
     else:
         records, activities = res, []
+        is_complete = False
     now = datetime.now().isoformat()
 
     # DB에 UPSERT 저장
     if records is not None:
+        full_sync = last_sync is None
+        can_reconcile = full_sync and is_complete
+        if not is_complete and full_sync:
+            log_line(f"[Jira] Full sync pagination limit reached ({len(records)} issues, has more pages); skipping reconciliation to prevent data loss.")
         try:
-            if records:
-                upsert_jira_records(records)
+            if records or full_sync:
+                upsert_jira_records(records, replace_existing=can_reconcile)
                 try:
                     from services.vector_store import trigger_async_vector_sync
                     trigger_async_vector_sync(cfg)
@@ -843,13 +857,18 @@ def sync_jira_cache(cfg, force_full=False):
                     pass
             if activities:
                 upsert_jira_activities(activities)
-            set_last_sync_time(now)
+            if is_complete:
+                set_last_sync_time(now)
+            else:
+                log_line("[Jira] 동기화 결과가 불완전하여(미완료 페이지 존재) last_sync_time 커서를 전진시키지 않습니다.")
+            all_records = load_all_jira_from_db()
+            all_activities = load_all_jira_activities_from_db()
         except Exception as e:
             log_line("Jira cache upsert failed; sync cursor not advanced:", e)
             with _jira_cache_lock:
                 _jira_cache["error"] = f"Jira 동기화 DB 저장 오류: {e}"
-        all_records = load_all_jira_from_db()
-        all_activities = load_all_jira_activities_from_db()
+            all_records = None
+            all_activities = None
     else:
         all_records = None
         all_activities = None
@@ -1843,6 +1862,92 @@ def get_jira_issue_by_key(cfg, issue_key):
     matched["canPushToJira"] = is_jira_ready and is_local_record and not has_jira_ticket
 
     return matched
+
+
+def fetch_remote_jira_issue(cfg, issue_key):
+    """Jira Cloud REST API에서 단일 이슈의 메타데이터(summary, status, issuetype, assignee, project)를 직접 조회한다."""
+    if not cfg:
+        return None
+    j = cfg.get("jira", {})
+    if not j.get("enabled") or not j.get("api_token") or not j.get("base_url"):
+        return None
+    clean_key = (issue_key or "").strip().upper()
+    if not clean_key or not re.match(r"^[A-Z0-9]+-\d+$", clean_key):
+        return None
+    base_url = j.get("base_url", "").rstrip("/")
+    url = f"{base_url}/rest/api/3/issue/{clean_key}?fields=summary,status,issuetype,assignee,project"
+    req = urllib.request.Request(url, headers=_jira_auth_header(j))
+    try:
+        with _urlopen(req, timeout=10, cfg=cfg) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            fields = data.get("fields") or {}
+            project = fields.get("project") or {}
+            project_key = (project.get("key") or "").upper()
+            dept_id = jira_dept_for_project_key(cfg, project_key) or ""
+            assignee_obj = fields.get("assignee") or {}
+            assignee_name = assignee_obj.get("displayName") or ""
+            assignee_email = assignee_obj.get("emailAddress") or ""
+            local_assignee = resolve_jira_to_local_name(cfg, assignee_name, assignee_email)
+            status_obj = fields.get("status") or {}
+            status_name = status_obj.get("name") or "대기"
+            itype_obj = fields.get("issuetype") or {}
+            itype_name = itype_obj.get("name") or "작업"
+            return {
+                "summary": fields.get("summary") or clean_key,
+                "status_name": status_name,
+                "issue_type": itype_name,
+                "assignee_name": local_assignee or assignee_name,
+                "assignee_email": assignee_email,
+                "dept_id": dept_id,
+                "project_key": project_key
+            }
+    except Exception as e:
+        log_line(f"fetch_remote_jira_issue 실패 ({clean_key}):", e)
+        return None
+
+
+def resolve_jira_record_for_auth(cfg, issue_key):
+    """이슈 키(Jira Key)에 대한 권한 검증용 메타데이터를 조회한다 (DB -> Cache -> Jira Cloud 순).
+    찾을 수 없는 경우 None을 반환하며 호출측은 반드시 fail-closed로 거부해야 한다.
+    """
+    clean_key = (issue_key or "").strip().upper()
+    if not clean_key:
+        return None
+
+    # 1. DB의 jira_issues 테이블
+    try:
+        from db import query
+        iss_info = query(
+            "SELECT summary, status_name, issue_type, assignee_name, dept_id FROM jira_issues WHERE UPPER(jira_key) = UPPER(?)",
+            (clean_key,)
+        )
+        if iss_info:
+            return iss_info[0]
+    except Exception:
+        pass
+
+    # 2. Jira 메모리/디스크 캐시
+    if cfg:
+        try:
+            for r in (get_cached_jira_records(cfg).get("records") or []):
+                jk = ((r.get("jira") or {}).get("key") or "").strip().upper()
+                if clean_key == jk:
+                    return {
+                        "summary": r.get("title"),
+                        "status_name": r.get("status"),
+                        "issue_type": r.get("category"),
+                        "assignee_name": r.get("assignee"),
+                        "dept_id": r.get("org") or r.get("dept_id")
+                    }
+        except Exception:
+            pass
+
+    # 3. Jira Cloud REST API 직접 조회
+    remote = fetch_remote_jira_issue(cfg, clean_key)
+    if remote:
+        return remote
+
+    return None
 
 
 

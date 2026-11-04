@@ -40,8 +40,6 @@ PUBLIC_API_WHITELIST = {
     "/api/auth/csrf",
     "/api/account/logout",
     "/api/auth/logout",
-    "/api/account/logout-all",
-    "/api/auth/logout-all",
     "/api/account/me",
 
     # Public Workspace UI Branding
@@ -304,16 +302,27 @@ class ArgosHandler(BaseHTTPRequestHandler):
             is_range = False
 
             if range_header and range_header.startswith("bytes="):
-                ranges = range_header[6:].split("-")
-                try:
-                    if ranges[0]:
-                        start_byte = int(ranges[0])
-                    if len(ranges) > 1 and ranges[1]:
-                        end_byte = min(int(ranges[1]), file_size - 1)
-                    if start_byte <= end_byte and start_byte < file_size:
-                        is_range = True
-                except ValueError:
-                    pass
+                spec = range_header[6:].strip()
+                # Multi-range requests are not supported: serve the full file (200).
+                if "," not in spec and "-" in spec:
+                    first, _, last = spec.partition("-")
+                    first, last = first.strip(), last.strip()
+                    try:
+                        if not first and last:
+                            # RFC 7233 suffix range: "bytes=-N" = the LAST N bytes.
+                            suffix_len = int(last)
+                            if suffix_len > 0 and file_size > 0:
+                                start_byte = max(0, file_size - suffix_len)
+                                end_byte = file_size - 1
+                                is_range = True
+                        elif first:
+                            req_start = int(first)
+                            req_end = min(int(last), file_size - 1) if last else file_size - 1
+                            if 0 <= req_start <= req_end and req_start < file_size:
+                                start_byte, end_byte = req_start, req_end
+                                is_range = True
+                    except ValueError:
+                        pass
 
             disp_type = "inline" if inline else "attachment"
             content_length = (end_byte - start_byte + 1) if is_range else file_size

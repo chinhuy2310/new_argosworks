@@ -134,11 +134,11 @@ def handle_submit(handler, raw_body, ip):
     saved_attachments = []
     if files:
         from utils.image_optimizer import optimize_and_save_file
-        from utils.file_ops import safe_join
+        from utils.file_ops import safe_join, unique_attachment_name
         record_attach_dir = os.path.join(ATTACH_DIR, str(record_id))
         os.makedirs(record_attach_dir, exist_ok=True)
         for f in files:
-            fname = sanitize_filename(f["filename"])
+            fname = unique_attachment_name(record_attach_dir, f["filename"])
             dest = safe_join(record_attach_dir, fname)
             if not dest:
                 # Defense in depth: sanitize_filename already strips separators.

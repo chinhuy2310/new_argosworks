@@ -39,16 +39,52 @@ def upsert_jira_record(record):
     upsert_jira_records([record])
 
 
-def upsert_jira_records(records):
-    """Upsert multiple parsed Jira record dicts in a single atomic transaction."""
-    if not records:
-        return
+def upsert_jira_records(records, replace_existing=False):
+    """Upsert multiple parsed Jira record dicts in a single atomic transaction.
+    Optionally reconcile deletions after a complete full sync when replace_existing=True.
+    """
+    if not records and not replace_existing:
+        return True
+
+    incoming_keys = set()
+    has_missing_key = False
+    for record in records or []:
+        jira_info = record.get("jira") or {}
+        key = jira_info.get("key") or str(record.get("id") or "").replace("jira-", "")
+        if key:
+            incoming_keys.add(str(key).upper())
+        else:
+            has_missing_key = True
+    if replace_existing and has_missing_key:
+        log_line("Refusing Jira full-sync reconciliation because a returned issue has no stable key.")
+        return False
 
     def _do_upsert(conn):
         cur = conn.cursor()
-        for r in records:
+        if replace_existing:
+            cur.execute("SELECT jira_key FROM jira_issues")
+            existing_rows = cur.fetchall()
+            existing_keys = {
+                str(row[0] if isinstance(row, (tuple, list)) else row.get("jira_key")).upper()
+                for row in existing_rows
+            }
+            stale_keys = sorted(existing_keys - incoming_keys)
+            for offset in range(0, len(stale_keys), 500):
+                batch = stale_keys[offset:offset + 500]
+                placeholders = ", ".join("?" for _ in batch)
+                params = tuple(batch)
+                cur.execute(f"DELETE FROM jira_comments WHERE UPPER(jira_key) IN ({placeholders})", params)
+                cur.execute(f"DELETE FROM jira_attachments WHERE UPPER(jira_key) IN ({placeholders})", params)
+                cur.execute(f"DELETE FROM jira_changelog WHERE UPPER(issue_key) IN ({placeholders})", params)
+                cur.execute(f"DELETE FROM jira_issues WHERE UPPER(jira_key) IN ({placeholders})", params)
+
+        for r in records or []:
             jira_info = r.get("jira") or {}
-            key = jira_info.get("key") or r.get("id", "").replace("jira-", "")
+            raw_key = jira_info.get("key")
+            raw_id = r.get("id")
+            if raw_key is None and raw_id is None:
+                raise ValueError("Jira record must have a valid key or id")
+            key = raw_key or str(raw_id).replace("jira-", "")
             if not key:
                 continue
 
@@ -153,6 +189,7 @@ def upsert_jira_records(records):
 
     try:
         transaction(_do_upsert)
+        return True
     except Exception as e:
         log_line("Error upserting Jira records to SQLite:", e)
         raise

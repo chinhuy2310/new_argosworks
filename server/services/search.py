@@ -264,7 +264,8 @@ def product_as_search_record(p, allow_price=True):
 
     # Format key specifications (resolution, sensor, lens, FOV, etc.)
     if specs:
-        specs_list = [f"{k}: {v}" for k, v in specs.items() if v]
+        specs_list = [f"{k}: {v}" for k, v in specs.items()
+                      if v and (allow_price or not str(k).replace("_", "").lower().endswith("price"))]
         if specs_list:
             content_parts.append("규격 사양: " + " | ".join(specs_list[:25]))
 
