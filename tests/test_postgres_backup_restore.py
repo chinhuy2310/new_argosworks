@@ -113,6 +113,10 @@ class TestPostgresBackupRestore(unittest.TestCase):
         called_commands = []
         def fake_run(cmd, **kwargs):
             called_commands.append(cmd)
+            if "-f" in cmd:
+                f_path = cmd[cmd.index("-f") + 1]
+                with open(f_path, "wb") as f_out:
+                    f_out.write(b"MOCK_PGDUMP_CONTENT")
             res = MagicMock()
             res.returncode = 0
             res.stdout = ""
@@ -157,6 +161,10 @@ class TestPostgresBackupRestore(unittest.TestCase):
 
         def fake_run(cmd, **kwargs):
             if "pg_dump" in os.path.basename(cmd[0]):
+                if "-f" in cmd:
+                    f_path = cmd[cmd.index("-f") + 1]
+                    with open(f_path, "wb") as f_out:
+                        f_out.write(b"MOCK_PGDUMP_CONTENT")
                 res = MagicMock()
                 res.returncode = 0
                 return res
