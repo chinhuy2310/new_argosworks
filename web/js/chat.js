@@ -96,6 +96,10 @@ function initChat() {
                 handleChatSubmit(e);
             }
         };
+        input.oninput = function() {
+            this.style.height = "auto";
+            this.style.height = Math.min(this.scrollHeight, 160) + "px";
+        };
     }
     
     var msgs = document.getElementById("chatMessages");
@@ -805,7 +809,14 @@ function createActionCard(proposal, msgId, sessionId) {
     }
 
     var card = document.createElement("div");
-    var actionType = proposal.action_type || "default";
+    var rawAction = proposal.action_type || proposal.actionType || proposal.action || proposal.type || "create_task";
+    var actionType = String(rawAction).toLowerCase().trim();
+    if(actionType === "create_issue" || actionType === "task" || actionType === "create" || actionType === "create_document" || actionType === "document") actionType = "create_task";
+    else if(actionType === "subtask") actionType = "create_subtask";
+    else if(actionType === "comment") actionType = "add_comment";
+    else if(actionType === "status" || actionType === "status_change") actionType = "update_status";
+    else if(actionType === "schedule") actionType = "schedule_issue";
+    proposal.action_type = actionType;
     card.className = "chat-action-card type-" + actionType.replace(/_/g, "-");
     
     var header = document.createElement("div");
@@ -825,7 +836,7 @@ function createActionCard(proposal, msgId, sessionId) {
         proposal.comment = commentBody;
 
         var liIssue = document.createElement("li");
-        liIssue.innerHTML = '<span class="action-field-label">대상 이슈:</span> <span class="action-field-val"><strong style="cursor:pointer;color:var(--vs-cyan, #38bdf8);" onclick="onChatIssueClick(\'' + escapeHtml(proposal.issue_key || "") + '\')" title="Canvas에서 이슈 열기">' + escapeHtml(proposal.issue_key || "") + ' ↗</strong></span>';
+        liIssue.innerHTML = '<span class="action-field-label">대상 이슈:</span> <span class="action-field-val"><strong style="cursor:pointer;color:var(--ink);text-decoration:underline;" onclick="onChatIssueClick(\'' + escapeHtml(proposal.issue_key || "") + '\')" title="Canvas에서 이슈 열기">' + escapeHtml(proposal.issue_key || "") + ' ↗</strong></span>';
         ul.appendChild(liIssue);
 
         var liComment = document.createElement("li");
@@ -850,13 +861,15 @@ function createActionCard(proposal, msgId, sessionId) {
         var renderedKeys = {};
 
         function renderField(k) {
-            if(k === "action_type" || k === "proposal_status" || !proposal[k]) return;
+            if(k === "action_type" || k === "proposal_status" || k === "payload" || k === "parameters" || !proposal[k]) return;
+            if((k === "title" || k === "name") && (renderedKeys["summary"] || proposal.summary)) return;
+            if(typeof proposal[k] === "object") return;
             renderedKeys[k] = true;
             var li = document.createElement("li");
             var label = labels[k] || k;
             var valHtml = escapeHtml(proposal[k]);
             if(k === "issue_key" && proposal[k]) {
-                valHtml = '<strong style="cursor:pointer;color:var(--vs-cyan, #38bdf8);" onclick="onChatIssueClick(\'' + escapeHtml(proposal[k]) + '\')" title="Canvas에서 이슈 열기">' + valHtml + ' ↗</strong>';
+                valHtml = '<strong style="cursor:pointer;color:var(--ink);text-decoration:underline;" onclick="onChatIssueClick(\'' + escapeHtml(proposal[k]) + '\')" title="Canvas에서 이슈 열기">' + valHtml + ' ↗</strong>';
             }
             li.innerHTML = '<span class="action-field-label">' + escapeHtml(label) + ':</span> <span class="action-field-val">' + valHtml + '</span>';
             ul.appendChild(li);
@@ -941,11 +954,12 @@ function createActionCard(proposal, msgId, sessionId) {
 function getActionTitle(type) {
     switch(type) {
         case "create_task": return "새 작업(Task) 생성";
+        case "create_document": return "새 작업(Task) 생성";
         case "create_subtask": return "하위 작업(Subtask) 생성";
         case "add_comment": return "진행 댓글 / 메모 추가";
         case "update_status": return "작업 상태 변경";
         case "schedule_issue": return "캘린더 일정 등록 / 변경";
-        default: return "작업 실행 제안";
+        default: return "새 작업(Task) 생성";
     }
 }
 
