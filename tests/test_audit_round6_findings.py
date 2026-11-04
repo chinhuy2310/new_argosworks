@@ -436,21 +436,27 @@ def test_backup_import_ignores_database_like_attachments(tmp_path):
     import sqlite3
     import tarfile
     from services import backup_manager
-    dbp = tmp_path / "argos.db"
-    conn = sqlite3.connect(str(dbp))
-    conn.execute("CREATE TABLE users(id INTEGER)")
-    conn.commit()
-    conn.close()
+    is_pg = (backup_manager.ENGINE == "postgres")
+    top_db_name = "argos.dump" if is_pg else "argos.db"
+    dbp = tmp_path / top_db_name
+    if is_pg:
+        dbp.write_bytes(b"PGDMP\x01\x00\x00")
+    else:
+        conn = sqlite3.connect(str(dbp))
+        conn.execute("CREATE TABLE users(id INTEGER)")
+        conn.commit()
+        conn.close()
     tarp = tmp_path / "b.tar.gz"
     with tarfile.open(str(tarp), "w:gz") as t:
-        t.add(str(dbp), arcname="argos.db")
+        t.add(str(dbp), arcname=top_db_name)
         data = b"user attachment, not a database"
-        ti = tarfile.TarInfo("attachments/123/sample.dump")
+        ti = tarfile.TarInfo("attachments/123/sample.dump" if not is_pg else "attachments/123/sample.db")
         ti.size = len(data)
         t.addfile(ti, io.BytesIO(data))
     bdir = tmp_path / "bk"
     bdir.mkdir()
-    with patch.object(backup_manager, "get_backup_dir", lambda: str(bdir)):
+    with patch.object(backup_manager, "get_backup_dir", lambda: str(bdir)), \
+            patch("subprocess.run", lambda *a, **k: type("SubProc", (), {"returncode": 0, "stderr": ""})()):
         res = backup_manager.import_backup_file(tarp.read_bytes(), "b.tar.gz")
     assert res["ok"]
 

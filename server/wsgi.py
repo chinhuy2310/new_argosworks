@@ -113,7 +113,7 @@ def init_app():
 
         # Backup scheduler
         from services.backup_manager import start_backup_scheduler
-        start_backup_scheduler(interval_hours=24)
+        start_backup_scheduler()
 
         # Vector sync if configured
         from services.vector_store import is_voyage_configured, sync_all_vectors

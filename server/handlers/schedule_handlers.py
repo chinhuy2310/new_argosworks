@@ -488,23 +488,9 @@ def handle_schedule_approve(handler, raw_body, ip):
     except Exception:
         pass
 
-    # Ghi audit log
-    try:
-        from services.audit_logger import log_audit
-        log_audit(
-            session_or_user=session,
-            action="SCHEDULE_APPROVE" if action == "approve" else "SCHEDULE_REJECT",
-            target_type="schedule",
-            target_id=str(event_id),
-            details={"title": target.get("title"), "owner": target.get("ownerName"), "reason": reason},
-            ip=ip
-        )
-    except Exception:
-        pass
-
     access_log(ip, f"schedule_{action}", 200, f"id={event_id} status={new_status}")
     _audit(session, ip, "SCHEDULE_" + action.upper(), event_id,
-           {"status": new_status, "reason": reason})
+           {"title": target.get("title"), "owner": target.get("ownerName"), "status": new_status, "reason": reason})
     _broadcast_schedule_change(action, event_id)
     handler._send_json(200, {"ok": True, "event": target})
 
