@@ -21,6 +21,11 @@ class DummyHandler:
         self.response = data
 
 class TestProductSpecKeySafety(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from db import init_db
+        init_db()
+
     def test_used_spec_keys_and_lock_deletion(self):
         # 1. Create a test category
         cat_id = "cat_test_lock_01"
