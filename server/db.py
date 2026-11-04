@@ -531,6 +531,19 @@ if ENGINE == "sqlite":
                     r_info = {row[1]: row for row in conn.execute("PRAGMA table_info(records)").fetchall()}
                     w_col = r_info.get("work_date")
                     if w_col and w_col[4] is None:  # dflt_value is None
+                        standard_cols = {
+                            "id", "dept_id", "category", "title", "project", "assignee_id",
+                            "assignee_name", "assignee_email", "start_date", "due_date", "work_date",
+                            "summary", "tags", "memo", "status", "priority", "card_code",
+                            "participants", "parent_key", "is_scheduled", "is_private", "version",
+                            "updated_at", "created_at"
+                        }
+                        extra_cols = set(r_info.keys()) - standard_cols
+                        if extra_cols:
+                            raise RuntimeError(
+                                f"[db] Migration v11 중단: 'records' 테이블에 표준 스키마 외 커스텀 컬럼이 존재합니다: {extra_cols}. "
+                                "데이터 손실 방지를 위해 마이그레이션을 자동으로 중단합니다. 수동 스키마 조정을 수행해 주세요."
+                            )
                         conn.execute("PRAGMA foreign_keys = OFF;")
                         conn.execute("""
                             CREATE TABLE records__mig11 (

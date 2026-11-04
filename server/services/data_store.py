@@ -958,6 +958,40 @@ def _ensure_product_categories_table():
         _PRODUCT_CATEGORIES_READY.add(key)
 
 
+def _normalize_spec_template(tpl):
+    """spec_template 항목을 [{group, key, label, maxlen}, ...] 표준 dict 구조로 정규화한다."""
+    normalized = []
+    if not isinstance(tpl, list):
+        return normalized
+    for item in tpl:
+        if isinstance(item, dict):
+            k = str(item.get("key") or "").strip()
+            if not k:
+                continue
+            lbl = str(item.get("label") or item.get("name") or k).strip()
+            grp = str(item.get("group") or "사양").strip()
+            try:
+                mlen = int(item.get("maxlen") or 100)
+            except (ValueError, TypeError):
+                mlen = 100
+            normalized.append({
+                "group": grp or "사양",
+                "key": k,
+                "label": lbl or k,
+                "maxlen": mlen if 1 <= mlen <= 1000 else 100
+            })
+        elif isinstance(item, str):
+            k = item.strip()
+            if not k:
+                continue
+            normalized.append({
+                "group": "사양",
+                "key": k,
+                "label": k,
+                "maxlen": 100
+            })
+    return normalized
+
 def read_product_categories():
     """제품 카테고리 목록과 규격 템플릿을 반환한다."""
     _ensure_product_categories_table()
@@ -985,7 +1019,7 @@ def read_product_categories():
         result.append({
             "id": r["id"],
             "name": r["name"],
-            "spec_template": tpl
+            "spec_template": _normalize_spec_template(tpl)
         })
     return result
 
@@ -1010,7 +1044,8 @@ def save_product_category(cat_id, name, spec_template):
     if not cat_id:
         cat_id = "cat_" + format(int(time.time() * 1000), "x")
 
-    tpl_json = json.dumps(spec_template or [], ensure_ascii=False)
+    normalized_tpl = _normalize_spec_template(spec_template or [])
+    tpl_json = json.dumps(normalized_tpl, ensure_ascii=False)
     execute(
         """INSERT INTO product_categories(id, name, spec_template) VALUES (?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET name=excluded.name, spec_template=excluded.spec_template""",

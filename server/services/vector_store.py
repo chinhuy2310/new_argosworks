@@ -22,6 +22,7 @@ _db_lock = threading.Lock()
 _sync_lock = threading.Lock()
 _sync_pending = False
 _sync_pending_lock = threading.Lock()
+_worker_running = False
 
 
 def get_db_connection():
@@ -759,11 +760,11 @@ def sync_all_vectors(cfg, force=False):
     if not _sync_lock.acquire(blocking=False):
         return {"ok": False, "reason": "already_syncing"}
 
-    t0 = time.time()
-    init_vector_db()
-    current_model = cfg.get("voyage", {}).get("model") or "voyage-3-lite"
-
     try:
+        t0 = time.time()
+        init_vector_db()
+        current_model = cfg.get("voyage", {}).get("model") or "voyage-3-lite"
+
         try:
             docs, failed_sources = _collect_all_documents(cfg, strict=True, return_failed_sources=True)
         except RuntimeError as sync_err:
@@ -783,6 +784,7 @@ def sync_all_vectors(cfg, force=False):
 
             to_embed = []
             skipped = 0
+            failed_doc_ids = []
 
             for d in docs:
                 chash = hashlib.sha256(d["content"].encode("utf-8")).hexdigest()
@@ -828,10 +830,12 @@ def sync_all_vectors(cfg, force=False):
                                     batch_embeddings.append(s_emb[0])
                                 else:
                                     log_line(f"[Vector Store] 개별 문서 임베딩 실패로 건너뜀 (doc_id={single_item.get('doc_id')})")
+                                    failed_doc_ids.append(single_item.get("doc_id"))
                             batch = batch_success
                             embeddings = batch_embeddings
                         else:
                             log_line(f"[Vector Store] 단일 문서 임베딩 실패로 건너뜀 (doc_id={batch[0].get('doc_id')})")
+                            failed_doc_ids.append(batch[0].get("doc_id"))
                             continue
 
                     if not embeddings:
@@ -878,6 +882,21 @@ def sync_all_vectors(cfg, force=False):
                 log_line(f"[Vector Store] 삭제된 문서 {len(stale_doc_ids)}건 색인 정리 완료")
 
             duration = round(time.time() - t0, 2)
+            if failed_doc_ids:
+                log_line(f"[Vector Store] 동기화 부분 실패: 전체 {len(docs)}건 중 {len(failed_doc_ids)}건 임베딩 실패 ({duration}초, 모델: {current_model})")
+                return {
+                    "ok": False,
+                    "partial": True,
+                    "error": f"동기화 부분 실패: 전체 {len(docs)}건 중 {len(failed_doc_ids)}건 임베딩 실패",
+                    "indexed": indexed,
+                    "skipped": skipped,
+                    "failed": len(failed_doc_ids),
+                    "failed_doc_ids": failed_doc_ids,
+                    "total": len(docs),
+                    "duration_sec": duration,
+                    "current_model": current_model
+                }
+
             log_line(f"[Vector Store] 동기화 완료: 신규 {indexed}건, 스킵 {skipped}건, 총 {len(docs)}건 ({duration}초, 모델: {current_model})")
             return {
                 "ok": True,
@@ -891,30 +910,41 @@ def sync_all_vectors(cfg, force=False):
             conn.close()
     finally:
         _sync_lock.release()
+        with _sync_pending_lock:
+            has_pending = _sync_pending
+        if has_pending:
+            trigger_async_vector_sync(cfg)
 
 
 def trigger_async_vector_sync(cfg):
-    """백그라운드 스레드에서 점진적(Incremental) 벡터 색인 비동기 실행 (coalesced pending 지원)"""
-    global _sync_pending
+    """백그라운드 스레드에서 점진적(Incremental) 벡터 색인 비동기 실행 (coalesced coordinator)"""
+    global _sync_pending, _worker_running
     if not is_voyage_configured(cfg):
         return
     with _sync_pending_lock:
         _sync_pending = True
-    if _sync_lock.locked():
-        return
+        if _worker_running:
+            return
+        _worker_running = True
     import threading
     threading.Thread(target=_run_coalesced_sync, args=(cfg,), daemon=True).start()
 
 
 def _run_coalesced_sync(cfg):
-    global _sync_pending
-    while True:
+    global _sync_pending, _worker_running
+    try:
+        while True:
+            with _sync_pending_lock:
+                _sync_pending = False
+            sync_all_vectors(cfg)
+            with _sync_pending_lock:
+                if not _sync_pending:
+                    break
+    finally:
         with _sync_pending_lock:
-            _sync_pending = False
-        sync_all_vectors(cfg)
-        with _sync_pending_lock:
-            if not _sync_pending:
-                break
+            _worker_running = False
+            if _sync_pending:
+                trigger_async_vector_sync(cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -1093,12 +1123,13 @@ def search_vector_store(cfg, query_text, limit=6, min_similarity=0.42, session=N
     conn = get_db_connection()
     q_dim = len(query_vec)
 
+    current_model = cfg.get("voyage", {}).get("model") or "voyage-3-lite"
     try:
         rows = conn.execute("""
             SELECT doc_id, doc_type, title, content, vector_blob, dim, metadata_json
             FROM document_embeddings
-            WHERE dim = ?;
-        """, (q_dim,)).fetchall()
+            WHERE dim = ? AND (embedding_model = ? OR embedding_model IS NULL);
+        """, (q_dim, current_model)).fetchall()
 
         if not rows:
             # 저장된 다른 차원의 벡터가 있는지 검사하여 모델 변경 경고

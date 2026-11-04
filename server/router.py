@@ -820,16 +820,21 @@ def handle_get_schedule(handler, parsed, ip):
     # RBAC: user와 manager는 본인 소속 부서 카드(또는 본인 담당 카드)만 달력 및 우측 미배정 패널에 표시
     local_records = read_records()
     if not is_admin:
-        # 비공개(private) 카드는 can_view_record 로 한 번 더 검증한다.
-        # (부서/담당자 조건만으로는 같은 부서의 타인 비공개 카드가 캘린더에 노출된다)
+        # 모든 카드는 can_view_record 로 엄격히 검증하여 타 부서 동명이인 및 비공개 카드 유출 방지
         from services.auth import can_view_record
+        user_id = session.get("id") or session.get("user_id")
         filtered_records = []
         for r in local_records:
-            if bool(r.get("is_private")) and not can_view_record(session, r):
+            if not can_view_record(session, r):
                 continue
             r_assignee = (r.get("assignee") or r.get("assignee_name") or "").strip()
+            r_assignee_id = r.get("assignee_id")
             r_org = (r.get("org") or r.get("dept_id") or user_dept_map.get(assignee_base_name(r_assignee).lower(), {}).get("org", "")).strip().lower()
-            if (user_dept and r_org == user_dept) or (r_assignee and r_assignee == user_name):
+            if user_dept and r_org == user_dept:
+                filtered_records.append(r)
+            elif user_id and r_assignee_id and str(user_id) == str(r_assignee_id):
+                filtered_records.append(r)
+            elif r_assignee and r_assignee == user_name and (not r_org or r_org == user_dept):
                 filtered_records.append(r)
         local_records = filtered_records
 

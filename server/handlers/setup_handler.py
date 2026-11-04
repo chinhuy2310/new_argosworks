@@ -181,12 +181,24 @@ def handle_post_setup_complete(handler, raw_body, ip):
 
     # 4. 원자적(Atomic) 검사 및 트랜잭션 일괄 저장 (Race condition 방지)
     from services.auth import hash_password, create_session, _effective_pbkdf2_rounds
+    from db import ENGINE, query
     salt, pwd_hash = hash_password(password)
     pwd_iterations = _effective_pbkdf2_rounds()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    # 기존 등록 부서 식별 (설정 실패 시 이번 세션에서 새로 생성된 부서만 안전하게 롤백하기 위함)
+    try:
+        pre_existing_depts = {row["id"].lower() for row in query("SELECT id FROM departments") if row.get("id")}
+    except Exception:
+        pre_existing_depts = set()
+    created_dept_ids = [d_id for d_id in dept_ids if d_id not in pre_existing_depts]
+
     def _do_setup(conn):
         cur = conn.cursor()
+
+        # PostgreSQL Concurrency Guard: Advisory xact lock prevents concurrent setup race conditions
+        if ENGINE == "postgres":
+            cur.execute("SELECT pg_advisory_xact_lock(hashtext('argos_system_setup'));")
 
         # Atomic Race check: Ensure no user was registered concurrently
         cur.execute("SELECT COUNT(*) AS c FROM users")
@@ -236,9 +248,13 @@ def handle_post_setup_complete(handler, raw_body, ip):
     #    would otherwise leave a half-written licence row behind.
     act_ok, act_msg = activate_license(license_key)
     if not act_ok:
-        # Compensation: Roll back master admin user and reset setup cache to avoid locking out setup wizard
+        # Full Compensation: Roll back master admin user, created card sequences & departments to avoid dirty state
         try:
             execute("DELETE FROM users WHERE username = ?", (username,))
+            if created_dept_ids:
+                placeholders = ", ".join(["?"] * len(created_dept_ids))
+                execute(f"DELETE FROM card_sequences WHERE dept_id IN ({placeholders})", tuple(created_dept_ids))
+                execute(f"DELETE FROM departments WHERE id IN ({placeholders})", tuple(created_dept_ids))
             reset_setup_cache()
         except Exception:
             pass
