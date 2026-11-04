@@ -363,8 +363,11 @@ def _skip_bad_record(section, item, err):
     log_line(f"[VectorStore] skip {section} {ident}: {type(err).__name__}: {err}")
 
 
-def _collect_all_documents(cfg, return_failed_sources=False):
-    """JARVIS 내 모든 검색 대상 문서(기록, Jira 이슈, 제품 PIM, 캘린더)를 표준 형식으로 수집"""
+def _collect_all_documents(cfg, strict=False, return_failed_sources=False):
+    """JARVIS 내 모든 검색 대상 문서(기록, Jira 이슈, 제품 PIM, 캘린더)를 표준 형식으로 수집.
+    strict=True 설정 시, 단일 행 오류나 소스 읽기 오류 발생 시 예외를 발생시켜
+    부분 동기화로 인해 정상 문서의 벡터가 오삭제되는 것을 원천 방지한다.
+    """
     from services.data_store import read_records, read_products, read_schedule, get_record_comments
     from services.jira_client import get_cached_jira_records
 
@@ -376,6 +379,8 @@ def _collect_all_documents(cfg, return_failed_sources=False):
     try:
         records_list = read_records() or []
     except Exception as e:
+        if strict:
+            raise RuntimeError("Vector sync aborted: records source could not be read") from e
         failed_sources.add("record")
         log_line(f"[VectorStore] Failed to read records: {e}")
 
@@ -414,7 +419,9 @@ def _collect_all_documents(cfg, return_failed_sources=False):
                     ]
                     if comments_lines:
                         comments_text = "\n[댓글 및 진행 이력]\n" + "\n".join(comments_lines)
-            except Exception:
+            except Exception as e:
+                if strict:
+                    raise RuntimeError("Vector sync aborted: record comments could not be read") from e
                 comments_text = ""
 
             attach_names = _attachment_names(attachments)
@@ -465,6 +472,8 @@ def _collect_all_documents(cfg, return_failed_sources=False):
                 }
             })
         except Exception as _e:
+            if strict:
+                raise RuntimeError("Vector sync aborted: malformed record row") from _e
             _skip_bad_record('record', r, _e)
 
     # 2. Jira 동기화 이슈 (get_cached_jira_records)
@@ -473,6 +482,8 @@ def _collect_all_documents(cfg, return_failed_sources=False):
         jira_cache = get_cached_jira_records(cfg) or {}
         jira_records = jira_cache.get("records") or []
     except Exception as e:
+        if strict:
+            raise RuntimeError("Vector sync aborted: Jira cache could not be read") from e
         failed_sources.add("jira")
         log_line(f"[VectorStore] Failed to read Jira cache: {e}")
 
@@ -535,6 +546,8 @@ def _collect_all_documents(cfg, return_failed_sources=False):
                 }
             })
         except Exception as _e:
+            if strict:
+                raise RuntimeError("Vector sync aborted: malformed Jira row") from _e
             _skip_bad_record('jira', j, _e)
 
     # 3. 제품 정보 (PIM) - 사내 관리 제품 및 공식 라이브 제품 모두 벡터 인덱싱
@@ -542,6 +555,8 @@ def _collect_all_documents(cfg, return_failed_sources=False):
     try:
         products_list = read_products(include_external=True) or []
     except Exception as e:
+        if strict:
+            raise RuntimeError("Vector sync aborted: products source could not be read") from e
         failed_sources.add("product")
         log_line(f"[VectorStore] Failed to read products: {e}")
 
@@ -606,6 +621,8 @@ def _collect_all_documents(cfg, return_failed_sources=False):
                 }
             })
         except Exception as _e:
+            if strict:
+                raise RuntimeError("Vector sync aborted: malformed product row") from _e
             _skip_bad_record('product', p, _e)
 
     # 4. 일정 (schedule.json)
@@ -613,6 +630,8 @@ def _collect_all_documents(cfg, return_failed_sources=False):
     try:
         schedule_list = read_schedule() or []
     except Exception as e:
+        if strict:
+            raise RuntimeError("Vector sync aborted: schedule source could not be read") from e
         failed_sources.add("schedule")
         log_line(f"[VectorStore] Failed to read schedule: {e}")
 
@@ -658,6 +677,8 @@ def _collect_all_documents(cfg, return_failed_sources=False):
                 }
             })
         except Exception as _e:
+            if strict:
+                raise RuntimeError("Vector sync aborted: malformed schedule row") from _e
             _skip_bad_record('schedule', s, _e)
 
     if return_failed_sources:
@@ -743,7 +764,11 @@ def sync_all_vectors(cfg, force=False):
     current_model = cfg.get("voyage", {}).get("model") or "voyage-3-lite"
 
     try:
-        docs, failed_sources = _collect_all_documents(cfg, return_failed_sources=True)
+        try:
+            docs, failed_sources = _collect_all_documents(cfg, strict=True, return_failed_sources=True)
+        except RuntimeError as sync_err:
+            log_line(f"[Vector Store] Strict 동기화 중단 (문서 삭제 방지): {sync_err}")
+            return {"ok": False, "error": str(sync_err)}
         if not docs and not failed_sources:
             return {"ok": True, "indexed": 0, "skipped": 0, "total": 0, "current_model": current_model}
 
@@ -996,7 +1021,31 @@ def can_view_vector_doc(session, doc_type, meta, ctx=None):
         return can_view_record(session, meta)
 
     if doc_type == "jira":
-        # Jira 캐시 레코드도 일반 레코드와 동일한 부서/담당자/참여자 규칙을 적용한다.
+        # Jira 캐시 레코드도 DB의 최신 정보를 우선 확인하고, 없는 경우 meta 기반으로 열람 권한을 판정한다.
+        jira_info = meta.get("jira") if isinstance(meta.get("jira"), dict) else {}
+        jira_key = (meta.get("cardCode") or jira_info.get("key") or "").strip()
+        if not jira_key:
+            raw_id = str(meta.get("id") or "").strip()
+            jira_key = raw_id[5:] if raw_id.startswith("jira-") else raw_id
+        if jira_key:
+            try:
+                from db import get_one
+                live_row = get_one(
+                    "SELECT raw_json FROM jira_issues WHERE UPPER(jira_key) = UPPER(?) LIMIT 1",
+                    (jira_key,)
+                )
+                if live_row and live_row.get("raw_json"):
+                    live_rec = json.loads(live_row["raw_json"])
+                    if isinstance(live_rec, dict):
+                        rec = dict(live_rec)
+                        rec["assignee_name"] = rec.get("assignee") or rec.get("assignee_name") or ""
+                        rec["assignee_email"] = rec.get("assigneeEmail") or rec.get("assignee_email") or ""
+                        rec["dept_id"] = rec.get("dept_id") or rec.get("org") or ""
+                        rec["org"] = rec.get("org") or rec.get("dept_id") or ""
+                        rec["is_private"] = bool(rec.get("is_private"))
+                        return can_view_record(session, rec)
+            except Exception:
+                pass
         rec = dict(meta)
         rec["assignee_name"] = meta.get("assignee_name") or meta.get("assignee") or ""
         rec["assignee"] = meta.get("assignee") or ""
