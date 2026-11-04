@@ -118,13 +118,71 @@ class TestJiraActivitySecurity(unittest.TestCase):
         safe_delete_user(u2["id"])
 
     def test_excel_export_sanitizes_formula_injection(self):
-        dangerous_inputs = ["=1+1", "+1-2", "-5+2", "@SUM(A1:A10)", "\t=cmd", "\r=calc"]
-        for inp in dangerous_inputs:
-            if inp.startswith(("=", "+", "-", "@", "\t", "\r")):
-                sanitized = "'" + inp
-            else:
-                sanitized = inp
-            self.assertTrue(sanitized.startswith("'"), f"Formula injection payload {inp} must be escaped")
+        import io
+        import openpyxl
+        from urllib.parse import urlparse
+        from handlers.report_handler import handle_get_export_records_excel
+        from services.data_store import append_record, delete_record, next_record_id
+
+        # 1. Insert record with formula injection payloads
+        execute("INSERT OR IGNORE INTO departments (id, name) VALUES ('test_dept', 'Test Department')")
+        rec_id = next_record_id()
+        rec_data = {
+            "id": rec_id,
+            "cardCode": "=1+1",
+            "title": "@SUM(A1:A10)",
+            "category": "-5+2",
+            "assignee": "+cmd|' /C calc'!A0",
+            "dept_id": "test_dept",
+            "org": "test_dept",
+            "status": "진행"
+        }
+        append_record(rec_data)
+
+        class MockExcelHandler:
+            def __init__(self):
+                self.cfg = {}
+                self.headers = {}
+                self.wfile = io.BytesIO()
+                self.code = None
+
+            def _get_session_or_401(self):
+                return {"id": 1, "name": "Admin", "role": "admin", "org": "lab"}
+
+            def send_response(self, code):
+                self.code = code
+
+            def send_header(self, key, value):
+                self.headers[key] = value
+
+            def end_headers(self):
+                pass
+
+        try:
+            handler = MockExcelHandler()
+            parsed = urlparse("/api/records/export/excel")
+            handle_get_export_records_excel(handler, parsed, "127.0.0.1")
+
+            self.assertEqual(handler.code, 200)
+            excel_bytes = handler.wfile.getvalue()
+            self.assertGreater(len(excel_bytes), 0)
+
+            # 2. Open workbook with openpyxl and verify cells
+            wb = openpyxl.load_workbook(io.BytesIO(excel_bytes))
+            ws = wb.active
+            found_test_row = False
+            for row in ws.iter_rows(values_only=True):
+                # row columns: [code, title, cat, assignee, dept, status, s_date, e_date, jira_k]
+                if row[0] == "'=1+1":
+                    found_test_row = True
+                    self.assertEqual(row[0], "'=1+1")
+                    self.assertEqual(row[1], "'@SUM(A1:A10)")
+                    self.assertEqual(row[2], "'-5+2")
+                    self.assertTrue(row[3].startswith("'+cmd"))
+            self.assertTrue(found_test_row, "Exported Excel must contain the sanitized test row starting with '")
+        finally:
+            if rec_id:
+                delete_record(rec_id)
 
 if __name__ == "__main__":
     unittest.main()
