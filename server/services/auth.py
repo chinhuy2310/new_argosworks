@@ -514,20 +514,20 @@ def can_view_record(user_or_session, record):
     is_private = bool(record.get("is_private"))
 
     # 정확한 담당자/참여자 매칭:
-    # 동명이인 타 부서 유출 방지를 위해 이름 단독 매칭 시 동일 부서 필수 검증 (is_private 무관)
+    # 비공개 레코드(is_private=1)는 동명이인 타 부서 유출 방지를 위해 이름 단독 매칭 시 동일 부서 필수 검증
     is_involved = False
     if u_id and rec_assignee_id and str(u_id) == str(rec_assignee_id):
         is_involved = True
     elif u_email and rec_assignee_email and u_email == rec_assignee_email:
         is_involved = True
     elif u_name and u_name == rec_assignee:
-        if is_same_dept or not rec_dept:
+        if not is_private or is_same_dept or not rec_dept:
             is_involved = True
     elif u_username and u_username in parts:
-        if is_same_dept or not rec_dept:
+        if not is_private or is_same_dept or not rec_dept:
             is_involved = True
     elif u_name and u_name in parts:
-        if is_same_dept or not rec_dept:
+        if not is_private or is_same_dept or not rec_dept:
             is_involved = True
 
     is_same_dept = bool(u_dept and u_dept == rec_dept)
@@ -580,7 +580,8 @@ def can_modify_record(user_or_session, record):
         if str(u_id) == str(rec_assignee_id):
             return True
     elif u_name and u_name == rec_assignee:
-        if u_dept == rec_dept or not rec_dept:
+        is_private = bool(record.get("is_private"))
+        if not is_private or u_dept == rec_dept or not rec_dept:
             return True
 
     return False
