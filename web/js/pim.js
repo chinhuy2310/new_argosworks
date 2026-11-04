@@ -3,6 +3,19 @@ var pimList = document.getElementById("pimList");
 var pimListLabel = document.getElementById("pimListLabel");
 var pimEmpty = document.getElementById("pimEmpty");
 var pimSearchInput = document.getElementById("pimSearchInput");
+var currentInternalCategory = "all";
+var pimInternalCatChips = document.getElementById("pimInternalCatChips");
+if(pimInternalCatChips){
+  pimInternalCatChips.addEventListener("click", function(e){
+    var chip = e.target.closest(".pim-cat-chip");
+    if(!chip) return;
+    var cate = chip.getAttribute("data-cate") || "all";
+    if(currentInternalCategory === cate) return;
+    currentInternalCategory = cate;
+    renderPimCategoryChips();
+    renderPimList();
+  });
+}
 var pimNewBtn = document.getElementById("pimNewBtn");
 var pimForm = document.getElementById("pimForm");
 var pimFormModal = document.getElementById("pimFormModal");
@@ -90,6 +103,7 @@ function loadPimCategories(){
         }).join("");
         renderPimSpecFields(pimCategorySelect.value, {});
       }
+      renderPimCategoryChips();
     })
     .catch(function(){});
 }
@@ -209,27 +223,86 @@ function formatFileSize(bytes){
   return (bytes / (1024 * 1024)).toFixed(1) + "MB";
 }
 
+function renderPimCategoryChips(){
+  var container = document.getElementById("pimInternalCatChips");
+  if(!container) return;
+
+  var isEn = (window.i18n && window.i18n.getLang && window.i18n.getLang() === "en");
+  var allLabel = isEn ? "All" : "전체";
+
+  // Gather categories from system configuration (pimCategories) + any category present on products
+  var catSet = new Set();
+  (pimCategories || []).forEach(function(c){
+    if(c && String(c).trim()) catSet.add(String(c).trim());
+  });
+  (pimProducts || []).forEach(function(p){
+    var c = (p && p.category ? String(p.category).trim() : "");
+    if(c) catSet.add(c);
+  });
+
+  // Calculate counts per category
+  var counts = { all: (pimProducts || []).length };
+  catSet.forEach(function(c){ counts[c] = 0; });
+  (pimProducts || []).forEach(function(p){
+    var c = (p && p.category ? String(p.category).trim() : "");
+    if(c && Object.prototype.hasOwnProperty.call(counts, c)){
+      counts[c]++;
+    }
+  });
+
+  if(currentInternalCategory !== "all" && !catSet.has(currentInternalCategory)){
+    currentInternalCategory = "all";
+  }
+
+  var html = '<button type="button" class="pim-cat-chip' + (currentInternalCategory === "all" ? ' active' : '') + '" data-cate="all">' +
+    allLabel + ' <span class="chip-count">(' + (counts.all || 0) + ')</span></button>';
+
+  Array.from(catSet).forEach(function(cat){
+    var count = counts[cat] || 0;
+    var isActive = (currentInternalCategory === cat);
+    html += '<button type="button" class="pim-cat-chip' + (isActive ? ' active' : '') + '" data-cate="' + escapeHtml(cat) + '">' +
+      escapeHtml(cat) + ' <span class="chip-count">(' + count + ')</span></button>';
+  });
+
+  container.innerHTML = html;
+}
+
 function renderPimList(){
   if(!pimList) return;
-  var items = pimProducts;
+  var items = pimProducts || [];
+
+  // Filter by selected category
+  if(currentInternalCategory && currentInternalCategory !== "all"){
+    items = items.filter(function(p){
+      return (p && p.category ? String(p.category).trim() : "") === currentInternalCategory;
+    });
+  }
+
+  var isEn = (window.i18n && window.i18n.getLang && window.i18n.getLang() === "en");
 
   if(!items.length){
     pimList.innerHTML = "";
     if(pimEmpty) pimEmpty.hidden = false;
-    var isEn = (window.i18n && window.i18n.getLang && window.i18n.getLang() === "en");
     if(pimListLabel) {
-      pimListLabel.textContent = (window.i18n && window.i18n.t)
-        ? window.i18n.t("pim.list_label", { count: 0 })
-        : (isEn ? "Managed Products (0 items)" : "사내 관리 제품 (0개)");
+      if(currentInternalCategory !== "all"){
+        pimListLabel.textContent = currentInternalCategory + (isEn ? " (0 items)" : " (0개)");
+      } else {
+        pimListLabel.textContent = (window.i18n && window.i18n.t)
+          ? window.i18n.t("pim.list_label", { count: 0 })
+          : (isEn ? "Managed Products (0 items)" : "사내 관리 제품 (0개)");
+      }
     }
     return;
   }
   if(pimEmpty) pimEmpty.hidden = true;
-  var isEn = (window.i18n && window.i18n.getLang && window.i18n.getLang() === "en");
   if(pimListLabel) {
-    pimListLabel.textContent = (window.i18n && window.i18n.t)
-      ? window.i18n.t("pim.list_label", { count: items.length })
-      : (isEn ? ("Managed Products (" + items.length + " items)") : ("사내 관리 제품 (" + items.length + "개)"));
+    if(currentInternalCategory !== "all"){
+      pimListLabel.textContent = currentInternalCategory + " (" + items.length + (isEn ? " items)" : "개)");
+    } else {
+      pimListLabel.textContent = (window.i18n && window.i18n.t)
+        ? window.i18n.t("pim.list_label", { count: items.length })
+        : (isEn ? ("Managed Products (" + items.length + " items)") : ("사내 관리 제품 (" + items.length + "개)"));
+    }
   }
   if(pimNewBtn) {
     var canMod = (typeof canModifyPimUser === "function") && canModifyPimUser();
@@ -354,6 +427,7 @@ function loadProducts(q){
     .then(function(data){
       if(!data.ok) return;
       pimProducts = data.products || [];
+      renderPimCategoryChips();
       renderPimList();
     })
     .catch(function(){ showToast("제품 목록을 불러오지 못했습니다."); });
@@ -1134,8 +1208,10 @@ window.closePimFormModal = closePimFormModal;
 window.triggerLiveSync = triggerLiveSync;
 window.setPimMode = setPimMode;
 window.initPimTab = initPimTab;
+window.renderPimCategoryChips = renderPimCategoryChips;
 
 
 window.addEventListener("langchange", function(){
+  if(typeof renderPimCategoryChips === "function") renderPimCategoryChips();
   if(typeof renderPimList === "function") renderPimList();
 });

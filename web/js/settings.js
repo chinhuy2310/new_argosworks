@@ -1789,6 +1789,52 @@ async function loadAdminBackups() {
     if (bannerHttpsWarning) {
       var isHttps = (sec && sec.https_active) || window.location.protocol === "https:";
       bannerHttpsWarning.style.display = isHttps ? "none" : "flex";
+
+      if (!isHttps) {
+        var currentHost = window.location.hostname || "localhost";
+        var httpPort = window.location.port ? ":" + window.location.port : ":8080";
+        var caUrl = "http://" + currentHost + httpPort + "/argos-root-ca.crt";
+        var httpsUrl = "https://" + currentHost + ":8443/";
+
+        var linkCa = document.getElementById("linkLanCaDownload");
+        var linkHttps = document.getElementById("linkLanHttpsOpen");
+        var textHttps = document.getElementById("textLanHttpsUrl");
+        var btnCopyCa = document.getElementById("btnCopyLanCaUrl");
+        var btnCopyHttps = document.getElementById("btnCopyLanHttpsUrl");
+        var copyTip = document.getElementById("copyLanSuccessTip");
+
+        if (linkCa) {
+          linkCa.href = caUrl;
+          linkCa.textContent = "📄 " + caUrl;
+        }
+        if (linkHttps) linkHttps.href = httpsUrl;
+        if (textHttps) textHttps.textContent = httpsUrl;
+
+        if (btnCopyCa && !btnCopyCa._hasListener) {
+          btnCopyCa._hasListener = true;
+          btnCopyCa.addEventListener("click", function () {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(caUrl);
+            }
+            if (copyTip) {
+              copyTip.style.display = "inline";
+              setTimeout(function () { copyTip.style.display = "none"; }, 2500);
+            }
+          });
+        }
+        if (btnCopyHttps && !btnCopyHttps._hasListener) {
+          btnCopyHttps._hasListener = true;
+          btnCopyHttps.addEventListener("click", function () {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(httpsUrl);
+            }
+            if (copyTip) {
+              copyTip.style.display = "inline";
+              setTimeout(function () { copyTip.style.display = "none"; }, 2500);
+            }
+          });
+        }
+      }
     }
 
     if (backups.length === 0) {
