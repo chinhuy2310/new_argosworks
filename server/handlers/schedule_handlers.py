@@ -223,16 +223,23 @@ def handle_schedule_update(handler, raw_body, ip):
         is_admin = bool(role == "admin" or session.get("is_admin") == 1)
         u_dept = (session.get("org") or session.get("dept_id") or "").strip().lower()
         t_dept = (target.get("ownerOrg") or "").strip().lower()
-        sess_uid = session.get("id") or session.get("user_id")
-        t_owner_id = target.get("owner_id") or target.get("ownerId")
-        if sess_uid and t_owner_id and str(sess_uid) == str(t_owner_id):
-            is_owner = True
-        elif target.get("ownerKey") == owner_key:
-            is_owner = True
-        elif target.get("ownerName") == session.get("name") and bool(u_dept and t_dept and u_dept == t_dept):
-            is_owner = True
+        legacy_owner_match = (
+            not target.get("ownerKey")
+            and target.get("ownerName") == session.get("name")
+            and t_dept == u_dept
+        )
+        session_uid = session.get("id") or session.get("user_id")
+        target_uid = target.get("ownerId") or target.get("owner_id")
+        if target_uid not in (None, ""):
+            # Once an immutable owner ID exists, never fall back to display-name
+            # matching if the request session lacks an ID or belongs to another user.
+            is_owner = (
+                session_uid not in (None, "")
+                and str(target_uid) == str(session_uid)
+            )
         else:
-            is_owner = False
+            # Legacy events without owner_id retain the old name+department key.
+            is_owner = (target.get("ownerKey") == owner_key or legacy_owner_match)
         is_dept_manager = (role == "manager" and bool(u_dept and t_dept and u_dept == t_dept))
 
         if not (is_owner or is_admin or is_dept_manager):
@@ -259,14 +266,14 @@ def handle_schedule_update(handler, raw_body, ip):
         if "participants" in payload:
             raw_participants = payload.get("participants") or []
             participants = []
-            target_owner_name = target.get("ownerName") or session["name"]
-            target_owner_org = target.get("ownerOrg") or session["org"]
-            target_owner_email = target.get("ownerEmail") or (session.get("email", "") if target_owner_name == session.get("name") else "")
+            # Keep the event creator as owner when a Manager edits participants.
+            owner_name = (target.get("ownerName") or session["name"]).strip()
+            owner_org = (target.get("ownerOrg") or target.get("org") or session["org"]).strip()
             owner_entry = {
-                "name": target_owner_name,
-                "org": target_owner_org,
-                "email": target_owner_email,
-                "key": target.get("ownerKey") or account_key(target_owner_name, target_owner_org),
+                "name": owner_name,
+                "org": owner_org,
+                "email": (target.get("ownerEmail") or "").strip(),
+                "key": target.get("ownerKey") or account_key(owner_name, owner_org),
                 "isOwner": True
             }
             participants.append(owner_entry)
@@ -321,16 +328,23 @@ def handle_schedule_delete(handler, raw_body, ip):
         is_admin = bool(role == "admin" or session.get("is_admin") == 1)
         u_dept = (session.get("org") or session.get("dept_id") or "").strip().lower()
         t_dept = (target.get("ownerOrg") or "").strip().lower()
-        sess_uid = session.get("id") or session.get("user_id")
-        t_owner_id = target.get("owner_id") or target.get("ownerId")
-        if sess_uid and t_owner_id and str(sess_uid) == str(t_owner_id):
-            is_owner = True
-        elif target.get("ownerKey") == owner_key:
-            is_owner = True
-        elif target.get("ownerName") == session.get("name") and bool(u_dept and t_dept and u_dept == t_dept):
-            is_owner = True
+        legacy_owner_match = (
+            not target.get("ownerKey")
+            and target.get("ownerName") == session.get("name")
+            and t_dept == u_dept
+        )
+        session_uid = session.get("id") or session.get("user_id")
+        target_uid = target.get("ownerId") or target.get("owner_id")
+        if target_uid not in (None, ""):
+            # Once an immutable owner ID exists, never fall back to display-name
+            # matching if the request session lacks an ID or belongs to another user.
+            is_owner = (
+                session_uid not in (None, "")
+                and str(target_uid) == str(session_uid)
+            )
         else:
-            is_owner = False
+            # Legacy events without owner_id retain the old name+department key.
+            is_owner = (target.get("ownerKey") == owner_key or legacy_owner_match)
         is_dept_manager = (role == "manager" and bool(u_dept and t_dept and u_dept == t_dept))
 
         if not (is_owner or is_admin or is_dept_manager):

@@ -654,6 +654,7 @@ def read_schedule():
     for r in rows:
         ev = {
             "id": r["id"],
+            "ownerId": r.get("owner_id"),
             "ownerKey": f"{r['owner_name']}|{r['owner_dept_id']}",
             "ownerName": r["owner_name"],
             "ownerOrg": r["owner_dept_id"],
@@ -697,19 +698,22 @@ def write_schedule(events):
         cur.execute("DELETE FROM schedule_events")
 
         for ev in events:
-            owner_id = None
-            try:
-                row = cur.execute(
-                    "SELECT id FROM users WHERE name = ? AND dept_id = ?",
-                    (ev.get("ownerName", ""), ev.get("ownerOrg", ""))
-                ).fetchone()
-                if row:
-                    # PostgreSQL transactions use RealDictCursor (dict rows); SQLite
-                    # uses tuples. row[0] would raise KeyError on Postgres and the
-                    # except below would silently drop the owner link.
-                    owner_id = row["id"] if isinstance(row, dict) else row[0]
-            except Exception as e:
-                log_line("[data_store] Error looking up schedule event owner_id:", e)
+            owner_id = ev.get("ownerId") or ev.get("owner_id")
+            if owner_id in ("", 0):
+                owner_id = None
+            if owner_id is None:
+                try:
+                    row = cur.execute(
+                        "SELECT id FROM users WHERE name = ? AND dept_id = ?",
+                        (ev.get("ownerName", ""), ev.get("ownerOrg", ""))
+                    ).fetchone()
+                    if row:
+                        # PostgreSQL transactions use RealDictCursor (dict rows); SQLite
+                        # uses tuples. row[0] would raise KeyError on Postgres and the
+                        # except below would silently drop the owner link.
+                        owner_id = row["id"] if isinstance(row, dict) else row[0]
+                except Exception as e:
+                    log_line("[data_store] Error looking up schedule event owner_id:", e)
 
             cur.execute(
                 """INSERT INTO schedule_events(id, owner_id, owner_name, owner_dept_id, owner_email,
