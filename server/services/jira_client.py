@@ -480,8 +480,10 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None)
                 if first_page:
                     log_line("Jira 이슈 목록 조회 실패(이전 캐시 유지):", e, e2)
                     return None, None
-                log_line("Jira 이슈 목록 추가 페이지 조회 실패(그때까지 받은 %d건만 사용):" % len(all_issues), e)
-                break
+                # A partial page set is not a complete snapshot. Returning it as
+                # success could make full-sync reconciliation delete valid issues.
+                log_line("Jira 이슈 목록 추가 페이지 조회 실패 — 이전 캐시를 유지합니다:", e, e2)
+                return None, None
         first_page = False
         issues = data.get("issues", []) or []
         all_issues.extend(issues)
@@ -833,9 +835,10 @@ def sync_jira_cache(cfg, force_full=False):
 
     # DB에 UPSERT 저장
     if records is not None:
+        full_sync = last_sync is None
         try:
-            if records:
-                upsert_jira_records(records)
+            if records or full_sync:
+                upsert_jira_records(records, replace_existing=full_sync)
                 try:
                     from services.vector_store import trigger_async_vector_sync
                     trigger_async_vector_sync(cfg)
@@ -844,12 +847,14 @@ def sync_jira_cache(cfg, force_full=False):
             if activities:
                 upsert_jira_activities(activities)
             set_last_sync_time(now)
+            all_records = load_all_jira_from_db()
+            all_activities = load_all_jira_activities_from_db()
         except Exception as e:
             log_line("Jira cache upsert failed; sync cursor not advanced:", e)
             with _jira_cache_lock:
                 _jira_cache["error"] = f"Jira 동기화 DB 저장 오류: {e}"
-        all_records = load_all_jira_from_db()
-        all_activities = load_all_jira_activities_from_db()
+            all_records = None
+            all_activities = None
     else:
         all_records = None
         all_activities = None
@@ -1843,6 +1848,92 @@ def get_jira_issue_by_key(cfg, issue_key):
     matched["canPushToJira"] = is_jira_ready and is_local_record and not has_jira_ticket
 
     return matched
+
+
+def fetch_remote_jira_issue(cfg, issue_key):
+    """Jira Cloud REST API에서 단일 이슈의 메타데이터(summary, status, issuetype, assignee, project)를 직접 조회한다."""
+    if not cfg:
+        return None
+    j = cfg.get("jira", {})
+    if not j.get("enabled") or not j.get("api_token") or not j.get("base_url"):
+        return None
+    clean_key = (issue_key or "").strip().upper()
+    if not clean_key or not re.match(r"^[A-Z0-9]+-\d+$", clean_key):
+        return None
+    base_url = j.get("base_url", "").rstrip("/")
+    url = f"{base_url}/rest/api/3/issue/{clean_key}?fields=summary,status,issuetype,assignee,project"
+    req = urllib.request.Request(url, headers=_jira_auth_header(j))
+    try:
+        with _urlopen(req, timeout=10, cfg=cfg) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            fields = data.get("fields") or {}
+            project = fields.get("project") or {}
+            project_key = (project.get("key") or "").upper()
+            dept_id = jira_dept_for_project_key(cfg, project_key) or ""
+            assignee_obj = fields.get("assignee") or {}
+            assignee_name = assignee_obj.get("displayName") or ""
+            assignee_email = assignee_obj.get("emailAddress") or ""
+            local_assignee = resolve_jira_to_local_name(cfg, assignee_name, assignee_email)
+            status_obj = fields.get("status") or {}
+            status_name = status_obj.get("name") or "대기"
+            itype_obj = fields.get("issuetype") or {}
+            itype_name = itype_obj.get("name") or "작업"
+            return {
+                "summary": fields.get("summary") or clean_key,
+                "status_name": status_name,
+                "issue_type": itype_name,
+                "assignee_name": local_assignee or assignee_name,
+                "assignee_email": assignee_email,
+                "dept_id": dept_id,
+                "project_key": project_key
+            }
+    except Exception as e:
+        log_line(f"fetch_remote_jira_issue 실패 ({clean_key}):", e)
+        return None
+
+
+def resolve_jira_record_for_auth(cfg, issue_key):
+    """이슈 키(Jira Key)에 대한 권한 검증용 메타데이터를 조회한다 (DB -> Cache -> Jira Cloud 순).
+    찾을 수 없는 경우 None을 반환하며 호출측은 반드시 fail-closed로 거부해야 한다.
+    """
+    clean_key = (issue_key or "").strip().upper()
+    if not clean_key:
+        return None
+
+    # 1. DB의 jira_issues 테이블
+    try:
+        from db import query
+        iss_info = query(
+            "SELECT summary, status_name, issue_type, assignee_name, dept_id FROM jira_issues WHERE UPPER(jira_key) = UPPER(?)",
+            (clean_key,)
+        )
+        if iss_info:
+            return iss_info[0]
+    except Exception:
+        pass
+
+    # 2. Jira 메모리/디스크 캐시
+    if cfg:
+        try:
+            for r in (get_cached_jira_records(cfg).get("records") or []):
+                jk = ((r.get("jira") or {}).get("key") or "").strip().upper()
+                if clean_key == jk:
+                    return {
+                        "summary": r.get("title"),
+                        "status_name": r.get("status"),
+                        "issue_type": r.get("category"),
+                        "assignee_name": r.get("assignee"),
+                        "dept_id": r.get("org") or r.get("dept_id")
+                    }
+        except Exception:
+            pass
+
+    # 3. Jira Cloud REST API 직접 조회
+    remote = fetch_remote_jira_issue(cfg, clean_key)
+    if remote:
+        return remote
+
+    return None
 
 
 

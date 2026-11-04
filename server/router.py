@@ -1194,6 +1194,22 @@ def handle_get_products_categories(handler, parsed, ip):
     categories, templates = get_product_categories_and_templates()
     handler._send_json(200, {"ok": True, "categories": categories, "templates": templates})
 
+def _mask_product_prices(value):
+    """Return a recursively masked copy of PIM data for users without price access."""
+    if isinstance(value, dict):
+        masked = {}
+        for key, item in value.items():
+            normalized = str(key).replace("_", "").lower()
+            if normalized.endswith("price"):
+                masked[key] = 0
+            else:
+                masked[key] = _mask_product_prices(item)
+        masked["priceHidden"] = True
+        return masked
+    if isinstance(value, list):
+        return [_mask_product_prices(item) for item in value]
+    return value
+
 def handle_get_products(handler, parsed, ip):
     session = handler._get_session_or_401()
     if not session:
@@ -1206,19 +1222,7 @@ def handle_get_products(handler, parsed, ip):
     filtered = search_products(products, q)
     from services.auth import can_view_pim_price
     if not can_view_pim_price(session):
-        masked_list = []
-        for p in filtered:
-            item = dict(p, price=0, priceHidden=True)
-            if item.get("procurement") and isinstance(item["procurement"], dict):
-                proc = dict(item["procurement"])
-                if "price" in proc:
-                    proc["price"] = 0
-                if "unitPrice" in proc:
-                    proc["unitPrice"] = 0
-                proc["priceHidden"] = True
-                item["procurement"] = proc
-            masked_list.append(item)
-        filtered = masked_list
+        filtered = [_mask_product_prices(p) for p in filtered]
     handler._send_json(200, {"ok": True, "products": filtered, "total": len(filtered)})
 
 def handle_get_products_attachment(handler, parsed, ip):
@@ -1273,11 +1277,7 @@ def handle_get_product_detail(handler, parsed, ip):
     specs = product.get("specs") or {}
     proc = dict(product.get("procurement") or {})
     if not allow_price:
-        if "price" in proc:
-            proc["price"] = 0
-        if "unitPrice" in proc:
-            proc["unitPrice"] = 0
-        proc["priceHidden"] = True
+        proc = _mask_product_prices(proc)
     source = product.get("source") or "internal"
     is_live = False
 
@@ -1637,27 +1637,18 @@ def handle_post_issue_comment(handler, raw_body, ip):
         handler._send_json(200, {"ok": True, "issue_key": issue_key, "comment": comment})
         return
 
-    from db import query
-    iss_info = query("SELECT summary, status_name, issue_type, assignee_name, dept_id FROM jira_issues WHERE UPPER(jira_key) = UPPER(?)", (issue_key,))
-    jira_rec = iss_info[0] if iss_info else None
-    if not jira_rec and handler.cfg:
-        try:
-            from services.jira_client import get_cached_jira_records
-            for r in (get_cached_jira_records(handler.cfg).get("records") or []):
-                jk = ((r.get("jira") or {}).get("key") or "").strip().upper()
-                if issue_key.upper() == jk:
-                    jira_rec = {"summary": r.get("title"), "status_name": r.get("status"), "issue_type": r.get("category"), "assignee_name": r.get("assignee"), "dept_id": r.get("org") or r.get("dept_id")}
-                    break
-        except Exception:
-            pass
+    from services.jira_client import resolve_jira_record_for_auth
+    jira_rec = resolve_jira_record_for_auth(handler.cfg, issue_key)
+    if not jira_rec:
+        handler._send_json(404, {"ok": False, "error": f"이슈를 찾을 수 없거나 접근 권한을 확인할 수 없습니다: {issue_key}"})
+        return
 
-    if jira_rec:
-        from services.auth import can_view_record, is_admin_user
-        if not is_admin_user(session):
-            rec_like = {"dept_id": jira_rec.get("dept_id"), "assignee_name": jira_rec.get("assignee_name"), "is_private": 0}
-            if not can_view_record(session, rec_like):
-                handler._send_json(403, {"ok": False, "error": "해당 Jira 이슈에 댓글을 작성할 권한이 없습니다."})
-                return
+    from services.auth import can_view_record, is_admin_user
+    if not is_admin_user(session):
+        rec_like = {"dept_id": jira_rec.get("dept_id"), "assignee_name": jira_rec.get("assignee_name"), "is_private": 0}
+        if not can_view_record(session, rec_like):
+            handler._send_json(403, {"ok": False, "error": "해당 Jira 이슈에 댓글을 작성할 권한이 없습니다."})
+            return
 
     res, err = add_jira_comment(handler.cfg, issue_key, comment, author_name=session.get("name"))
     if err:
@@ -1765,28 +1756,19 @@ def handle_post_issue_transition(handler, raw_body, ip):
         handler._send_json(403, {"ok": False, "error": "조회 전용(Viewer) 권한의 사용자는 상태를 변경할 수 없습니다."})
         return
 
-    from db import query
-    iss_info = query("SELECT summary, issue_type, assignee_name, dept_id, status_name FROM jira_issues WHERE UPPER(jira_key) = UPPER(?)", (issue_key,))
-    jira_rec = iss_info[0] if iss_info else None
-    if not jira_rec and handler.cfg:
-        try:
-            from services.jira_client import get_cached_jira_records
-            for r in (get_cached_jira_records(handler.cfg).get("records") or []):
-                jk = ((r.get("jira") or {}).get("key") or "").strip().upper()
-                if issue_key.upper() == jk:
-                    jira_rec = {"summary": r.get("title"), "status_name": r.get("status"), "issue_type": r.get("category"), "assignee_name": r.get("assignee"), "dept_id": r.get("org") or r.get("dept_id")}
-                    break
-        except Exception:
-            pass
+    from services.jira_client import resolve_jira_record_for_auth
+    jira_rec = resolve_jira_record_for_auth(handler.cfg, issue_key)
+    if not jira_rec:
+        handler._send_json(404, {"ok": False, "error": f"이슈를 찾을 수 없거나 접근 권한을 확인할 수 없습니다: {issue_key}"})
+        return
 
-    if jira_rec:
-        from services.auth import can_transition_status, is_admin_user
-        if not is_admin_user(session):
-            rec_like = {"dept_id": jira_rec.get("dept_id"), "assignee_name": jira_rec.get("assignee_name"), "status": jira_rec.get("status_name")}
-            can_trans, trans_err = can_transition_status(session, rec_like, status)
-            if not can_trans:
-                handler._send_json(403, {"ok": False, "error": trans_err or "해당 Jira 이슈의 상태를 변경할 권한이 없습니다."})
-                return
+    from services.auth import can_transition_status, is_admin_user
+    if not is_admin_user(session):
+        rec_like = {"dept_id": jira_rec.get("dept_id"), "assignee_name": jira_rec.get("assignee_name"), "status": jira_rec.get("status_name")}
+        can_trans, trans_err = can_transition_status(session, rec_like, status)
+        if not can_trans:
+            handler._send_json(403, {"ok": False, "error": trans_err or "해당 Jira 이슈의 상태를 변경할 권한이 없습니다."})
+            return
 
     ok, note = transition_jira_issue(handler.cfg, issue_key, status)
     if not ok:
@@ -1917,27 +1899,18 @@ def handle_post_issue_attachment(handler, raw_body, ip):
         handler._send_json(403, {"ok": False, "error": "조회 전용(Viewer) 권한의 사용자는 첨부파일을 업로드할 수 없습니다."})
         return
 
-    from db import query
-    iss_info = query("SELECT summary, status_name, issue_type, assignee_name, dept_id FROM jira_issues WHERE UPPER(jira_key) = UPPER(?)", (issue_key,))
-    jira_rec = iss_info[0] if iss_info else None
-    if not jira_rec and handler.cfg:
-        try:
-            from services.jira_client import get_cached_jira_records
-            for r in (get_cached_jira_records(handler.cfg).get("records") or []):
-                jk = ((r.get("jira") or {}).get("key") or "").strip().upper()
-                if issue_key.upper() == jk:
-                    jira_rec = {"summary": r.get("title"), "status_name": r.get("status"), "issue_type": r.get("category"), "assignee_name": r.get("assignee"), "dept_id": r.get("org") or r.get("dept_id")}
-                    break
-        except Exception:
-            pass
+    from services.jira_client import resolve_jira_record_for_auth
+    jira_rec = resolve_jira_record_for_auth(handler.cfg, issue_key)
+    if not jira_rec:
+        handler._send_json(404, {"ok": False, "error": f"이슈를 찾을 수 없거나 접근 권한을 확인할 수 없습니다: {issue_key}"})
+        return
 
-    if jira_rec:
-        from services.auth import can_modify_record, is_admin_user
-        if not is_admin_user(session):
-            rec_like = {"dept_id": jira_rec.get("dept_id"), "assignee_name": jira_rec.get("assignee_name")}
-            if not can_modify_record(session, rec_like):
-                handler._send_json(403, {"ok": False, "error": "해당 Jira 이슈에 첨부파일을 업로드할 권한이 없습니다."})
-                return
+    from services.auth import can_modify_record, is_admin_user
+    if not is_admin_user(session):
+        rec_like = {"dept_id": jira_rec.get("dept_id"), "assignee_name": jira_rec.get("assignee_name")}
+        if not can_modify_record(session, rec_like):
+            handler._send_json(403, {"ok": False, "error": "해당 Jira 이슈에 첨부파일을 업로드할 권한이 없습니다."})
+            return
 
     uploaded_files = []
     errors = []
