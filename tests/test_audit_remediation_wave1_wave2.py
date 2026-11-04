@@ -326,7 +326,10 @@ class TestAuditRemediationSuite(unittest.TestCase):
             self.assertFalse(h_att.response.get("ok"))
 
     def test_jira_pagination_cap_skips_reconciliation(self):
-        """When full sync hits pagination cap with more pages pending (is_complete=False), reconciliation is skipped."""
+        """When full sync hits pagination cap with more pages pending (is_complete=False):
+        1. Reconciliation is skipped (old issues are not deleted).
+        2. set_last_sync_time is NOT called, so subsequent syncs will not skip missing older issues.
+        """
         from services.jira_client import sync_jira_cache
 
         # 1. Seed existing issue
@@ -335,9 +338,10 @@ class TestAuditRemediationSuite(unittest.TestCase):
 
         # 2. Mock jira_search_issues returning is_complete=False
         fake_records = [{"jira": {"key": "TEST-PAG-NEW", "summary": "New Issue"}}]
+        mock_set_sync = MagicMock()
         with patch("services.jira_client.jira_search_issues", return_value=(fake_records, [], False)), \
              patch("services.jira_db.get_last_sync_time", return_value=None), \
-             patch("services.jira_db.set_last_sync_time"), \
+             patch("services.jira_db.set_last_sync_time", mock_set_sync), \
              patch("services.jira_client.jira_fetch_project_categories", return_value=[]):
             sync_jira_cache({"jira": {"enabled": True, "project_map": {}}}, force_full=True)
 
@@ -346,6 +350,21 @@ class TestAuditRemediationSuite(unittest.TestCase):
         rows_new = query("SELECT jira_key FROM jira_issues WHERE jira_key = 'TEST-PAG-NEW'")
         self.assertEqual(len(rows_old), 1, "Old issue must be retained when full-sync fetch was partial")
         self.assertEqual(len(rows_new), 1, "New issue must be upserted")
+
+        # 4. Verify sync cursor was NOT advanced!
+        mock_set_sync.assert_not_called()
+
+        # 5. When is_complete=True, sync cursor IS advanced and reconciliation runs
+        mock_set_sync_complete = MagicMock()
+        with patch("services.jira_client.jira_search_issues", return_value=(fake_records, [], True)), \
+             patch("services.jira_db.get_last_sync_time", return_value=None), \
+             patch("services.jira_db.set_last_sync_time", mock_set_sync_complete), \
+             patch("services.jira_client.jira_fetch_project_categories", return_value=[]):
+            sync_jira_cache({"jira": {"enabled": True, "project_map": {}}}, force_full=True)
+
+        mock_set_sync_complete.assert_called_once()
+        rows_old_after = query("SELECT jira_key FROM jira_issues WHERE jira_key = 'TEST-PAG-OLD'")
+        self.assertEqual(len(rows_old_after), 0, "Old issue is reconciled only when full sync was complete")
 
     def test_vector_strict_sync_aborts_on_single_bad_record_row(self):
         """_collect_all_documents(cfg, strict=True) must raise RuntimeError on a bad row in the middle of list."""
