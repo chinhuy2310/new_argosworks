@@ -85,9 +85,16 @@ class TestPostgresBackupRestore(unittest.TestCase):
             called_cmd = mock_run.call_args[0][0]
             self.assertTrue("pg_dump" in os.path.basename(called_cmd[0]))
             self.assertEqual(called_cmd[1], "-Fc")
-            self.assertEqual(called_cmd[2], "-d")
-            self.assertEqual(called_cmd[3], self.db_url)
-            self.assertEqual(called_cmd[4], "-f")
+            called_kwargs = mock_run.call_args[1]
+            self.assertIn("-d", called_cmd)
+            self.assertIn("argos_works", called_cmd)
+            self.assertIn("-h", called_cmd)
+            self.assertIn("postgres", called_cmd)
+            self.assertIn("-U", called_cmd)
+            self.assertIn("argos_admin", called_cmd)
+            self.assertNotIn("secret123", " ".join(called_cmd))
+            self.assertEqual(called_kwargs.get("env", {}).get("PGPASSWORD"), "secret123")
+            self.assertIn("-f", called_cmd)
 
             # Verify contents of tar.gz
             with tarfile.open(archive_path, "r:gz") as tar:
@@ -139,7 +146,12 @@ class TestPostgresBackupRestore(unittest.TestCase):
             self.assertIn("--clean", restore_cmd)
             self.assertIn("--if-exists", restore_cmd)
             self.assertIn("-d", restore_cmd)
-            self.assertIn(self.db_url, restore_cmd)
+            self.assertIn("argos_works", restore_cmd)
+            self.assertIn("-h", restore_cmd)
+            self.assertIn("postgres", restore_cmd)
+            self.assertIn("-U", restore_cmd)
+            self.assertIn("argos_admin", restore_cmd)
+            self.assertNotIn("secret123", " ".join(restore_cmd))
 
     def test_missing_pg_dump_raises_clear_error(self):
         """When pg_dump binary is missing, raise FileNotFoundError with actionable advice."""
