@@ -1137,7 +1137,7 @@ else:
                 logger.info("[db/postgres] Migration v10 (notification user/read state) applied.")
 
             # Migration 11: Reconciliation of records.work_date default and sessions.last_active_at
-            if 11 not in applied_migrations:
+            if 11 not in applied_versions:
                 try:
                     cur.execute("ALTER TABLE records ALTER COLUMN work_date SET DEFAULT '';")
                     cur.execute("ALTER TABLE sessions ALTER COLUMN last_active_at SET DEFAULT 0;")
