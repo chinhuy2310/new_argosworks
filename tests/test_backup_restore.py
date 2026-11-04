@@ -117,3 +117,23 @@ class TestBackupRestoreRoundTrip:
         os.remove(isolated_backup_env["db_path"])
         with pytest.raises(FileNotFoundError):
             backup_manager.create_backup(note="no db", backup_type="manual")
+
+    def test_import_backup_rejects_oversized_member(self, isolated_backup_env, monkeypatch):
+        from services import backup_manager
+        import io
+        import tarfile
+
+        # Lower MAX_BACKUP_EXTRACT_SIZE temporarily to 1KB for fast test
+        monkeypatch.setattr(backup_manager, "MAX_BACKUP_EXTRACT_SIZE", 1024)
+
+        tar_buf = io.BytesIO()
+        with tarfile.open(fileobj=tar_buf, mode="w:gz") as tar:
+            big_data = b"X" * 2048  # Exceeds 1024 bytes
+            info = tarfile.TarInfo(name="argos.db")
+            info.size = len(big_data)
+            tar.addfile(info, io.BytesIO(big_data))
+
+        tar_bytes = tar_buf.getvalue()
+        with pytest.raises(RuntimeError) as exc_info:
+            backup_manager.import_backup_file(tar_bytes, "oversized.tar.gz")
+        assert "제한" in str(exc_info.value)

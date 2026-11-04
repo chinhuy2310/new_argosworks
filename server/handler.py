@@ -40,8 +40,6 @@ PUBLIC_API_WHITELIST = {
     "/api/auth/csrf",
     "/api/account/logout",
     "/api/auth/logout",
-    "/api/account/logout-all",
-    "/api/auth/logout-all",
     "/api/account/me",
 
     # Public Workspace UI Branding

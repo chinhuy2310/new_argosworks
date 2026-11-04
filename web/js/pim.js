@@ -148,7 +148,8 @@ function renderPimSpecFields(category, values){
   var html = "";
   if(template.length){
     var lastGroup = null;
-    template.forEach(function(f){
+    template.forEach(function(rawF){
+      var f = (rawF && typeof rawF === "object") ? rawF : { group: "규격", label: String(rawF || ""), key: String(rawF || ""), maxlen: 200 };
       if(f.group !== lastGroup){
         html += '<p class="pim-spec-group-title">' + escapeHtml(f.group || "규격") + '</p>';
         lastGroup = f.group;

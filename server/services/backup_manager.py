@@ -17,6 +17,24 @@ logger = logging.getLogger(__name__)
 
 _backup_lock = threading.Lock()
 
+MAX_BACKUP_EXTRACT_SIZE = 1024 * 1024 * 1024  # 1GB total limit
+MAX_BACKUP_FILE_COUNT = 10000
+MAX_MANIFEST_SIZE = 10 * 1024 * 1024          # 10MB limit
+
+
+def _copy_with_size_limit(src, dst, max_bytes=MAX_BACKUP_EXTRACT_SIZE):
+    """Stream copy protecting against gzip/tar bombs by enforcing strict uncompressed size limit."""
+    total = 0
+    chunk_size = 64 * 1024
+    while True:
+        chunk = src.read(chunk_size)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise RuntimeError(f"백업 데이터베이스 압축 해제 용량이 제한({max_bytes // (1024*1024)}MB)을 초과했습니다.")
+        dst.write(chunk)
+
 def get_backup_dir():
     """현재 설정된 백업 디렉토리 경로를 반환 (절대 경로 보장)."""
     try:
@@ -177,24 +195,31 @@ def import_backup_file(file_bytes, original_filename, note="외부 업로드 백
                         None
                     )
                     if manifest_member:
+                        if manifest_member.size > MAX_MANIFEST_SIZE:
+                            raise RuntimeError(f"백업 Manifest 파일 크기가 제한({MAX_MANIFEST_SIZE // (1024*1024)}MB)을 초과했습니다.")
                         manifest_file = archive.extractfile(manifest_member)
                         if manifest_file:
                             try:
-                                embedded_manifest = json.loads(manifest_file.read().decode("utf-8"))
+                                raw_manifest = manifest_file.read(MAX_MANIFEST_SIZE + 1)
+                                if len(raw_manifest) > MAX_MANIFEST_SIZE:
+                                    raise RuntimeError("백업 Manifest 내용이 제한을 초과했습니다.")
+                                embedded_manifest = json.loads(raw_manifest.decode("utf-8"))
                                 declared_engine = embedded_manifest.get("database_engine")
                                 if declared_engine and declared_engine != detected_engine:
                                     raise RuntimeError("백업 Manifest의 DB 엔진 정보가 실제 파일과 일치하지 않습니다.")
                             except json.JSONDecodeError as manifest_error:
                                 raise RuntimeError("백업 Manifest JSON이 손상되었습니다.") from manifest_error
 
+                    if db_member.size > MAX_BACKUP_EXTRACT_SIZE:
+                        raise RuntimeError(f"백업 데이터베이스 파일 크기가 제한({MAX_BACKUP_EXTRACT_SIZE // (1024*1024)}MB)을 초과했습니다.")
                     extracted = archive.extractfile(db_member)
                     if extracted is None:
                         raise RuntimeError("백업 데이터베이스 파일을 읽을 수 없습니다.")
                     with open(chk_tmp, "wb") as output_file:
-                        shutil.copyfileobj(extracted, output_file)
+                        _copy_with_size_limit(extracted, output_file, MAX_BACKUP_EXTRACT_SIZE)
             else:
                 with gzip.open(dest_path, "rb") as source_file, open(chk_tmp, "wb") as output_file:
-                    shutil.copyfileobj(source_file, output_file)
+                    _copy_with_size_limit(source_file, output_file, MAX_BACKUP_EXTRACT_SIZE)
 
             if detected_engine != ENGINE:
                 raise ValueError(
