@@ -1056,17 +1056,21 @@ def handle_assign_schedule_task(handler, raw_body, ip):
     from services.data_store import find_record_by_key_or_code
     from services.auth import check_record_write_access
     from services.license_manager import is_system_read_only
-    target_rec = find_record_by_key_or_code(task_id)
-    if target_rec:
-        if is_system_read_only():
-            handler._send_json(403, {"ok": False, "error": "라이선스가 만료되어 시스템이 읽기 전용(Read-Only) 상태입니다. 관리자에게 문의하세요."})
-            return
-        allowed, deny_err = check_record_write_access(session, target_rec)
-        if not allowed:
-            access_log(ip, "forbidden_assign_schedule_task", 403,
-                       f"{task_id} by {session.get('name')}")
-            handler._send_json(403, {"ok": False, "error": deny_err})
-            return
+    # local_only: Jira 캐시 레코드(id="jira-KEY")는 records 행이 아니므로 여기서 변경할 수 없다.
+    # 조회 실패 시 RBAC 를 건너뛰지 않고 즉시 404 (fail-closed).
+    target_rec = find_record_by_key_or_code(task_id, local_only=True)
+    if not target_rec:
+        handler._send_json(404, {"ok": False, "error": f"해당 업무 카드 [{task_id}]를 찾을 수 없습니다."})
+        return
+    if is_system_read_only():
+        handler._send_json(403, {"ok": False, "error": "라이선스가 만료되어 시스템이 읽기 전용(Read-Only) 상태입니다. 관리자에게 문의하세요."})
+        return
+    allowed, deny_err = check_record_write_access(session, target_rec)
+    if not allowed:
+        access_log(ip, "forbidden_assign_schedule_task", 403,
+                   f"{task_id} by {session.get('name')}")
+        handler._send_json(403, {"ok": False, "error": deny_err})
+        return
 
     action = payload.get("action")
     if action == "show" or payload.get("restore"):
@@ -1162,17 +1166,19 @@ def handle_unassign_schedule_task(handler, raw_body, ip):
     from services.data_store import find_record_by_key_or_code
     from services.auth import check_record_write_access
     from services.license_manager import is_system_read_only
-    target_rec = find_record_by_key_or_code(task_id)
-    if target_rec:
-        if is_system_read_only():
-            handler._send_json(403, {"ok": False, "error": "라이선스가 만료되어 시스템이 읽기 전용(Read-Only) 상태입니다. 관리자에게 문의하세요."})
-            return
-        allowed, deny_err = check_record_write_access(session, target_rec)
-        if not allowed:
-            access_log(ip, "forbidden_unassign_schedule_task", 403,
-                       f"{task_id} by {session.get('name')}")
-            handler._send_json(403, {"ok": False, "error": deny_err})
-            return
+    target_rec = find_record_by_key_or_code(task_id, local_only=True)
+    if not target_rec:
+        handler._send_json(404, {"ok": False, "error": f"해당 업무 카드 [{task_id}]를 찾을 수 없습니다."})
+        return
+    if is_system_read_only():
+        handler._send_json(403, {"ok": False, "error": "라이선스가 만료되어 시스템이 읽기 전용(Read-Only) 상태입니다. 관리자에게 문의하세요."})
+        return
+    allowed, deny_err = check_record_write_access(session, target_rec)
+    if not allowed:
+        access_log(ip, "forbidden_unassign_schedule_task", 403,
+                   f"{task_id} by {session.get('name')}")
+        handler._send_json(403, {"ok": False, "error": deny_err})
+        return
 
     wipe_dates = bool(payload.get("wipeDates"))
     from services.data_store import clear_record_work_date
@@ -1214,6 +1220,11 @@ def _mask_product_prices(value):
     if isinstance(value, list):
         return [_mask_product_prices(item) for item in value]
     return value
+
+def _mask_price_spec_values(specs):
+    """Flat spec dict: zero price-like keys (same key rule as _mask_product_prices), no extra keys."""
+    return {k: (0 if str(k).replace("_", "").lower().endswith("price") else v) for k, v in specs.items()}
+
 
 def handle_get_products(handler, parsed, ip):
     session = handler._get_session_or_401()
@@ -1280,6 +1291,8 @@ def handle_get_product_detail(handler, parsed, ip):
     summary = product.get("summary", "")
     memo = product.get("memo", "")
     specs = product.get("specs") or {}
+    if not allow_price and isinstance(specs, dict):
+        specs = _mask_price_spec_values(specs)
     proc = dict(product.get("procurement") or {})
     if not allow_price:
         proc = _mask_product_prices(proc)
@@ -1504,7 +1517,7 @@ def handle_get_local_attachment(handler, parsed, ip):
         rid_int = int(record_id)
         rec = get_one("SELECT * FROM records WHERE id = ? LIMIT 1", (rid_int,))
     except Exception:
-        rec = find_record_by_key_or_code(record_id)
+        rec = find_record_by_key_or_code(record_id, local_only=True)
 
     if not rec:
         handler._send_json(404, {"ok": False, "error": "해당 업무 카드를 찾을 수 없습니다."})
@@ -1570,6 +1583,10 @@ def handle_post_issue_comment(handler, raw_body, ip):
     from services.auth import can_write_data
     if not can_write_data(session):
         handler._send_json(403, {"ok": False, "error": "읽기 전용(Viewer) 권한 사용자는 댓글을 작성할 수 없습니다."})
+        return
+    from services.license_manager import is_system_read_only
+    if is_system_read_only():
+        handler._send_json(403, {"ok": False, "error": "라이선스가 만료되어 시스템이 읽기 전용(Read-Only) 상태입니다. 관리자에게 문의하세요."})
         return
     try:
         body, body_err = parse_json_dict(raw_body)
@@ -1760,6 +1777,10 @@ def handle_post_issue_transition(handler, raw_body, ip):
     if not can_write_data(session):
         handler._send_json(403, {"ok": False, "error": "조회 전용(Viewer) 권한의 사용자는 상태를 변경할 수 없습니다."})
         return
+    from services.license_manager import is_system_read_only
+    if is_system_read_only():
+        handler._send_json(403, {"ok": False, "error": "라이선스가 만료되어 시스템이 읽기 전용(Read-Only) 상태입니다. 관리자에게 문의하세요."})
+        return
 
     from services.jira_client import resolve_jira_record_for_auth
     jira_rec = resolve_jira_record_for_auth(handler.cfg, issue_key)
@@ -1825,7 +1846,9 @@ def handle_post_issue_attachment(handler, raw_body, ip):
         handler._send_json(400, {"ok": False, "error": "업로드할 파일이 없습니다."})
         return
 
-    local_rec = find_record_by_key_or_code(issue_key)
+    # local_only: 동기화된 Jira 이슈가 로컬 분기로 들어가 record_attachments FK 오류(500)와
+    # 고아 파일을 남기던 문제 방지 — Jira 이슈는 아래 Jira 업로드 분기로 처리된다.
+    local_rec = find_record_by_key_or_code(issue_key, local_only=True)
     if not local_rec:
         clean_id = issue_key.strip().upper().lstrip("#").replace("REC-", "").replace("LOCAL-", "").replace("JIRA-", "")
         if clean_id.isdigit():
@@ -1989,7 +2012,7 @@ def handle_delete_record_attachment(handler, raw_body, ip):
     if not key or not attach_id:
         handler._send_json(400, {"ok": False, "error": "업무 키와 첨부파일 ID가 필요합니다."})
         return
-    rec = find_record_by_key_or_code(key)
+    rec = find_record_by_key_or_code(key, local_only=True)
     if not rec:
         handler._send_json(404, {"ok": False, "error": f"기록 '{key}'을 찾을 수 없습니다."})
         return
@@ -2223,7 +2246,8 @@ def handle_delete_record(handler, raw_body, ip):
     except Exception:
         body = {}
     record_id_raw = body.get("id") or body.get("record_id") or body.get("key") or ""
-    rec = find_record_by_key_or_code(record_id_raw)
+    # local_only: Jira 캐시 레코드에 대해 "삭제되었습니다"(실제로는 0건)라고 응답하던 문제 방지
+    rec = find_record_by_key_or_code(record_id_raw, local_only=True)
     if not rec:
         handler._send_json(404, {"ok": False, "error": f"레코드 '{record_id_raw}'를 찾을 수 없습니다."})
         return
@@ -2332,7 +2356,12 @@ def _push_single_local_record_to_jira(cfg, session, rec, parent_jira_key=None, c
     if summary_text and memo_text and summary_text != memo_text:
         description = f"요약: {summary_text}\n\n상세 메모: {memo_text}"
 
-    attach_files = rec.get("attachments") or []
+    # read/find 계열은 첨부를 dict({"filename", "name", ...}) 로 반환한다.
+    attach_files = []
+    for att in (rec.get("attachments") or []):
+        att_name = (att.get("filename") or att.get("name")) if isinstance(att, dict) else att
+        if att_name:
+            attach_files.append(str(att_name))
     if attach_files:
         description += "\n\n첨부파일: " + ", ".join(attach_files)
     description += f"\n\n[ARGOS WORKS 로컬 발행] 제출자: {rec.get('assignee', '')} ({dept_id})"
@@ -2392,9 +2421,10 @@ def _push_single_local_record_to_jira(cfg, session, rec, parent_jira_key=None, c
     # 로컬 첨부파일이 있으면 Jira 이슈에도 자동 업로드 시도
     rec_attach_dir = os.path.join(ATTACH_DIR, str(rec_id))
     if os.path.exists(rec_attach_dir) and attach_files:
+        from utils.file_ops import safe_join
         for fname in attach_files:
-            fpath = os.path.join(rec_attach_dir, fname)
-            if os.path.exists(fpath):
+            fpath = safe_join(rec_attach_dir, fname)
+            if fpath and os.path.exists(fpath):
                 try:
                     with open(fpath, "rb") as f:
                         upload_jira_attachment(cfg, new_jira_key, fname, f.read(), "application/octet-stream")
@@ -3105,7 +3135,7 @@ def handle_post_admin_user_update(handler, raw_body, ip):
     # JSON body can carry the id as a string ("5" vs 5). Comparing normalized values
     # prevents bypassing the self-lockout / last-admin safeguards via a type mismatch.
     is_self = bool(cur_user_id is not None and str(cur_user_id) == str(user_id))
-    if not is_self:
+    if not is_self and cur_user_id is None:
         is_self = bool(
             (cur_username and target_user.get("username") == cur_username)
             or (cur_user_name and target_user.get("name") == cur_user_name)
@@ -3116,6 +3146,14 @@ def handle_post_admin_user_update(handler, raw_body, ip):
     if disabled is not None:
         disabled_flag = 1 if str(disabled).strip().lower() in ("1", "true", "yes", "on") else 0
 
+    # Re-enabling a disabled account consumes a licence seat (seats = users with disabled=0),
+    # exactly like create/approve — otherwise disable→approve→re-enable exceeds max_seats.
+    if disabled_flag == 0 and int(target_user.get("disabled") or 0) == 1:
+        from services.license_manager import check_seat_available
+        avail, seat_err = check_seat_available()
+        if not avail:
+            handler._send_json(403, {"ok": False, "error": seat_err or "라이선스 허용 사용자 수(Seat) 제한에 도달했습니다."})
+            return
     # Safeguard against locking oneself
     if is_self and disabled_flag == 1:
         handler._send_json(400, {"ok": False, "error": "현재 로그인 중인 본인 계정은 비활성화(잠금)할 수 없습니다."})
@@ -3179,7 +3217,7 @@ def handle_post_admin_user_update(handler, raw_body, ip):
                 if cur_token:
                     from services.auth import hash_session_token
                     token_hash = hash_session_token(cur_token)
-                    execute("DELETE FROM sessions WHERE (user_id = ? OR user_name = ?) AND token != ?", (user_id, target_user.get("username"), token_hash))
+                    execute("DELETE FROM sessions WHERE (user_id = ? OR (user_id IS NULL AND user_name = ? AND user_dept_id = ?)) AND token != ?", (user_id, target_user.get("name"), target_user.get("dept_id"), token_hash))
                 else:
                     delete_all_user_sessions(user_id)
             else:
@@ -3211,7 +3249,13 @@ def handle_post_admin_user_delete(handler, raw_body, ip):
         return
 
     cur_name = session.get("name", "")
-    if target_user.get("username") == cur_name or target_user.get("name") == cur_name:
+    cur_uid = session.get("id") or session.get("user_id")
+    if cur_uid is not None:
+        # Same-name colleagues in other departments are NOT "self".
+        is_self_target = str(target_user.get("id")) == str(cur_uid)
+    else:
+        is_self_target = target_user.get("username") == cur_name or target_user.get("name") == cur_name
+    if is_self_target:
         handler._send_json(400, {"ok": False, "error": "현재 로그인된 본인 계정은 삭제할 수 없습니다."})
         return
 

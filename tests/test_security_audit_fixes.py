@@ -96,6 +96,30 @@ def test_assignee_department_isolation_and_ambiguity(tmp_db):
     assert can_view_record(u1_session, saved_ambiguous) is False
     assert can_view_record(u2_session, saved_ambiguous) is False
 
+    # Case 1b: Non-private record (is_private=0) in dept3 with ambiguous assignee 'Minh'
+    from services.auth import can_modify_record, can_transition_status
+    rec_non_private = {
+        "id": 9003,
+        "dept_id": "dept3",
+        "title": "Public Dept3 Task with Ambiguous Assignee Minh",
+        "category": "General",
+        "assignee": "Minh",
+        "is_private": 0
+    }
+    append_record(rec_non_private)
+    saved_non_private = get_record_by_id(9003)
+    assert saved_non_private["assignee_id"] is None
+
+    # Neither user 201 (dept1) nor user 202 (dept2) should have view/modify/transition access
+    assert can_view_record(u1_session, saved_non_private) is False
+    assert can_view_record(u2_session, saved_non_private) is False
+    assert can_modify_record(u1_session, saved_non_private) is False
+    assert can_modify_record(u2_session, saved_non_private) is False
+    ok_trans1, _ = can_transition_status(u1_session, saved_non_private, "검토")
+    ok_trans2, _ = can_transition_status(u2_session, saved_non_private, "검토")
+    assert ok_trans1 is False
+    assert ok_trans2 is False
+
     # Case 2: Only 1 user globally named 'UniqueUser' in dept1 (id=203)
     execute("INSERT INTO users(id, name, username, dept_id, email, password_hash, salt, role) "
             "VALUES (203, 'UniqueUser', 'unique_u', 'dept1', 'unique@test.com', 'h', 's', 'member')")

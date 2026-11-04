@@ -177,8 +177,11 @@ def import_backup_file(file_bytes, original_filename, note="외부 업로드 백
             if is_tar:
                 with tarfile.open(dest_path, "r:gz") as archive:
                     members = [m for m in archive.getmembers() if m.isfile()]
-                    dump_members = [m for m in members if os.path.basename(m.name) == "argos.dump" or m.name.endswith(".dump")]
-                    sqlite_members = [m for m in members if m.name.lower().endswith((".db", ".sqlite"))]
+                    # Files under attachments/ are user uploads (a user may attach x.db / x.dump);
+                    # only top-level members can be the backup database.
+                    top_level = [m for m in members if "/" not in m.name.lstrip("./")]
+                    dump_members = [m for m in top_level if os.path.basename(m.name) == "argos.dump" or m.name.endswith(".dump")]
+                    sqlite_members = [m for m in top_level if m.name.lower().endswith((".db", ".sqlite"))]
                     if dump_members and sqlite_members:
                         raise RuntimeError("백업 아카이브에 PostgreSQL과 SQLite 데이터베이스가 함께 포함되어 있습니다.")
                     if dump_members:

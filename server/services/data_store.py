@@ -235,8 +235,15 @@ def get_record_by_id(record_id):
     return rec
 
 
-def find_record_by_key_or_code(key_or_code):
-    """card_code, jira_key 또는 id로 로컬 레코드를 단건 조회한다."""
+def find_record_by_key_or_code(key_or_code, local_only=False):
+    """card_code, jira_key 또는 id로 로컬 레코드를 단건 조회한다.
+
+    로컬 레코드가 없으면 jira_issues 캐시(raw_json)의 Jira 레코드(id="jira-KEY")를
+    반환한다. 이 폴백은 RBAC 판정/조회용이다. records 테이블을 변경하는 경로는
+    반드시 local_only=True 로 호출해야 한다 — 그렇지 않으면 "jira-KEY" 문자열이
+    records.id 로 쓰여 SQLite 에서는 0건 갱신 후 성공을 보고하고, PostgreSQL 에서는
+    bigint 형 변환 오류(500)가 난다.
+    """
     if not key_or_code:
         return None
     raw = str(key_or_code).strip()
@@ -256,6 +263,8 @@ def find_record_by_key_or_code(key_or_code):
         (raw.upper(), raw.upper(), clean, clean)
     )
     if not rows:
+        if local_only:
+            return None
         # Fallback: check cached Jira issues in jira_issues table
         try:
             jira_row = get_one(
@@ -1088,7 +1097,7 @@ def update_record_work_date(record_id_or_code, new_date, end_date=None):
     """특정 레코드의 start_date, due_date 및 work_date를 업데이트하고 달력 표시(is_scheduled = 1)를 활성화한다."""
     if not record_id_or_code or not new_date:
         return None, None
-    rec = find_record_by_key_or_code(record_id_or_code)
+    rec = find_record_by_key_or_code(record_id_or_code, local_only=True)
     if not rec:
         return None, None
     r_id = rec["id"]
@@ -1119,7 +1128,7 @@ def clear_record_work_date(record_id_or_code, wipe_dates=False):
     """특정 레코드의 달력 배정을 해제(is_scheduled = 0)하여 보관함으로 이동시킨다. 기존 날짜(시작일/마감일)는 보존된다."""
     if not record_id_or_code:
         return None, None
-    rec = find_record_by_key_or_code(record_id_or_code)
+    rec = find_record_by_key_or_code(record_id_or_code, local_only=True)
     if not rec:
         return None, None
     r_id = rec["id"]
@@ -1136,7 +1145,7 @@ def set_record_schedule_visibility(record_id_or_code, is_scheduled=True):
     """특정 레코드의 달력 표시 여부를 토글/설정한다 (1: 달력 표시, 0: 달력에서 숨김)."""
     if not record_id_or_code:
         return None, None
-    rec = find_record_by_key_or_code(record_id_or_code)
+    rec = find_record_by_key_or_code(record_id_or_code, local_only=True)
     if not rec:
         return None, None
     r_id = rec["id"]
@@ -1155,7 +1164,7 @@ def update_record_details(record_id_or_code, title=None, memo=None, assignee_nam
     Optimistic Locking (낙관적 락): expected_version이 지정된 경우 DB의 현재 버전과 일치하는지 검증한다."""
     if not record_id_or_code:
         return None, "기록 ID가 필요합니다."
-    rec = find_record_by_key_or_code(record_id_or_code)
+    rec = find_record_by_key_or_code(record_id_or_code, local_only=True)
     if not rec:
         return None, "해당 업무 기록을 찾을 수 없습니다."
 
@@ -1223,8 +1232,11 @@ def update_record_details(record_id_or_code, title=None, memo=None, assignee_nam
         params.append(p_clean)
 
     if due_date is not None or start_date is not None:
-        s_date = str(start_date).strip() if start_date is not None else (rec.get("start_date") or "")
-        d_date = str(due_date).strip() if due_date is not None else (rec.get("due_date") or "")
+        # rec 는 camelCase(startDate/dueDate, work_date 폴백 포함) 형태라 start_date/due_date 키가 없다.
+        # 한쪽 날짜만 수정할 때 다른 쪽 저장값을 보존하려면 실제 컬럼 값을 읽어야 한다.
+        stored = get_one("SELECT start_date, due_date FROM records WHERE id = ?", (r_id,)) or {}
+        s_date = str(start_date).strip() if start_date is not None else (stored.get("start_date") or "")
+        d_date = str(due_date).strip() if due_date is not None else (stored.get("due_date") or "")
         if not s_date and d_date:
             s_date = d_date
         elif not d_date and s_date:
