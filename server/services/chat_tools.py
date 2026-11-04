@@ -1351,6 +1351,37 @@ def _tool_get_active_tasks(args, current_user, cfg):
 
 
 
+def _is_local_record(rec):
+    """records 테이블의 실제 행인지 여부. find_record_by_key_or_code() 는 로컬 행이 없으면
+    jira_issues 캐시 레코드(id="jira-KEY")를 돌려주므로, 로컬 쓰기 전에 반드시 구분해야 한다
+    (SQLite: FK 오류 / 0건 갱신, PostgreSQL: bigint 형 변환 오류)."""
+    rid = (rec or {}).get("id")
+    if isinstance(rid, bool):
+        return False
+    return isinstance(rid, int) or (isinstance(rid, str) and rid.strip().isdigit())
+
+
+def _authorize_remote_jira_write(current_user, cfg, issue_key, check):
+    """로컬 카드가 아닌 Jira 이슈 쓰기 권한 (fail-closed, REST 핸들러와 동일 기준).
+
+    check: "view" | "modify" | ("transition", target_status)
+    """
+    from services.jira_client import resolve_jira_record_for_auth
+    from services.auth import is_admin_user, can_view_record, can_modify_record, can_transition_status
+    jira_rec = resolve_jira_record_for_auth(cfg, issue_key)
+    if not jira_rec:
+        return False, f"이슈를 찾을 수 없거나 접근 권한을 확인할 수 없습니다: {issue_key}"
+    if is_admin_user(current_user):
+        return True, ""
+    rec_like = {"dept_id": jira_rec.get("dept_id"), "assignee_name": jira_rec.get("assignee_name"), "is_private": 0}
+    if check == "view":
+        return (True, "") if can_view_record(current_user, rec_like) else (False, "해당 Jira 이슈에 대한 권한이 없습니다.")
+    if check == "modify":
+        return (True, "") if can_modify_record(current_user, rec_like) else (False, "해당 Jira 이슈를 변경할 권한이 없습니다.")
+    ok, err = can_transition_status(current_user, rec_like, check[1])
+    return (True, "") if ok else (False, err or "해당 Jira 이슈의 상태를 변경할 권한이 없습니다.")
+
+
 def _tool_update_issue_status(args, current_user, cfg):
 
     import threading
@@ -1412,7 +1443,7 @@ def _tool_update_issue_status(args, current_user, cfg):
 
     
 
-    if local_rec and local_rec.get("id"):
+    if local_rec and _is_local_record(local_rec):
 
         # 1. Update local SQLite DB first (Local-First!)
 
@@ -1526,6 +1557,10 @@ def _tool_update_issue_status(args, current_user, cfg):
 
         from services.jira_client import transition_jira_issue, sync_jira_cache
 
+        # REST 엔드포인트(handle_post_issue_*)와 동일한 fail-closed 권한 검증
+        auth_ok, auth_err = _authorize_remote_jira_write(current_user, cfg, issue_key, ("transition", new_status))
+        if not auth_ok:
+            return {"success": False, "issue_key": issue_key, "error": auth_err}
         ok, note = transition_jira_issue(cfg, issue_key, new_status)
 
         if ok:
@@ -1650,7 +1685,7 @@ def _tool_add_issue_comment(args, current_user, cfg):
 
     
 
-    if local_rec and local_rec.get("id"):
+    if local_rec and _is_local_record(local_rec):
 
         # 1. Local SQLite record comment first (Local-First!)
 
@@ -1759,6 +1794,10 @@ def _tool_add_issue_comment(args, current_user, cfg):
 
         from services.jira_client import add_jira_comment, sync_jira_cache
 
+        # REST 엔드포인트(handle_post_issue_*)와 동일한 fail-closed 권한 검증
+        auth_ok, auth_err = _authorize_remote_jira_write(current_user, cfg, issue_key, "view")
+        if not auth_ok:
+            return {"success": False, "issue_key": issue_key, "error": auth_err}
         res, err = add_jira_comment(cfg, issue_key, comment, author_name)
 
         if res and not err:
@@ -2428,6 +2467,9 @@ def _tool_schedule_issue(args, current_user, cfg):
 
 
     log_line(f"[Chat Tool] 일정 등록 요청: {issue_key} ({start_date} ~ {due_date}) (by {current_user.get('name')})")
+    from services.license_manager import is_system_read_only
+    if is_system_read_only():
+        return {"success": False, "error": "라이선스가 만료되어 시스템이 읽기 전용 상태입니다. 일정을 변경할 수 없습니다."}
 
 
 
@@ -2458,7 +2500,7 @@ def _tool_schedule_issue(args, current_user, cfg):
 
 
 
-    if local_rec and local_rec.get("id"):
+    if local_rec and _is_local_record(local_rec):
 
         update_record_work_date(local_rec["id"], start_date, due_date)
 
@@ -2484,6 +2526,10 @@ def _tool_schedule_issue(args, current_user, cfg):
 
         from services.jira_client import update_jira_issue_dates, get_jira_issue_by_key
 
+        # REST 엔드포인트(handle_post_issue_*)와 동일한 fail-closed 권한 검증
+        auth_ok, auth_err = _authorize_remote_jira_write(current_user, cfg, issue_key, "modify")
+        if not auth_ok:
+            return {"success": False, "issue_key": issue_key, "error": auth_err}
         jira_ok, jira_note = update_jira_issue_dates(cfg, issue_key, start_date=start_date, due_date=due_date)
 
         issue_info = get_jira_issue_by_key(cfg, issue_key) or {}
@@ -2704,6 +2750,12 @@ def _tool_search_products(args, current_user, cfg):
 
 
 
+def _mask_spec_prices(specs, allow_price):
+    if allow_price or not isinstance(specs, dict):
+        return specs
+    return {k: (0 if str(k).replace("_", "").lower().endswith("price") else v) for k, v in specs.items()}
+
+
 def _tool_get_product_details(args, current_user, cfg):
 
     """특정 제품의 상세 스펙과 조달 정보를 가져온다."""
@@ -2765,7 +2817,7 @@ def _tool_get_product_details(args, current_user, cfg):
         "category": target.get("category", "일반"),
         "summary": target.get("summary", ""),
         "memo": target.get("memo", ""),
-        "specs": target.get("specs", {}),
+        "specs": _mask_spec_prices(target.get("specs", {}), allow_price),
         "price": target.get("price") if allow_price else 0,
         "priceHidden": not allow_price,
         "procurement": proc if proc else None,

@@ -52,6 +52,43 @@ def _require_schedule_write(handler, session, ip, action_name):
 
 
 # ---- /api/schedule (POST) — 새 일정 추가 ----
+_LEAVE_TYPES = ("연차", "반차", "오전반차", "오후반차", "출장", "경조사", "휴가", "leave", "vacation")
+
+
+def _is_leave_type(ev_type):
+    """결재가 필요한 일정 유형인지 (handle_schedule_create 의 판정 규칙과 동일)."""
+    low = (ev_type or "").lower()
+    return any(lt in low for lt in _LEAVE_TYPES)
+
+
+def _notify_leave_approvers(session, event):
+    """변경으로 다시 결재 대기가 된 일정을 부서 Manager/Admin 에게 알린다 (요청자 제외)."""
+    try:
+        from services.notification_service import add_notification
+        from db import query
+        dept = (event.get("ownerOrg") or session.get("org") or "").strip().lower()
+        requester_email = (event.get("ownerEmail") or session.get("email") or "").strip().lower()
+        requester = (session.get("name") or "").strip()
+        recipients = query(
+            """SELECT name, email FROM users
+               WHERE (disabled = 0 OR disabled IS NULL)
+                 AND (status = 'active' OR status IS NULL)
+                 AND ((LOWER(dept_id) = ? AND role = 'manager') OR role = 'admin' OR is_admin = 1)
+                 AND (COALESCE(email, '') = '' OR LOWER(email) != LOWER(?))""",
+            (dept, requester_email)
+        )
+        s, e = event.get("startDate") or "", event.get("endDate") or ""
+        range_str = f"{s} ~ {e}" if s != e else s
+        for mgr in (recipients or []):
+            add_notification(
+                recipient_email=mgr.get("email") or "", recipient_name=mgr.get("name") or "",
+                sender_name=requester, notif_type="schedule_request", title="휴가/일정 결재 요청 (변경)",
+                content=f"[{requester}]님이 {event.get('type')} ({range_str}) 일정을 변경하여 다시 승인을 요청하였습니다.",
+                link_id=str(event.get("id")), tag="결재 요청", tag_type="warning")
+    except Exception:
+        pass
+
+
 def handle_schedule_create(handler, raw_body, ip):
     session = handler._get_session_or_401()
     if session is None:
@@ -256,11 +293,29 @@ def handle_schedule_update(handler, raw_body, ip):
             return
         if end_date < start_date:
             end_date = start_date
+        old_type = target.get("type") or ""
+        old_start = target.get("startDate") or ""
+        old_end = target.get("endDate") or ""
         target["type"] = (as_text(payload.get("type")) or "기타")[:20]
         target["title"] = title[:80]
         target["startDate"] = start_date
         target["endDate"] = end_date
         target["memo"] = as_text(payload.get("memo"))[:500]
+        # 승인 우회 방지: 승인권자(Admin, 또는 본인이 아닌 같은 부서 Manager)가 아닌 사용자가
+        # 결재 대상 유형의 일정(연차/출장 등)의 유형·기간을 바꾸면 다시 결재 대기로 돌린다.
+        # (예: 자동 승인되는 '회의'를 만든 뒤 '연차'로 바꾸거나, 승인된 1일 휴가를 2주로 늘리는 경우)
+        is_approver = bool(is_admin or (is_dept_manager and not is_owner))
+        reapproval = bool(
+            not is_approver
+            and _is_leave_type(target["type"])
+            and (target["type"] != old_type or start_date != old_start or end_date != old_end)
+            and target.get("approval_status") != "pending"
+        )
+        if reapproval:
+            target["approval_status"] = "pending"
+            target["approved_by"] = ""
+            target["approved_at"] = ""
+            target["reject_reason"] = ""
 
         # Update participants if provided
         if "participants" in payload:
@@ -297,6 +352,8 @@ def handle_schedule_update(handler, raw_body, ip):
 
         write_schedule(events)
     access_log(ip, "schedule_update", 200, str(event_id))
+    if reapproval:
+        _notify_leave_approvers(session, target)
     _audit(session, ip, "SCHEDULE_UPDATE", event_id)
     _broadcast_schedule_change("update", event_id)
     handler._send_json(200, {"ok": True, "event": target})
