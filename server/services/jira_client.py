@@ -857,7 +857,10 @@ def sync_jira_cache(cfg, force_full=False):
                     pass
             if activities:
                 upsert_jira_activities(activities)
-            set_last_sync_time(now)
+            if is_complete:
+                set_last_sync_time(now)
+            else:
+                log_line("[Jira] 동기화 결과가 불완전하여(미완료 페이지 존재) last_sync_time 커서를 전진시키지 않습니다.")
             all_records = load_all_jira_from_db()
             all_activities = load_all_jira_activities_from_db()
         except Exception as e:
