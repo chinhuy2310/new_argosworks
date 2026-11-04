@@ -100,6 +100,30 @@ def _find_pg_tool(name: str) -> str:
     return name
 
 
+def _pg_conn_params(db_url: str):
+    """
+    Parses PostgreSQL connection URL into CLI flags and environment variables.
+    Prevents passing database password directly on command line arguments (-d URL),
+    which exposes credentials in /proc/<pid>/cmdline and system process listings.
+    """
+    from urllib.parse import urlsplit, unquote
+    parsed = urlsplit(db_url)
+    env = os.environ.copy()
+    if parsed.password:
+        env["PGPASSWORD"] = unquote(parsed.password)
+    args = []
+    if parsed.hostname:
+        args.extend(["-h", parsed.hostname])
+    if parsed.port:
+        args.extend(["-p", str(parsed.port)])
+    if parsed.username:
+        args.extend(["-U", unquote(parsed.username)])
+    dbname = parsed.path.lstrip("/")
+    if dbname:
+        args.extend(["-d", dbname])
+    return args, env
+
+
 def update_backup_config(new_dir):
     """
     Admin이 백업 저장 경로를 변경할 때 유효성을 검사하고 config.json에 저장한다.
@@ -282,6 +306,7 @@ def import_backup_file(file_bytes, original_filename, note="외부 업로드 백
             "format": "tar.gz" if is_tar else "db.gz",
             "database_engine": ENGINE
         }
+    
         _write_manifest(manifest)
 
         return {
@@ -319,9 +344,10 @@ def create_backup(note="수동 백업", backup_type="manual"):
         try:
             if is_postgres:
                 # 1. PostgreSQL Enterprise Backup via pg_dump -Fc (Custom compressed format)
-                cmd = [_find_pg_tool("pg_dump"), "-Fc", "-d", DATABASE_URL, "-f", temp_db_path]
+                pg_args, pg_env = _pg_conn_params(DATABASE_URL)
+                cmd = [_find_pg_tool("pg_dump"), "-Fc"] + pg_args + ["-f", temp_db_path]
                 try:
-                    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=pg_env)
                 except FileNotFoundError:
                     raise FileNotFoundError(
                         "PostgreSQL 클라이언트 도구(pg_dump)가 시스템에 설치되어 있지 않습니다. "
@@ -403,7 +429,7 @@ def create_backup(note="수동 백업", backup_type="manual"):
 
             # 6. 보관 주기 관리: 자동 백업(auto)은 최근 14일 / 30건 유지
             if backup_type == "auto":
-                _prune_old_backups(manifest, max_days=14, max_count=30)
+                _prune_old_backups(manifest)
 
             logger.info(f"[Backup] 풀 아카이브 백업 완료: {final_tar_name} (DB {raw_db_size}B + 첨부파일 {attach_count}건 -> 압축 {tar_size}B)")
             return {
@@ -480,11 +506,12 @@ def _rollback_restore_from_safety_snapshot(safety_path, is_postgres, src_db_path
 
     close_connection(force=True)
     if is_postgres:
+        pg_args, pg_env = _pg_conn_params(DATABASE_URL)
         cmd = [
             _find_pg_tool("pg_restore"), "--clean", "--if-exists",
-            "--exit-on-error", "--single-transaction", "-d", DATABASE_URL, safety_db
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+            "--exit-on-error", "--single-transaction"
+        ] + pg_args + [safety_db]
+        result = subprocess.run(cmd, capture_output=True, text=True, env=pg_env)
         if result.returncode != 0:
             raise RuntimeError(f"PostgreSQL 안전 스냅샷 롤백 실패: {result.stderr}")
     else:
@@ -543,10 +570,11 @@ def restore_backup(backup_filename):
         )
         try:
             if is_postgres:
+                pg_args, pg_env = _pg_conn_params(DATABASE_URL)
                 dump_cmd = [
-                    _find_pg_tool("pg_dump"), "-Fc", "-d", DATABASE_URL, "-f", safety_tmp
-                ]
-                dump_res = subprocess.run(dump_cmd, capture_output=True, text=True)
+                    _find_pg_tool("pg_dump"), "-Fc"
+                ] + pg_args + ["-f", safety_tmp]
+                dump_res = subprocess.run(dump_cmd, capture_output=True, text=True, env=pg_env)
                 if dump_res.returncode != 0 or not os.path.isfile(safety_tmp) or os.path.getsize(safety_tmp) == 0:
                     err_msg = dump_res.stderr if dump_res.returncode != 0 else "덤프 파일이 생성되지 않았거나 크기가 0바이트입니다."
                     raise RuntimeError(
@@ -650,13 +678,14 @@ def restore_backup(backup_filename):
 
             if is_postgres:
                 # PostgreSQL pg_restore execution with clean drop/create
+                pg_args, pg_env = _pg_conn_params(DATABASE_URL)
                 cmd = [
                     _find_pg_tool("pg_restore"), "--clean", "--if-exists",
-                    "--exit-on-error", "--single-transaction", "-d", DATABASE_URL, temp_restore_db
-                ]
+                    "--exit-on-error", "--single-transaction"
+                ] + pg_args + [temp_restore_db]
                 restore_started = True
                 try:
-                    res = subprocess.run(cmd, capture_output=True, text=True)
+                    res = subprocess.run(cmd, capture_output=True, text=True, env=pg_env)
                 except FileNotFoundError:
                     raise FileNotFoundError(
                         "PostgreSQL 복원 도구(pg_restore)가 시스템에 설치되어 있지 않습니다. "
@@ -780,9 +809,21 @@ def get_backup_file_path(filename):
         return target
     return None
 
-def _prune_old_backups(manifest, max_days=14, max_count=30):
-    """보관 기간이 지난 자동 백업 파일 정리"""
+def _prune_old_backups(manifest, max_days=None, max_count=None):
+    """보관 기간이 지난 자동 백업 파일 및 복원 전 안전 스냅샷 정리"""
     bdir = _ensure_backup_dir()
+    if max_days is None or max_count is None:
+        try:
+            from config import load_config
+            bcfg = (load_config().get("backup") or {})
+            if max_days is None:
+                max_days = int(bcfg.get("retention_days", 14))
+            if max_count is None:
+                max_count = int(bcfg.get("retention_count", 30))
+        except Exception:
+            max_days = max_days if max_days is not None else 14
+            max_count = max_count if max_count is not None else 30
+
     now = datetime.now()
     auto_backups = []
     for fname in os.listdir(bdir):
@@ -811,9 +852,38 @@ def _prune_old_backups(manifest, max_days=14, max_count=30):
         except Exception as e:
             logger.warning(f"오래된 백업 삭제 실패 ({fname}): {e}")
 
+    # 3. 오래된 복원 전 안전 스냅샷(safety_before_restore) 정리 (최근 5건 보관)
+    try:
+        safety_snaps = []
+        for fname in os.listdir(bdir):
+            if fname.startswith("argos_safety_before_restore_") and (fname.endswith(".tar.gz") or fname.endswith(".db.gz") or fname.endswith(".dump") or fname.endswith(".tmp.db")):
+                fpath = os.path.join(bdir, fname)
+                mtime = datetime.fromtimestamp(os.path.getmtime(fpath))
+                safety_snaps.append((fpath, mtime))
+        safety_snaps.sort(key=lambda x: x[1], reverse=True)
+        for fpath, _ in safety_snaps[5:]:
+            try:
+                if os.path.exists(fpath):
+                    os.remove(fpath)
+                    logger.info(f"[Backup] 오래된 복원 안전 스냅샷 정리: {os.path.basename(fpath)}")
+            except Exception as e:
+                logger.warning(f"안전 스냅샷 삭제 실패 ({fpath}): {e}")
+    except Exception as e:
+        logger.warning(f"안전 스냅샷 목록 정리 실패: {e}")
+
     _write_manifest(manifest)
 
-def start_backup_scheduler(interval_hours=24):
+def start_backup_scheduler(interval_hours=None):
+    """
+    백그라운드에서 주기적으로 데이터베이스 및 첨부파일을 자동 백업하는 데몬 스레드.
+    설정 파일(config.json)의 interval_hours 주기를 존중하며, 마지막 자동 백업 후 경과했으면 새 백업을 수행한다.
+    """
+    if interval_hours is None:
+        try:
+            from config import load_config
+            interval_hours = int((load_config().get("backup") or {}).get("interval_hours", 24))
+        except Exception:
+            interval_hours = 24
     """
     백그라운드에서 주기적으로 데이터베이스 및 첨부파일을 자동 백업하는 데몬 스레드.
     서버 구동 후 매 시간 체크하며, 마지막 자동 백업 후 interval_hours가 경과했으면 새 백업을 수행한다.

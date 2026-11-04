@@ -621,8 +621,14 @@ def get_next_card_code(dept_id, dept_prefix="REC"):
     prefix = (dept_prefix or "REC").strip()
 
     def _do(conn):
+        from db import ENGINE
         cur = conn.cursor()
-        cur.execute("SELECT last_seq FROM card_sequences WHERE dept_id = ?", (dept_id,))
+        if ENGINE == "postgres":
+            # PostgreSQL: ensure row exists and lock exclusively with FOR UPDATE to eliminate concurrency races
+            cur.execute("INSERT INTO card_sequences(dept_id, last_seq) VALUES (?, 0) ON CONFLICT (dept_id) DO NOTHING", (dept_id,))
+            cur.execute("SELECT last_seq FROM card_sequences WHERE dept_id = ? FOR UPDATE", (dept_id,))
+        else:
+            cur.execute("SELECT last_seq FROM card_sequences WHERE dept_id = ?", (dept_id,))
         row = cur.fetchone()
         last_seq = 0 if row is None else (row[0] if isinstance(row, (list, tuple)) else row["last_seq"])
 

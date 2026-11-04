@@ -112,6 +112,7 @@ _RE_PRAGMA = re.compile(r"^\s*PRAGMA\s+", re.IGNORECASE)
 # All ARGOS tables use an explicit "id" primary key, so ordering by rowid (insert
 # order in SQLite) has to fall back to ordering by the primary key on PostgreSQL.
 _RE_ORDER_BY_ROWID = re.compile(r"\bORDER\s+BY\s+rowid\b", re.IGNORECASE)
+_RE_CAST_REAL = re.compile(r"\bAS\s+REAL\b", re.IGNORECASE)
 
 
 def _translate_sql(sql):
@@ -130,6 +131,9 @@ def _translate_sql(sql):
 
     # 2b. ORDER BY rowid → ORDER BY id (SQLite implicit rowid is unavailable in PostgreSQL)
     sql = _RE_ORDER_BY_ROWID.sub("ORDER BY id", sql)
+
+    # 2c. CAST(... AS REAL) → CAST(... AS DOUBLE PRECISION) (SQLite REAL is 64-bit; Postgres REAL is 32-bit)
+    sql = _RE_CAST_REAL.sub("AS DOUBLE PRECISION", sql)
 
     # 3. INSERT OR IGNORE → INSERT ... ON CONFLICT DO NOTHING
     m = _RE_INSERT_OR_IGNORE.search(sql)
@@ -278,6 +282,15 @@ if ENGINE == "sqlite":
             # 2. Versioned Migrations Check & Upgrades (for existing legacy databases)
             applied_migrations = {row[0] for row in conn.execute("SELECT version FROM schema_migrations").fetchall()}
             pending_migrations = {2, 3, 4, 6, 7, 8, 9, 10, 11} - applied_migrations
+
+            # If migration 6 cannot run because duplicates exist, do not consider it pending for safety snapshot
+            if 6 in pending_migrations:
+                cur_u_tbl = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+                if cur_u_tbl.fetchone():
+                    d_u = conn.execute("SELECT LOWER(username) FROM users WHERE username != '' GROUP BY LOWER(username) HAVING COUNT(*) > 1 LIMIT 1").fetchone()
+                    d_e = conn.execute("SELECT LOWER(email) FROM users WHERE email != '' GROUP BY LOWER(email) HAVING COUNT(*) > 1 LIMIT 1").fetchone()
+                    if d_u or d_e:
+                        pending_migrations.discard(6)
 
             # Pre-migration safety snapshot: Protect on-premise customer data only when migrations are actually pending
             if pending_migrations and os.path.exists(db_path) and os.path.getsize(db_path) > 0:
@@ -526,105 +539,113 @@ if ENGINE == "sqlite":
 
             # Migration v11: Reconciliation of records.work_date default and sessions.last_active_at
             if 11 not in applied_migrations:
-                cur_r = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='records'")
-                if cur_r.fetchone():
-                    r_info = {row[1]: row for row in conn.execute("PRAGMA table_info(records)").fetchall()}
-                    w_col = r_info.get("work_date")
-                    if w_col and w_col[4] is None:  # dflt_value is None
-                        standard_cols = {
-                            "id", "dept_id", "category", "title", "project", "assignee_id",
-                            "assignee_name", "assignee_email", "start_date", "due_date", "work_date",
-                            "summary", "tags", "memo", "status", "priority", "card_code",
-                            "participants", "parent_key", "is_scheduled", "is_private", "version",
-                            "updated_at", "created_at"
-                        }
-                        extra_cols = set(r_info.keys()) - standard_cols
-                        if extra_cols:
-                            raise RuntimeError(
-                                f"[db] Migration v11 중단: 'records' 테이블에 표준 스키마 외 커스텀 컬럼이 존재합니다: {extra_cols}. "
-                                "데이터 손실 방지를 위해 마이그레이션을 자동으로 중단합니다. 수동 스키마 조정을 수행해 주세요."
-                            )
-                        conn.execute("PRAGMA foreign_keys = OFF;")
-                        conn.execute("""
-                            CREATE TABLE records__mig11 (
-                                id INTEGER PRIMARY KEY,
-                                dept_id TEXT NOT NULL REFERENCES departments(id),
-                                category TEXT NOT NULL,
-                                title TEXT NOT NULL,
-                                project TEXT NOT NULL DEFAULT '프로젝트 미지정',
-                                assignee_id INTEGER REFERENCES users(id),
-                                assignee_name TEXT NOT NULL,
-                                assignee_email TEXT NOT NULL DEFAULT '',
-                                start_date TEXT NOT NULL DEFAULT '',
-                                due_date TEXT NOT NULL DEFAULT '',
-                                work_date TEXT NOT NULL DEFAULT '',
-                                summary TEXT NOT NULL DEFAULT '',
-                                tags TEXT NOT NULL DEFAULT '[]',
-                                memo TEXT NOT NULL DEFAULT '',
-                                status TEXT NOT NULL DEFAULT '진행',
-                                priority TEXT NOT NULL DEFAULT '보통',
-                                card_code TEXT NOT NULL DEFAULT '',
-                                participants TEXT NOT NULL DEFAULT '',
-                                parent_key TEXT NOT NULL DEFAULT '',
-                                is_scheduled INTEGER NOT NULL DEFAULT 1,
-                                is_private INTEGER NOT NULL DEFAULT 0,
-                                version INTEGER NOT NULL DEFAULT 1,
-                                updated_at TEXT NOT NULL DEFAULT '',
-                                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
-                            );
-                        """)
-                        cols = [c for c in r_info.keys() if c in [
-                            "id", "dept_id", "category", "title", "project", "assignee_id",
-                            "assignee_name", "assignee_email", "start_date", "due_date", "work_date",
-                            "summary", "tags", "memo", "status", "priority", "card_code",
-                            "participants", "parent_key", "is_scheduled", "is_private", "version",
-                            "updated_at", "created_at"
-                        ]]
-                        cols_str = ", ".join(cols)
-                        conn.execute(f"INSERT INTO records__mig11 ({cols_str}) SELECT {cols_str} FROM records;")
-                        conn.execute("DROP TABLE records;")
-                        conn.execute("ALTER TABLE records__mig11 RENAME TO records;")
-                        conn.execute("CREATE INDEX IF NOT EXISTS idx_records_dept ON records(dept_id);")
-                        conn.execute("CREATE INDEX IF NOT EXISTS idx_records_assignee_id ON records(assignee_id);")
-                        conn.execute("CREATE INDEX IF NOT EXISTS idx_records_date ON records(work_date);")
-                        conn.execute("CREATE INDEX IF NOT EXISTS idx_records_status ON records(status);")
-                        conn.execute("CREATE INDEX IF NOT EXISTS idx_records_card_code ON records(card_code);")
-                        conn.execute("CREATE INDEX IF NOT EXISTS idx_records_parent_key ON records(parent_key);")
-                        conn.execute("PRAGMA foreign_keys = ON;")
+                conn.execute("PRAGMA foreign_keys = OFF;")
+                conn.execute("BEGIN IMMEDIATE;")
+                try:
+                    cur_r = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='records'")
+                    if cur_r.fetchone():
+                        r_info = {row[1]: row for row in conn.execute("PRAGMA table_info(records)").fetchall()}
+                        w_col = r_info.get("work_date")
+                        if w_col and w_col[4] is None:  # dflt_value is None
+                            standard_cols = {
+                                "id", "dept_id", "category", "title", "project", "assignee_id",
+                                "assignee_name", "assignee_email", "start_date", "due_date", "work_date",
+                                "summary", "tags", "memo", "status", "priority", "card_code",
+                                "participants", "parent_key", "is_scheduled", "is_private", "version",
+                                "updated_at", "created_at"
+                            }
+                            extra_cols = set(r_info.keys()) - standard_cols
+                            if extra_cols:
+                                raise RuntimeError(
+                                    f"[db] Migration v11 중단: 'records' 테이블에 표준 스키마 외 커스텀 컬럼이 존재합니다: {extra_cols}. "
+                                    "데이터 손실 방지를 위해 마이그레이션을 자동으로 중단합니다. 수동 스키마 조정을 수행해 주세요."
+                                )
+                            conn.execute("""
+                                CREATE TABLE records__mig11 (
+                                    id INTEGER PRIMARY KEY,
+                                    dept_id TEXT NOT NULL REFERENCES departments(id),
+                                    category TEXT NOT NULL,
+                                    title TEXT NOT NULL,
+                                    project TEXT NOT NULL DEFAULT '프로젝트 미지정',
+                                    assignee_id INTEGER REFERENCES users(id),
+                                    assignee_name TEXT NOT NULL,
+                                    assignee_email TEXT NOT NULL DEFAULT '',
+                                    start_date TEXT NOT NULL DEFAULT '',
+                                    due_date TEXT NOT NULL DEFAULT '',
+                                    work_date TEXT NOT NULL DEFAULT '',
+                                    summary TEXT NOT NULL DEFAULT '',
+                                    tags TEXT NOT NULL DEFAULT '[]',
+                                    memo TEXT NOT NULL DEFAULT '',
+                                    status TEXT NOT NULL DEFAULT '진행',
+                                    priority TEXT NOT NULL DEFAULT '보통',
+                                    card_code TEXT NOT NULL DEFAULT '',
+                                    participants TEXT NOT NULL DEFAULT '',
+                                    parent_key TEXT NOT NULL DEFAULT '',
+                                    is_scheduled INTEGER NOT NULL DEFAULT 1,
+                                    is_private INTEGER NOT NULL DEFAULT 0,
+                                    version INTEGER NOT NULL DEFAULT 1,
+                                    updated_at TEXT NOT NULL DEFAULT '',
+                                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
+                                );
+                            """)
+                            cols = [c for c in r_info.keys() if c in [
+                                "id", "dept_id", "category", "title", "project", "assignee_id",
+                                "assignee_name", "assignee_email", "start_date", "due_date", "work_date",
+                                "summary", "tags", "memo", "status", "priority", "card_code",
+                                "participants", "parent_key", "is_scheduled", "is_private", "version",
+                                "updated_at", "created_at"
+                            ]]
+                            cols_str = ", ".join(cols)
+                            conn.execute(f"INSERT INTO records__mig11 ({cols_str}) SELECT {cols_str} FROM records;")
+                            conn.execute("DROP TABLE records;")
+                            conn.execute("ALTER TABLE records__mig11 RENAME TO records;")
+                            conn.execute("CREATE INDEX IF NOT EXISTS idx_records_dept ON records(dept_id);")
+                            conn.execute("CREATE INDEX IF NOT EXISTS idx_records_assignee_id ON records(assignee_id);")
+                            conn.execute("CREATE INDEX IF NOT EXISTS idx_records_date ON records(work_date);")
+                            conn.execute("CREATE INDEX IF NOT EXISTS idx_records_status ON records(status);")
+                            conn.execute("CREATE INDEX IF NOT EXISTS idx_records_card_code ON records(card_code);")
+                            conn.execute("CREATE INDEX IF NOT EXISTS idx_records_parent_key ON records(parent_key);")
 
-                cur_s = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'")
-                if cur_s.fetchone():
-                    s_info = {row[1]: row for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
-                    la_col = s_info.get("last_active_at")
-                    if la_col and (la_col[2].upper() == "TEXT" or la_col[4] in (None, "''", "0.0")):
-                        conn.execute("PRAGMA foreign_keys = OFF;")
-                        conn.execute("""
-                            CREATE TABLE sessions__mig11 (
-                                token TEXT PRIMARY KEY,
-                                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                                user_name TEXT NOT NULL,
-                                user_dept_id TEXT NOT NULL,
-                                user_email TEXT NOT NULL DEFAULT '',
-                                is_admin INTEGER NOT NULL DEFAULT 0,
-                                created_at REAL NOT NULL,
-                                last_active_at REAL NOT NULL DEFAULT 0
-                            );
-                        """)
-                        conn.execute("""
-                            INSERT INTO sessions__mig11 (token, user_id, user_name, user_dept_id, user_email, is_admin, created_at, last_active_at)
-                            SELECT token, user_id, user_name, user_dept_id, user_email, is_admin,
-                                   CAST(created_at AS REAL),
-                                   CASE WHEN last_active_at IS NULL OR last_active_at = '' THEN CAST(created_at AS REAL)
-                                        ELSE CAST(last_active_at AS REAL) END
-                            FROM sessions;
-                        """)
-                        conn.execute("DROP TABLE sessions;")
-                        conn.execute("ALTER TABLE sessions__mig11 RENAME TO sessions;")
-                        conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);")
-                        conn.execute("PRAGMA foreign_keys = ON;")
+                    cur_s = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'")
+                    if cur_s.fetchone():
+                        s_info = {row[1]: row for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+                        la_col = s_info.get("last_active_at")
+                        if la_col and (la_col[2].upper() == "TEXT" or la_col[4] in (None, "''", "0.0")):
+                            conn.execute("""
+                                CREATE TABLE sessions__mig11 (
+                                    token TEXT PRIMARY KEY,
+                                    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                                    user_name TEXT NOT NULL,
+                                    user_dept_id TEXT NOT NULL,
+                                    user_email TEXT NOT NULL DEFAULT '',
+                                    is_admin INTEGER NOT NULL DEFAULT 0,
+                                    created_at REAL NOT NULL,
+                                    last_active_at REAL NOT NULL DEFAULT 0
+                                );
+                            """)
+                            conn.execute("""
+                                INSERT INTO sessions__mig11 (token, user_id, user_name, user_dept_id, user_email, is_admin, created_at, last_active_at)
+                                SELECT token, user_id, user_name, user_dept_id, user_email, is_admin,
+                                       CAST(created_at AS REAL),
+                                       CASE WHEN last_active_at IS NULL OR last_active_at = '' THEN CAST(created_at AS REAL)
+                                            ELSE CAST(last_active_at AS REAL) END
+                                FROM sessions;
+                            """)
+                            conn.execute("DROP TABLE sessions;")
+                            conn.execute("ALTER TABLE sessions__mig11 RENAME TO sessions;")
+                            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);")
 
-                conn.execute("INSERT OR IGNORE INTO schema_migrations (version, name) VALUES (11, 'v3.2_records_and_sessions_schema_reconciliation');")
-                logger.info("[db] Migration v11 (records & sessions schema reconciliation) applied.")
+                    conn.execute("INSERT OR IGNORE INTO schema_migrations (version, name) VALUES (11, 'v3.2_records_and_sessions_schema_reconciliation');")
+                    conn.execute("COMMIT;")
+                    logger.info("[db] Migration v11 (records & sessions schema reconciliation) applied.")
+                except Exception:
+                    try:
+                        conn.execute("ROLLBACK;")
+                    except Exception:
+                        pass
+                    raise
+                finally:
+                    conn.execute("PRAGMA foreign_keys = ON;")
         except sqlite3.Error as e:
             logger.error(f"Database initialization failed: {e}")
             raise
@@ -1151,11 +1172,8 @@ else:
 
             # Migration 11: Reconciliation of records.work_date default and sessions.last_active_at
             if 11 not in applied_versions:
-                try:
-                    cur.execute("ALTER TABLE records ALTER COLUMN work_date SET DEFAULT '';")
-                    cur.execute("ALTER TABLE sessions ALTER COLUMN last_active_at SET DEFAULT 0;")
-                except Exception as e:
-                    logger.warning(f"[db/postgres] Migration v11 notice: {e}")
+                cur.execute("ALTER TABLE records ALTER COLUMN work_date SET DEFAULT '';")
+                cur.execute("ALTER TABLE sessions ALTER COLUMN last_active_at SET DEFAULT 0;")
                 cur.execute("""
                     INSERT INTO schema_migrations (version, name)
                     VALUES (11, 'v3.2_records_and_sessions_schema_reconciliation')

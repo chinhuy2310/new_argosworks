@@ -3077,8 +3077,14 @@ def handle_post_admin_user_create(handler, raw_body, ip):
         role = "member"
 
     from db import get_one, execute
+    if not get_one("SELECT id FROM departments WHERE id = ? LIMIT 1", (dept_id,)):
+        handler._send_json(400, {"ok": False, "error": f"존재하지 않는 소속 부서입니다: {dept_id}"})
+        return
     if get_one("SELECT id FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1", (username,)):
         handler._send_json(409, {"ok": False, "error": "이미 사용 중인 아이디(ID)입니다."})
+        return
+    if email and get_one("SELECT id FROM users WHERE email != '' AND LOWER(email) = LOWER(?) LIMIT 1", (email,)):
+        handler._send_json(409, {"ok": False, "error": "이미 사용 중인 이메일(Email)입니다."})
         return
     if get_one("SELECT id FROM users WHERE name = ? AND dept_id = ? LIMIT 1", (name, dept_id)):
         handler._send_json(409, {"ok": False, "error": "해당 부서에 이미 동일한 이름의 사용자가 존재합니다."})
@@ -3089,10 +3095,20 @@ def handle_post_admin_user_create(handler, raw_body, ip):
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     is_adm = 1 if role == "admin" else 0
 
-    execute("""
-        INSERT INTO users (username, name, dept_id, email, salt, password_hash, iterations, role, is_admin, disabled, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
-    """, (username, name, dept_id, email, salt, pwd_hash, _effective_pbkdf2_rounds(), role, is_adm, now_str))
+    try:
+        execute("""
+            INSERT INTO users (username, name, dept_id, email, salt, password_hash, iterations, role, is_admin, disabled, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+        """, (username, name, dept_id, email, salt, pwd_hash, _effective_pbkdf2_rounds(), role, is_adm, now_str))
+    except Exception as e:
+        err_str = str(e).lower()
+        if "foreign key" in err_str:
+            handler._send_json(400, {"ok": False, "error": f"존재하지 않는 소속 부서입니다: {dept_id}"})
+            return
+        if "unique" in err_str or "duplicate" in err_str:
+            handler._send_json(409, {"ok": False, "error": "이미 등록된 사용자 정보(아이디 또는 이메일)입니다."})
+            return
+        raise
 
     from services.audit_logger import log_audit
     log_audit(session, ip, "USER_ADMIN_CREATE", "user", username, details={"name": name, "dept": dept_id, "role": role})
