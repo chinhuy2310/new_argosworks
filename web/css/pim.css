@@ -6,6 +6,21 @@
   border-radius: 10px;
   padding: 16px 20px;
 }
+.pim-internal-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.pim-internal-toolbar .pim-toolbar {
+  margin-bottom: 0;
+}
+.pim-cat-chip .chip-count {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.85;
+  margin-left: 3px;
+}
 .pim-toolbar{ display: flex; gap: 10px; margin-bottom: 14px; align-items: center; }
 .pim-toolbar input{
   flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--surface); border-radius: 6px;

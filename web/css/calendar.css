@@ -1063,6 +1063,7 @@
   transition: filter 0.15s, transform 0.1s;
   position: relative;
   z-index: 3;
+  backdrop-filter: blur(2px);
 }
 .cal-chip:hover {
   filter: brightness(0.92);
@@ -2075,28 +2076,28 @@
 
 /* ─── 8. Color Themes (Chips) ─── */
 :root {
-  --chip-bg-0: #dbeafe; --chip-color-0: #1e40af; --chip-border-0: #93c5fd;
-  --chip-bg-1: #d1fae5; --chip-color-1: #065f46; --chip-border-1: #6ee7b7;
-  --chip-bg-2: #ede9fe; --chip-color-2: #5b21b6; --chip-border-2: #c4b5fd;
-  --chip-bg-3: #ffedd5; --chip-color-3: #9a3412; --chip-border-3: #fdba74;
-  --chip-bg-4: #ccfbf1; --chip-color-4: #115e59; --chip-border-4: #5eead4;
-  --chip-bg-5: #fce7f3; --chip-color-5: #9d174d; --chip-border-5: #f9a8d4;
-  --chip-bg-6: #e0e7ff; --chip-color-6: #3730a3; --chip-border-6: #a5b4fc;
-  --chip-bg-7: #fef3c7; --chip-color-7: #854d0e; --chip-border-7: #fde68a;
-  --chip-bg-8: #ffe4e6; --chip-color-8: #9f1239; --chip-border-8: #fda4af;
-  --chip-bg-9: #cffafe; --chip-color-9: #155e75; --chip-border-9: #67e8f9;
-  --chip-bg-10: #f3e8ff; --chip-color-10: #6b21a8; --chip-border-10: #d8b4fe;
-  --chip-bg-11: #ecfccb; --chip-color-11: #3f6212; --chip-border-11: #bef264;
+  /* Translucent Palette for Light Mode (Độ trong suốt nhẹ thanh lịch, hiển thị tinh tế giống chế độ tối) */
+  --chip-bg-0: rgba(37, 99, 235, 0.14);  --chip-color-0: #1d4ed8; --chip-border-0: rgba(37, 99, 235, 0.35);
+  --chip-bg-1: rgba(16, 185, 129, 0.14); --chip-color-1: #047857; --chip-border-1: rgba(16, 185, 129, 0.35);
+  --chip-bg-2: rgba(139, 92, 246, 0.14); --chip-color-2: #5b21b6; --chip-border-2: rgba(139, 92, 246, 0.35);
+  --chip-bg-3: rgba(249, 115, 22, 0.15); --chip-color-3: #9a3412; --chip-border-3: rgba(249, 115, 22, 0.38);
+  --chip-bg-4: rgba(20, 184, 166, 0.14); --chip-color-4: #0f766e; --chip-border-4: rgba(20, 184, 166, 0.35);
+  --chip-bg-5: rgba(236, 72, 153, 0.14); --chip-color-5: #9d174d; --chip-border-5: rgba(236, 72, 153, 0.35);
+  --chip-bg-6: rgba(99, 102, 241, 0.14); --chip-color-6: #3730a3; --chip-border-6: rgba(99, 102, 241, 0.35);
+  --chip-bg-7: rgba(245, 158, 11, 0.15); --chip-color-7: #854d0e; --chip-border-7: rgba(245, 158, 11, 0.38);
+  --chip-bg-8: rgba(244, 63, 94, 0.14);  --chip-color-8: #9f1239; --chip-border-8: rgba(244, 63, 94, 0.35);
+  --chip-bg-9: rgba(6, 182, 212, 0.14);  --chip-color-9: #155e75; --chip-border-9: rgba(6, 182, 212, 0.35);
+  --chip-bg-10: rgba(168, 85, 247, 0.14); --chip-color-10: #6b21a8; --chip-border-10: rgba(168, 85, 247, 0.35);
+  --chip-bg-11: rgba(132, 204, 22, 0.16); --chip-color-11: #3f6212; --chip-border-11: rgba(132, 204, 22, 0.40);
 
-  /* Modern Soft Pastel Palette for Light Mode (Thanh lịch, dịu mắt, độ tương phản cao, không bị màu đặc) */
-  --sched-연차-bg: #e0f2fe; --sched-연차-color: #0369a1; --sched-연차-border: #bae6fd;
-  --sched-반차-bg: #ccfbf1; --sched-반차-color: #0f766e; --sched-반차-border: #99f6e4;
-  --sched-병가-bg: #fee2e2; --sched-병가-color: #b91c1c; --sched-병가-border: #fca5a5;
-  --sched-출장-bg: #f3e8ff; --sched-출장-color: #6b21a8; --sched-출장-border: #d8b4fe;
-  --sched-재택-bg: #dcfce7; --sched-재택-color: #15803d; --sched-재택-border: #86efac;
-  --sched-회의-bg: #fef3c7; --sched-회의-color: #b45309; --sched-회의-border: #fde68a;
-  --sched-업무-bg: #eff6ff; --sched-업무-color: #1d4ed8; --sched-업무-border: #bfdbfe;
-  --sched-기타-bg: #f1f5f9; --sched-기타-color: #475569; --sched-기타-border: #cbd5e1;
+  --sched-연차-bg: rgba(2, 132, 199, 0.15); --sched-연차-color: #0369a1; --sched-연차-border: rgba(2, 132, 199, 0.35);
+  --sched-반차-bg: rgba(15, 118, 110, 0.15); --sched-반차-color: #0f766e; --sched-반차-border: rgba(15, 118, 110, 0.35);
+  --sched-병가-bg: rgba(220, 38, 38, 0.15); --sched-병가-color: #b91c1c; --sched-병가-border: rgba(220, 38, 38, 0.35);
+  --sched-출장-bg: rgba(124, 58, 237, 0.15); --sched-출장-color: #6b21a8; --sched-출장-border: rgba(124, 58, 237, 0.35);
+  --sched-재택-bg: rgba(22, 163, 74, 0.15); --sched-재택-color: #15803d; --sched-재택-border: rgba(22, 163, 74, 0.35);
+  --sched-회의-bg: rgba(217, 119, 6, 0.15); --sched-회의-color: #b45309; --sched-회의-border: rgba(217, 119, 6, 0.35);
+  --sched-업무-bg: rgba(37, 99, 235, 0.15); --sched-업무-color: #1d4ed8; --sched-업무-border: rgba(37, 99, 235, 0.35);
+  --sched-기타-bg: rgba(100, 116, 139, 0.15); --sched-기타-color: #475569; --sched-기타-border: rgba(100, 116, 139, 0.35);
 }
 
 [data-theme="dark"] {
@@ -2511,34 +2512,3 @@
   margin-left: 4px;
 }
 
-/* Sidebar bottom footer (Settings) */
-.sched-sidebar-footer {
-  margin-top: auto;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-}
-.sched-sidebar-settings-btn {
-  background: none;
-  border: none;
-  color: var(--ink-soft);
-  font-size: 12px;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  padding: 6px 8px;
-  border-radius: 6px;
-  width: 100%;
-  transition: all 0.15s ease;
-}
-.sched-sidebar-settings-btn:hover {
-  color: var(--ink);
-  background: var(--code-bg);
-}
-.sched-settings-icon {
-  font-size: 13px;
-  opacity: 0.8;
-}

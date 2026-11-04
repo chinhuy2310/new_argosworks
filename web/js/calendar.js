@@ -214,13 +214,13 @@ var myUserKey = "";
 // ── View Mode: 'month' | 'week' | 'agenda' ──
 var currentViewMode = localStorage.getItem("jarvis_cal_view_mode") || "month";
 
-// ── Weekend Display Preference (DaouOffice-style: Default visible 7 days, toggleable) ──
-var isWeekendVisible = localStorage.getItem("jarvis_cal_show_weekend_v2") !== "false";
+// ── Weekend Display Preference (Default: Weekend hidden / 5 workdays, toggleable) ──
+var isWeekendVisible = localStorage.getItem("jarvis_cal_show_weekend_v3") === "true";
 if(schedShowWeekend){
   schedShowWeekend.checked = isWeekendVisible;
   schedShowWeekend.addEventListener("change", function(e){
     isWeekendVisible = e.target.checked;
-    localStorage.setItem("jarvis_cal_show_weekend_v2", isWeekendVisible ? "true" : "false");
+    localStorage.setItem("jarvis_cal_show_weekend_v3", isWeekendVisible ? "true" : "false");
     refreshCurrentView();
   });
 }
@@ -294,8 +294,8 @@ document.addEventListener("click", function(e){
   }
 });
 
-// ── Right Task Panel Preference & Event Handlers ──
-var isTaskPanelCollapsed = localStorage.getItem("jarvis_cal_tasks_collapsed_v2") !== "false";
+// ── Right Task Panel Preference & Event Handlers (Default: Open) ──
+var isTaskPanelCollapsed = localStorage.getItem("jarvis_cal_tasks_collapsed_v3") === "true";
 if(schedTaskDrawer){
   if(isTaskPanelCollapsed){
     schedTaskDrawer.classList.add("is-collapsed");
@@ -310,7 +310,7 @@ if(btnToggleTaskDrawer){
     if(!schedTaskDrawer) return;
     var collapsed = schedTaskDrawer.classList.toggle("is-collapsed");
     btnToggleTaskDrawer.classList.toggle("active", !collapsed);
-    localStorage.setItem("jarvis_cal_tasks_collapsed_v2", collapsed ? "true" : "false");
+    localStorage.setItem("jarvis_cal_tasks_collapsed_v3", collapsed ? "true" : "false");
   });
 }
 if(btnSchedTaskClose){
@@ -318,7 +318,7 @@ if(btnSchedTaskClose){
     if(!schedTaskDrawer) return;
     schedTaskDrawer.classList.add("is-collapsed");
     if(btnToggleTaskDrawer) btnToggleTaskDrawer.classList.remove("active");
-    localStorage.setItem("jarvis_cal_tasks_collapsed_v2", "true");
+    localStorage.setItem("jarvis_cal_tasks_collapsed_v3", "true");
   });
 }
 document.addEventListener("click", function(e){
@@ -3577,13 +3577,6 @@ document.addEventListener("keydown", function(e){
 window.loadSchedule = loadSchedule;
 window.notifyScheduleChanged = notifyScheduleChanged;
 
-var btnSchedSidebarSettings = document.getElementById("btnSchedSidebarSettings");
-if(btnSchedSidebarSettings){
-  btnSchedSidebarSettings.addEventListener("click", function(){
-    var settingsTab = document.getElementById("tabBtnSettings");
-    if(settingsTab) settingsTab.click();
-  });
-}
 
 
 var schedSubCompanyCb = document.getElementById("schedSubCompanyCb");
