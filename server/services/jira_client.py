@@ -422,7 +422,7 @@ def jira_ongoing_records_for(cfg, name, org, email=None):
         })
     return out
 
-def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None):
+def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None, return_complete_flag=False):
     """config.json의 project_map에 연결된 모든 Jira 프로젝트에서 실제로 등록되어 있는
     이슈를 그대로 가져와, JARVIS 대시보드가 쓰는 '기록' 형태로 변환해 돌려준다.
 
@@ -439,10 +439,10 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None)
         부분 결과가 낫다)."""
     j = cfg.get("jira", {})
     if not j.get("enabled") or not j.get("api_token") or not j.get("email"):
-        return [], []
+        return ([], [], True) if return_complete_flag else ([], [])
     keys = jira_project_keys(cfg)
     if not keys:
-        return [], []
+        return ([], [], True) if return_complete_flag else ([], [])
 
     base_url = j["base_url"].rstrip("/")
     if since_updated:
@@ -479,11 +479,11 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None)
             except Exception as e2:
                 if first_page:
                     log_line("Jira 이슈 목록 조회 실패(이전 캐시 유지):", e, e2)
-                    return None, None
+                    return (None, None, False) if return_complete_flag else (None, None)
                 # A partial page set is not a complete snapshot. Returning it as
                 # success could make full-sync reconciliation delete valid issues.
                 log_line("Jira 이슈 목록 추가 페이지 조회 실패 — 이전 캐시를 유지합니다:", e, e2)
-                return None, None
+                return (None, None, False) if return_complete_flag else (None, None)
         first_page = False
         issues = data.get("issues", []) or []
         all_issues.extend(issues)
@@ -497,7 +497,7 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None)
         auth_ok, auth_err = _verify_jira_auth(j)
         if not auth_ok:
             log_line("Jira 인증 확인 실패 — 이전 캐시를 유지합니다:", auth_err)
-            return None, None
+            return (None, None, False) if return_complete_flag else (None, None)
 
     out = []
     activities = []
@@ -745,7 +745,9 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None)
             })
 
     activities.sort(key=lambda a: a.get("created_at", ""), reverse=True)
-    return out, activities
+    has_more = bool(next_token and len(all_issues) >= max_results)
+    is_complete = not has_more
+    return (out, activities, is_complete) if return_complete_flag else (out, activities)
 
 def jira_fetch_project_categories(cfg, project_key):
     """해당 Jira 프로젝트("스페이스")에 실제로 설정되어 있는 이슈 타입 목록을 그대로
@@ -826,19 +828,28 @@ def sync_jira_cache(cfg, force_full=False):
     )
 
     last_sync = None if force_full else get_last_sync_time()
-    res = jira_search_issues(cfg, since_updated=last_sync)
-    if isinstance(res, tuple) and len(res) == 2:
-        records, activities = res
+    res = jira_search_issues(cfg, since_updated=last_sync, return_complete_flag=True)
+    is_complete = True
+    if isinstance(res, tuple):
+        if len(res) == 3:
+            records, activities, is_complete = res
+        elif len(res) == 2:
+            records, activities = res
+            is_complete = False
     else:
         records, activities = res, []
+        is_complete = False
     now = datetime.now().isoformat()
 
     # DB에 UPSERT 저장
     if records is not None:
         full_sync = last_sync is None
+        can_reconcile = full_sync and is_complete
+        if not is_complete and full_sync:
+            log_line(f"[Jira] Full sync pagination limit reached ({len(records)} issues, has more pages); skipping reconciliation to prevent data loss.")
         try:
             if records or full_sync:
-                upsert_jira_records(records, replace_existing=full_sync)
+                upsert_jira_records(records, replace_existing=can_reconcile)
                 try:
                     from services.vector_store import trigger_async_vector_sync
                     trigger_async_vector_sync(cfg)
