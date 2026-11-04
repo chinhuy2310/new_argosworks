@@ -181,7 +181,7 @@ def handle_post_setup_complete(handler, raw_body, ip):
 
     # 4. 원자적(Atomic) 검사 및 트랜잭션 일괄 저장 (Race condition 방지)
     from services.auth import hash_password, create_session, _effective_pbkdf2_rounds
-    from db import ENGINE, query
+    from db import ENGINE
     salt, pwd_hash = hash_password(password)
     pwd_iterations = _effective_pbkdf2_rounds()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
