@@ -296,6 +296,48 @@ class TestPimAttachmentTraversal:
         assert handler.status == 200, handler.body
         assert (base / pid / "note.txt").is_file()
 
+    def test_upload_rollback_when_optimize_fails(self, tmp_db, attach_dirs):
+        """Simulate error in optimize_and_save_file; must rollback and return 400 without NameError."""
+        import handlers.product_handlers as product_handlers
+
+        base = attach_dirs["products"]
+        pid = "P-r5-fail1"
+        (base / pid).mkdir()
+        _seed_product(tmp_db, pid)
+        body, ctype = _build_multipart("r5boundary", {"id": pid}, [("file", "test.png", b"fake image bytes")])
+
+        handler = _Handler(MANAGER)
+        handler.headers["Content-Type"] = ctype
+
+        with patch("utils.image_optimizer.optimize_and_save_file", side_effect=IOError("Disk write simulated failure")):
+            product_handlers.handle_product_attachment_upload(handler, body, "127.0.0.1")
+
+        assert handler.status == 400, handler.body
+        assert handler.body.get("ok") is False
+        assert "첨부파일 저장 실패" in handler.body.get("error", "")
+
+    def test_upload_rollback_when_write_products_fails(self, tmp_db, attach_dirs):
+        """Simulate error in write_products; must remove saved file from disk and return 400 without NameError."""
+        import handlers.product_handlers as product_handlers
+
+        base = attach_dirs["products"]
+        pid = "P-r5-fail2"
+        (base / pid).mkdir()
+        _seed_product(tmp_db, pid)
+        body, ctype = _build_multipart("r5boundary", {"id": pid}, [("file", "saved_doc.txt", b"important content")])
+
+        handler = _Handler(MANAGER)
+        handler.headers["Content-Type"] = ctype
+
+        with patch.object(product_handlers, "write_products", side_effect=RuntimeError("Database lock simulated failure")):
+            product_handlers.handle_product_attachment_upload(handler, body, "127.0.0.1")
+
+        assert handler.status == 400, handler.body
+        assert handler.body.get("ok") is False
+        assert "첨부파일 저장 실패" in handler.body.get("error", "")
+        # File should have been unlinked during rollback
+        assert not (base / pid / "saved_doc.txt").exists(), "Newly saved file must be removed on write_products failure"
+
 
 # ===========================================================================
 # Mục 4 — outgoing webhook SSRF

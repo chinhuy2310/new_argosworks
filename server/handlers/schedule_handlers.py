@@ -52,6 +52,43 @@ def _require_schedule_write(handler, session, ip, action_name):
 
 
 # ---- /api/schedule (POST) — 새 일정 추가 ----
+_LEAVE_TYPES = ("연차", "반차", "오전반차", "오후반차", "출장", "경조사", "휴가", "leave", "vacation")
+
+
+def _is_leave_type(ev_type):
+    """결재가 필요한 일정 유형인지 (handle_schedule_create 의 판정 규칙과 동일)."""
+    low = (ev_type or "").lower()
+    return any(lt in low for lt in _LEAVE_TYPES)
+
+
+def _notify_leave_approvers(session, event):
+    """변경으로 다시 결재 대기가 된 일정을 부서 Manager/Admin 에게 알린다 (요청자 제외)."""
+    try:
+        from services.notification_service import add_notification
+        from db import query
+        dept = (event.get("ownerOrg") or session.get("org") or "").strip().lower()
+        requester_email = (event.get("ownerEmail") or session.get("email") or "").strip().lower()
+        requester = (session.get("name") or "").strip()
+        recipients = query(
+            """SELECT name, email FROM users
+               WHERE (disabled = 0 OR disabled IS NULL)
+                 AND (status = 'active' OR status IS NULL)
+                 AND ((LOWER(dept_id) = ? AND role = 'manager') OR role = 'admin' OR is_admin = 1)
+                 AND (COALESCE(email, '') = '' OR LOWER(email) != LOWER(?))""",
+            (dept, requester_email)
+        )
+        s, e = event.get("startDate") or "", event.get("endDate") or ""
+        range_str = f"{s} ~ {e}" if s != e else s
+        for mgr in (recipients or []):
+            add_notification(
+                recipient_email=mgr.get("email") or "", recipient_name=mgr.get("name") or "",
+                sender_name=requester, notif_type="schedule_request", title="휴가/일정 결재 요청 (변경)",
+                content=f"[{requester}]님이 {event.get('type')} ({range_str}) 일정을 변경하여 다시 승인을 요청하였습니다.",
+                link_id=str(event.get("id")), tag="결재 요청", tag_type="warning")
+    except Exception:
+        pass
+
+
 def handle_schedule_create(handler, raw_body, ip):
     session = handler._get_session_or_401()
     if session is None:
@@ -223,16 +260,23 @@ def handle_schedule_update(handler, raw_body, ip):
         is_admin = bool(role == "admin" or session.get("is_admin") == 1)
         u_dept = (session.get("org") or session.get("dept_id") or "").strip().lower()
         t_dept = (target.get("ownerOrg") or "").strip().lower()
-        sess_uid = session.get("id") or session.get("user_id")
-        t_owner_id = target.get("owner_id") or target.get("ownerId")
-        if sess_uid and t_owner_id and str(sess_uid) == str(t_owner_id):
-            is_owner = True
-        elif target.get("ownerKey") == owner_key:
-            is_owner = True
-        elif target.get("ownerName") == session.get("name") and bool(u_dept and t_dept and u_dept == t_dept):
-            is_owner = True
+        legacy_owner_match = (
+            not target.get("ownerKey")
+            and target.get("ownerName") == session.get("name")
+            and t_dept == u_dept
+        )
+        session_uid = session.get("id") or session.get("user_id")
+        target_uid = target.get("ownerId") or target.get("owner_id")
+        if target_uid not in (None, ""):
+            # Once an immutable owner ID exists, never fall back to display-name
+            # matching if the request session lacks an ID or belongs to another user.
+            is_owner = (
+                session_uid not in (None, "")
+                and str(target_uid) == str(session_uid)
+            )
         else:
-            is_owner = False
+            # Legacy events without owner_id retain the old name+department key.
+            is_owner = (target.get("ownerKey") == owner_key or legacy_owner_match)
         is_dept_manager = (role == "manager" and bool(u_dept and t_dept and u_dept == t_dept))
 
         if not (is_owner or is_admin or is_dept_manager):
@@ -249,24 +293,42 @@ def handle_schedule_update(handler, raw_body, ip):
             return
         if end_date < start_date:
             end_date = start_date
+        old_type = target.get("type") or ""
+        old_start = target.get("startDate") or ""
+        old_end = target.get("endDate") or ""
         target["type"] = (as_text(payload.get("type")) or "기타")[:20]
         target["title"] = title[:80]
         target["startDate"] = start_date
         target["endDate"] = end_date
         target["memo"] = as_text(payload.get("memo"))[:500]
+        # 승인 우회 방지: 승인권자(Admin, 또는 본인이 아닌 같은 부서 Manager)가 아닌 사용자가
+        # 결재 대상 유형의 일정(연차/출장 등)의 유형·기간을 바꾸면 다시 결재 대기로 돌린다.
+        # (예: 자동 승인되는 '회의'를 만든 뒤 '연차'로 바꾸거나, 승인된 1일 휴가를 2주로 늘리는 경우)
+        is_approver = bool(is_admin or (is_dept_manager and not is_owner))
+        reapproval = bool(
+            not is_approver
+            and _is_leave_type(target["type"])
+            and (target["type"] != old_type or start_date != old_start or end_date != old_end)
+            and target.get("approval_status") != "pending"
+        )
+        if reapproval:
+            target["approval_status"] = "pending"
+            target["approved_by"] = ""
+            target["approved_at"] = ""
+            target["reject_reason"] = ""
 
         # Update participants if provided
         if "participants" in payload:
             raw_participants = payload.get("participants") or []
             participants = []
-            target_owner_name = target.get("ownerName") or session["name"]
-            target_owner_org = target.get("ownerOrg") or session["org"]
-            target_owner_email = target.get("ownerEmail") or (session.get("email", "") if target_owner_name == session.get("name") else "")
+            # Keep the event creator as owner when a Manager edits participants.
+            owner_name = (target.get("ownerName") or session["name"]).strip()
+            owner_org = (target.get("ownerOrg") or target.get("org") or session["org"]).strip()
             owner_entry = {
-                "name": target_owner_name,
-                "org": target_owner_org,
-                "email": target_owner_email,
-                "key": target.get("ownerKey") or account_key(target_owner_name, target_owner_org),
+                "name": owner_name,
+                "org": owner_org,
+                "email": (target.get("ownerEmail") or "").strip(),
+                "key": target.get("ownerKey") or account_key(owner_name, owner_org),
                 "isOwner": True
             }
             participants.append(owner_entry)
@@ -290,6 +352,8 @@ def handle_schedule_update(handler, raw_body, ip):
 
         write_schedule(events)
     access_log(ip, "schedule_update", 200, str(event_id))
+    if reapproval:
+        _notify_leave_approvers(session, target)
     _audit(session, ip, "SCHEDULE_UPDATE", event_id)
     _broadcast_schedule_change("update", event_id)
     handler._send_json(200, {"ok": True, "event": target})
@@ -321,16 +385,23 @@ def handle_schedule_delete(handler, raw_body, ip):
         is_admin = bool(role == "admin" or session.get("is_admin") == 1)
         u_dept = (session.get("org") or session.get("dept_id") or "").strip().lower()
         t_dept = (target.get("ownerOrg") or "").strip().lower()
-        sess_uid = session.get("id") or session.get("user_id")
-        t_owner_id = target.get("owner_id") or target.get("ownerId")
-        if sess_uid and t_owner_id and str(sess_uid) == str(t_owner_id):
-            is_owner = True
-        elif target.get("ownerKey") == owner_key:
-            is_owner = True
-        elif target.get("ownerName") == session.get("name") and bool(u_dept and t_dept and u_dept == t_dept):
-            is_owner = True
+        legacy_owner_match = (
+            not target.get("ownerKey")
+            and target.get("ownerName") == session.get("name")
+            and t_dept == u_dept
+        )
+        session_uid = session.get("id") or session.get("user_id")
+        target_uid = target.get("ownerId") or target.get("owner_id")
+        if target_uid not in (None, ""):
+            # Once an immutable owner ID exists, never fall back to display-name
+            # matching if the request session lacks an ID or belongs to another user.
+            is_owner = (
+                session_uid not in (None, "")
+                and str(target_uid) == str(session_uid)
+            )
         else:
-            is_owner = False
+            # Legacy events without owner_id retain the old name+department key.
+            is_owner = (target.get("ownerKey") == owner_key or legacy_owner_match)
         is_dept_manager = (role == "manager" and bool(u_dept and t_dept and u_dept == t_dept))
 
         if not (is_owner or is_admin or is_dept_manager):
@@ -417,23 +488,9 @@ def handle_schedule_approve(handler, raw_body, ip):
     except Exception:
         pass
 
-    # Ghi audit log
-    try:
-        from services.audit_logger import log_audit
-        log_audit(
-            session_or_user=session,
-            action="SCHEDULE_APPROVE" if action == "approve" else "SCHEDULE_REJECT",
-            target_type="schedule",
-            target_id=str(event_id),
-            details={"title": target.get("title"), "owner": target.get("ownerName"), "reason": reason},
-            ip=ip
-        )
-    except Exception:
-        pass
-
     access_log(ip, f"schedule_{action}", 200, f"id={event_id} status={new_status}")
     _audit(session, ip, "SCHEDULE_" + action.upper(), event_id,
-           {"status": new_status, "reason": reason})
+           {"title": target.get("title"), "owner": target.get("ownerName"), "status": new_status, "reason": reason})
     _broadcast_schedule_change(action, event_id)
     handler._send_json(200, {"ok": True, "event": target})
 

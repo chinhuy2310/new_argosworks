@@ -3,7 +3,7 @@ import re
 import os
 from datetime import datetime
 from services.data_store import read_products, write_products, _save_lock
-from utils.logging import access_log
+from utils.logging import access_log, log_line
 from config import PRODUCT_ATTACH_DIR
 from utils.http_body import parse_json_dict, as_text
 
@@ -238,7 +238,6 @@ def handle_product_attachment_delete(handler, raw_body, ip):
             if os.path.exists(file_path):
                 os.remove(file_path)
         except Exception as e:
-            from utils.logging import log_line
             log_line("첨부파일 삭제 실패(목록에서는 제거됨):", e)
     access_log(ip, "product_attachment_delete", 200, "%s %s" % (pid, fname))
     handler._send_json(200, {"ok": True, "product": product})
@@ -295,17 +294,33 @@ def handle_product_category_save(handler, raw_body, ip):
         return
 
     valid_key_re = re.compile(r"^[^<>&\"'/\\]{1,80}$")
+    normalized_spec_template = []
     for item in spec_template:
         if isinstance(item, dict):
             k = str(item.get("key") or "").strip()
+            label = str(item.get("label") or item.get("name") or k).strip()
+            group = str(item.get("group") or "사양").strip()
+            try:
+                maxlen = int(item.get("maxlen") or 100)
+            except (ValueError, TypeError):
+                maxlen = 100
         elif isinstance(item, str):
             k = item.strip()
+            label = k
+            group = "사양"
+            maxlen = 100
         else:
             handler._send_json(400, {"ok": False, "error": "규격 템플릿 항목 형식이 올바르지 않습니다."})
             return
         if not k or not valid_key_re.match(k):
             handler._send_json(400, {"ok": False, "error": f"유효하지 않은 규격 키(key) 형식입니다: '{k}'."})
             return
+        normalized_spec_template.append({
+            "group": group or "사양",
+            "key": k,
+            "label": label or k,
+            "maxlen": maxlen if 1 <= maxlen <= 1000 else 100
+        })
 
     from services.data_store import save_product_category, read_product_categories, get_used_spec_keys
 
@@ -315,13 +330,13 @@ def handle_product_category_save(handler, raw_body, ip):
         existing = next((c for c in existing_cats if c["id"] == cat_id), None)
         if existing:
             used = set(get_used_spec_keys(existing["name"]))
-            new_keys = {item.get("key", "") for item in spec_template if isinstance(item, dict)}
+            new_keys = {item["key"] for item in normalized_spec_template}
             removed_used = used - new_keys
             if removed_used:
                 handler._send_json(400, {"ok": False, "error": "다음 규격 항목은 제품 데이터에 사용 중이므로 삭제할 수 없습니다: " + ", ".join(sorted(removed_used))})
                 return
 
-    ok, res = save_product_category(cat_id, name, spec_template)
+    ok, res = save_product_category(cat_id, name, normalized_spec_template)
     if not ok:
         handler._send_json(400, {"ok": False, "error": res})
         return
