@@ -206,6 +206,16 @@ def run_agent_conversation(messages, current_user, cfg,
     
     while turn < max_turns:
         turn += 1
+        turn_message_chars = sum(
+            len(str(item.get("content") or ""))
+            for item in current_messages
+            if isinstance(item, dict)
+        )
+        log_line(
+            "[Agent Turn Prompt Metrics] "
+            f"turn={turn}/{max_turns} message_count={len(current_messages)} "
+            f"message_chars={turn_message_chars} tool_schema_chars={tool_schema_chars}"
+        )
         log_line(f"[Agent] Turn {turn}/{max_turns}")
         
         # 하드 블록 1단계: AI에게 오직 읽기 전용 도구(AGENT_READ_TOOLS)만 전달
