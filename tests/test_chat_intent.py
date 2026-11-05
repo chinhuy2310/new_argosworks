@@ -94,5 +94,32 @@ class TestChatIntentActionGuard(unittest.TestCase):
         self.assertFalse(classify_chat_intent("Tạo mới")["requires_action"])
 
 
+    def test_negation_only_blocks_the_action_it_modifies(self):
+        positive_requests = (
+            "Tạo Task GFC, không cần gấp",
+            "Create a task for GFC, not urgent",
+            "GFC 업무 새로 등록해줘. 급하지 않아",
+        )
+        for message in positive_requests:
+            with self.subTest(message=message):
+                self.assertTrue(classify_chat_intent(message)["requires_action"])
+
+        negative_requests = (
+            "Không tạo Task GFC",
+            "Tôi không muốn tạo Task GFC",
+            "Don't create a task for GFC",
+            "GFC 업무 등록하지 마",
+            "GFC 업무 만들지 말아줘",
+        )
+        for message in negative_requests:
+            with self.subTest(message=message):
+                self.assertFalse(classify_chat_intent(message)["requires_action"])
+
+    def test_english_natural_language_create_request_is_recognized(self):
+        intent = classify_chat_intent("I want you to create a task about GFC")
+        self.assertTrue(intent["requires_action"])
+        self.assertEqual(intent["domain"], "tasks")
+
+
 if __name__ == "__main__":
     unittest.main()
