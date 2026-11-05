@@ -535,17 +535,32 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None,
         if not issue_key:
             log_line("[Jira] Search returned an issue without a stable key; refusing to treat snapshot as complete.")
             return (None, None, False) if return_complete_flag else (None, None)
+        f = issue.get("fields", {}) or {}
+        comment_meta = f.get("comment") or {}
+        embedded_comments = comment_meta.get("comments") or []
+        changelog_meta = issue.get("changelog") or {}
+        embedded_histories = changelog_meta.get("histories") or []
         try:
-            comments_all = _jira_fetch_all_pages(
-                j, f"/rest/api/3/issue/{urllib.parse.quote(issue_key)}/comment", "comments"
-            )
-            changelog_all = _jira_fetch_all_pages(
-                j, f"/rest/api/3/issue/{urllib.parse.quote(issue_key)}/changelog", "values"
-            )
+            # Search responses often already contain the complete child collection.
+            # Make the extra paginated request only when metadata says it is truncated
+            # or does not provide enough information to prove completeness.
+            comment_total = comment_meta.get("total")
+            if comment_total is not None and len(embedded_comments) >= int(comment_total):
+                comments_all = embedded_comments
+            else:
+                comments_all = _jira_fetch_all_pages(
+                    j, f"/rest/api/3/issue/{urllib.parse.quote(issue_key)}/comment", "comments"
+                )
+            changelog_total = changelog_meta.get("total")
+            if changelog_total is not None and len(embedded_histories) >= int(changelog_total):
+                changelog_all = embedded_histories
+            else:
+                changelog_all = _jira_fetch_all_pages(
+                    j, f"/rest/api/3/issue/{urllib.parse.quote(issue_key)}/changelog", "values"
+                )
         except Exception as e:
             log_line(f"[Jira] Comment/changelog pagination failed for {issue_key}; preserving previous cache:", e)
             return (None, None, False) if return_complete_flag else (None, None)
-        f = issue.get("fields", {}) or {}
         f["comment"] = {"comments": comments_all, "total": len(comments_all)}
         issue["changelog"] = {"histories": changelog_all, "total": len(changelog_all)}
         issue["_jira_comments_complete"] = True
