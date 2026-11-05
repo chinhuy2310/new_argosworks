@@ -184,6 +184,14 @@ def run_agent_conversation(messages, current_user, cfg,
     allowed_tool_names = {
         tool.get("function", {}).get("name") for tool in selected_tools
     }
+    message_chars = sum(len(str(item.get("content") or "")) for item in messages if isinstance(item, dict))
+    tool_schema_chars = len(json.dumps(selected_tools, ensure_ascii=False))
+    log_line(
+        "[Agent Prompt Metrics] "
+        f"intent={(intent or {}).get('type', 'legacy')} "
+        f"tool_count={len(selected_tools)} tool_schema_chars={tool_schema_chars} "
+        f"message_count={len(messages)} message_chars={message_chars} max_turns={max_turns}"
+    )
     if intent is not None and not selected_tools:
         max_turns = 1
 
