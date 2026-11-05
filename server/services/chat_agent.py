@@ -96,7 +96,7 @@ def _append_document_sources(answer, messages, lang="ko"):
             break
 
     answer = str(answer or "")
-    if not sources or any(source_id in answer for _, source_id in sources):
+    if not answer.strip() or not sources or any(source_id in answer for _, source_id in sources):
         return answer
 
     labels = {
