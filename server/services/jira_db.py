@@ -170,7 +170,7 @@ def upsert_jira_records(records, replace_existing=False):
             # Preserve locally-created comments stored with source='local'.
             if r.get("_jira_comments_complete") is True:
                 cur.execute(
-                    "DELETE FROM jira_comments WHERE UPPER(jira_key) = UPPER(?) AND source = 'jira'",
+                    "DELETE FROM jira_comments WHERE UPPER(jira_key) = UPPER(?) AND COALESCE(source, 'jira') = 'jira'",
                     (key,)
                 )
 
