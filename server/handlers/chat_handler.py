@@ -31,14 +31,24 @@ def _chat_session_owned(chat_sess, session):
 
 
 from prompts import (
-    CHAT_SYSTEM_PROMPT,
+    build_chat_system_prompt,
     JIRA_ON,
     JIRA_OFF,
     LANG_DIRECTIVE,
 )
 
 
-def _build_system_prompt(user_name, cfg, current_user=None, referenced_section="", lang="ko"):
+def _build_system_prompt(
+    user_name,
+    cfg,
+    current_user=None,
+    referenced_section="",
+    lang="ko",
+    include_active_tasks=True,
+    include_search_tools=True,
+    include_actions=False,
+    analysis_mode=False,
+):
     """시스템 프롬프트를 조립한다.
 
     RBAC: 진행 중 업무 목록도 사용자 열람 권한(visible_records)으로 필터링한 뒤 주입한다.
@@ -54,48 +64,63 @@ def _build_system_prompt(user_name, cfg, current_user=None, referenced_section="
     date_context = f"{today_str} [오늘: {today_pure}, 어제: {yesterday_str}, 내일: {tomorrow_str}]"
     resolved_name = _resolve_assignee_name(user_name, {"name": user_name}) or user_name
     
-    # Active tasks section (Local-First: load all ongoing tasks for user)
+    # Load active tasks only for task-related requests; preserve RBAC filtering.
     active_tasks_section = ""
-    try:
-        from services.search import merged_records
-        from services.auth import visible_records
-        records, _ = merged_records(cfg)
-        if current_user:
-            records = visible_records(current_user, records)
-        closed_statuses = {"완료", "done", "closed", "해결됨", "resolved", "종료"}
-        r_name_lower = resolved_name.lower()
-        ongoing = [
-            r for r in records
-            if ((r.get("statusName") or r.get("status") or "").strip().lower() not in closed_statuses)
-            and (r_name_lower in (r.get("assignee") or "").lower() or r_name_lower in (r.get("participants") or "").lower())
-        ]
-        if ongoing:
-            lines = [f"Danh sách thẻ đang thực hiện của {resolved_name} (tổng {len(ongoing)} thẻ):"]
-            for r in ongoing[:20]:
-                key = r.get("cardCode") or (r.get("jira") or {}).get("key") or (f"#{r.get('id')}" if r.get("id") else "")
-                title = r.get("title", "")
-                status = r.get("statusName") or r.get("status") or "진행"
-                due = r.get("dueDate") or "마감일 미지정"
-                summary = (r.get("summary") or r.get("memo") or "")[:150]
-                lines.append(f"- [{key}] {title} | Trạng thái: {status} | Hạn: {due} | Chi tiết: {summary}")
-            active_tasks_section = "\n".join(lines)
-    except Exception as e:
-        log_line("[Chat Handler] active_tasks_section 구성 오류:", e)
-    
+    if include_active_tasks:
+        try:
+            from services.search import merged_records
+            from services.auth import visible_records
+            records, _ = merged_records(cfg)
+            if current_user:
+                records = visible_records(current_user, records)
+            closed_statuses = {"완료", "done", "closed", "해결됨", "resolved", "종료"}
+            r_name_lower = resolved_name.lower()
+            ongoing = [
+                r for r in records
+                if ((r.get("statusName") or r.get("status") or "").strip().lower() not in closed_statuses)
+                and (r_name_lower in (r.get("assignee") or "").lower() or r_name_lower in (r.get("participants") or "").lower())
+            ]
+            if ongoing:
+                if lang == "ko":
+                    lines = [f"{resolved_name}님의 진행 중 업무 (총 {len(ongoing)}건):"]
+                elif lang == "en":
+                    lines = [f"Active tasks for {resolved_name} ({len(ongoing)} total):"]
+                else:
+                    lines = [f"Danh sách thẻ đang thực hiện của {resolved_name} (tổng {len(ongoing)} thẻ):"]
+                for r in ongoing[:20]:
+                    key = r.get("cardCode") or (r.get("jira") or {}).get("key") or (f"#{r.get('id')}" if r.get("id") else "")
+                    title = r.get("title", "")
+                    status = r.get("statusName") or r.get("status") or "진행"
+                    due = r.get("dueDate") or "마감일 미지정"
+                    summary = (r.get("summary") or r.get("memo") or "")[:150]
+                    if lang == "ko":
+                        lines.append(f"- [{key}] {title} | 상태: {status} | 마감: {due} | 상세: {summary}")
+                    elif lang == "en":
+                        lines.append(f"- [{key}] {title} | Status: {status} | Due: {due} | Details: {summary}")
+                    else:
+                        lines.append(f"- [{key}] {title} | Trạng thái: {status} | Hạn: {due} | Chi tiết: {summary}")
+                active_tasks_section = "\n".join(lines)
+        except Exception as e:
+            log_line("[Chat Handler] active_tasks_section 구성 오류:", e)
+
     is_jira_enabled = bool((cfg.get("jira") or {}).get("enabled"))
-    jira_context_section = JIRA_ON if is_jira_enabled else JIRA_OFF
+    jira_context_section = (
+        (JIRA_ON if is_jira_enabled else JIRA_OFF) if include_search_tools else ""
+    )
     company_name = (cfg.get("company") or {}).get("name") or "ARGOS WORKS"
     lang_dir = (LANG_DIRECTIVE.get(lang) or LANG_DIRECTIVE["ko"]).format(user_name=user_name)
 
-    return CHAT_SYSTEM_PROMPT.format(
+    return build_chat_system_prompt(
         company=company_name,
         today=date_context,
         user_name=user_name,
         jira_context_section=jira_context_section,
-        company_context=jira_context_section,
         active_tasks_section=active_tasks_section,
         referenced_issues_section=referenced_section,
         lang_directive=lang_dir,
+        include_search_tools=include_search_tools,
+        include_actions=include_actions,
+        analysis_mode=analysis_mode,
     )
 
 
@@ -322,8 +347,19 @@ def handle_chat_stream(handler, raw_body, ip):
     if ref_keys:
         ref_section = _build_referenced_section(ref_keys, cfg, current_user_ctx)
 
+    intent_domains = chat_intent.get("domains") or (
+        [chat_intent.get("domain")] if chat_intent.get("domain") else []
+    )
     system_prompt = _build_system_prompt(
-        user_name, cfg, current_user_ctx, referenced_section=ref_section, lang=effective_lang
+        user_name,
+        cfg,
+        current_user_ctx,
+        referenced_section=ref_section,
+        lang=effective_lang,
+        include_active_tasks="tasks" in intent_domains,
+        include_search_tools=chat_intent.get("type") != "general_question",
+        include_actions=bool(chat_intent.get("requires_action")),
+        analysis_mode=chat_intent.get("type") == "analysis",
     )
     if not chat_intent.get("requires_action"):
         system_prompt += (
@@ -371,7 +407,8 @@ def handle_chat_stream(handler, raw_body, ip):
             lang=effective_lang,
             on_status_update=on_status,
             max_turns=4,
-            custom_ai_config=custom_ai
+            custom_ai_config=custom_ai,
+            intent=chat_intent
         )
         stop_ping.set()
 

@@ -43,6 +43,31 @@ class TestChatIntentActionGuard(unittest.TestCase):
         intent = classify_chat_intent("Tạo mới", history)
         self.assertTrue(intent["requires_action"])
 
+
+    def test_action_proposal_metadata_requires_explicit_intent_gate(self):
+        from handlers.chat_handler import _parse_metadata
+
+        answer = (
+            "Please review this.\n:::action-proposal\n"
+            "action_type: create_task\nsummary: GFC review\n:::"
+        )
+        self.assertIsNone(_parse_metadata(answer)["action_proposal"])
+        self.assertEqual(
+            _parse_metadata(answer, allow_action_proposal=True)["action_proposal"]["action_type"],
+            "create_task",
+        )
+
+    def test_unknown_action_type_is_not_exposed(self):
+        from handlers.chat_handler import _parse_metadata
+
+        answer = (
+            "Please review this.\n:::action-proposal\n"
+            "action_type: run_shell\nsummary: unsafe\n:::"
+        )
+        self.assertIsNone(
+            _parse_metadata(answer, allow_action_proposal=True)["action_proposal"]
+        )
+
     def test_short_reply_without_action_menu_is_not_an_action(self):
         self.assertFalse(classify_chat_intent("Tạo mới")["requires_action"])
 

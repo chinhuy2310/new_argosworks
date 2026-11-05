@@ -11,8 +11,53 @@ from services.chat_tools import AGENT_READ_TOOLS, execute_tool
 from prompts import POST_TOOL_NOTE, FORCE_FINAL, tool_status_text
 
 
+
+_TOOL_GROUPS = {
+    "tasks": {
+        "search_issues", "get_issue_details", "get_child_issues", "get_active_tasks"
+    },
+    "products": {"search_products", "get_product_details", "search_documents"},
+    "calendar": {"get_calendar_schedule", "search_internal_records"},
+    "documents": {"search_documents"},
+    "records": {"search_internal_records", "search_documents"},
+    "reports": {"generate_work_report", "search_issues", "get_issue_details"},
+    "knowledge": {
+        "search_documents", "search_internal_records", "search_issues", "search_products"
+    },
+}
+
+
+def select_agent_tools(intent=None):
+    """Select only read tools needed by the classified request."""
+    if intent is None:
+        return list(AGENT_READ_TOOLS)
+    if intent.get("type") == "general_question":
+        return []
+
+    domains = intent.get("domains") or (
+        [intent.get("domain")] if intent.get("domain") else []
+    )
+    if intent.get("type") == "knowledge_search":
+        domains = ["knowledge"]
+    elif intent.get("type") == "business_action":
+        domains = ["tasks"]
+    elif intent.get("type") == "ambiguous" and not domains:
+        domains = ["knowledge"]
+
+    allowed_names = set()
+    for domain in domains:
+        allowed_names.update(_TOOL_GROUPS.get(domain, set()))
+    if not allowed_names:
+        allowed_names = _TOOL_GROUPS["knowledge"]
+
+    return [
+        tool for tool in AGENT_READ_TOOLS
+        if tool.get("function", {}).get("name") in allowed_names
+    ]
+
+
 def run_agent_conversation(messages, current_user, cfg,
-                           lang="ko", on_status_update=None, max_turns=4, custom_ai_config=None):
+                           lang="ko", on_status_update=None, max_turns=4, custom_ai_config=None, intent=None):
     """멀티턴 ReAct 에이전트 루프를 실행한다.
     
     Args:
@@ -44,6 +89,13 @@ def run_agent_conversation(messages, current_user, cfg,
         })
         effective_cfg["ai"] = user_ai
 
+    selected_tools = select_agent_tools(intent)
+    allowed_tool_names = {
+        tool.get("function", {}).get("name") for tool in selected_tools
+    }
+    if intent is not None and not selected_tools:
+        max_turns = 1
+
     current_messages = list(messages)
     turn = 0
     
@@ -56,8 +108,8 @@ def run_agent_conversation(messages, current_user, cfg,
         response = call_ai_chat_completions(
             cfg=effective_cfg,
             messages=current_messages,
-            tools=AGENT_READ_TOOLS,
-            tool_choice="auto",
+            tools=selected_tools or None,
+            tool_choice="auto" if selected_tools else None,
             max_tokens=2048,
             timeout=90
         )
@@ -93,7 +145,10 @@ def run_agent_conversation(messages, current_user, cfg,
                 
                 log_line(f"[Agent] Tool call: {tool_name}({json.dumps(tool_args, ensure_ascii=False)[:100]})")
                 
-                result = execute_tool(tool_name, tool_args, current_user, cfg)
+                if tool_name not in allowed_tool_names:
+                    result = {"error": "This tool is not enabled for the current request."}
+                else:
+                    result = execute_tool(tool_name, tool_args, current_user, cfg)
                 
                 current_messages.append({
                     "role": "tool",
@@ -121,7 +176,7 @@ def run_agent_conversation(messages, current_user, cfg,
         "content": force_msg
     })
     response = call_ai_chat_completions(
-        cfg=cfg,
+        cfg=effective_cfg,
         messages=current_messages,
         tools=None,
         max_tokens=2048,

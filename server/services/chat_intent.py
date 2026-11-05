@@ -135,6 +135,7 @@ def classify_chat_intent(message, history=None):
         return {
             "type": "business_action",
             "domain": "tasks",
+            "domains": ["tasks"],
             "requires_action": True,
             "confidence": 0.95,
         }
@@ -150,6 +151,7 @@ def classify_chat_intent(message, history=None):
         return {
             "type": "knowledge_search",
             "domain": "knowledge",
+            "domains": ["knowledge"],
             "requires_action": False,
             "confidence": 0.75,
         }
@@ -163,18 +165,31 @@ def classify_chat_intent(message, history=None):
         ("tasks", r"(업무|작업|태스크|이슈|티켓|task|issue|ticket|jira|công việc|thẻ)"),
         ("records", r"(인수인계|사내\s*기록|내부\s*기록|internal\s+record|handover|hồ sơ nội bộ)"),
     )
-    for domain, pattern in domain_patterns:
-        if re.search(pattern, lowered, re.IGNORECASE):
-            return {
-                "type": "enterprise_search",
-                "domain": domain,
-                "requires_action": False,
-                "confidence": 0.85,
-            }
+    matched_domains = [
+        domain for domain, pattern in domain_patterns
+        if re.search(pattern, lowered, re.IGNORECASE)
+    ]
+    if len(matched_domains) > 1:
+        return {
+            "type": "analysis",
+            "domain": None,
+            "domains": matched_domains,
+            "requires_action": False,
+            "confidence": 0.8,
+        }
+    if matched_domains:
+        return {
+            "type": "enterprise_search",
+            "domain": matched_domains[0],
+            "domains": matched_domains,
+            "requires_action": False,
+            "confidence": 0.85,
+        }
 
     return {
         "type": "general_question",
         "domain": None,
+        "domains": [],
         "requires_action": False,
         "confidence": 0.8,
     }

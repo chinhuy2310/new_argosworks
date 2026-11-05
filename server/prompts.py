@@ -145,6 +145,76 @@ due_date: 2026-11-06
 {lang_directive}
 """
 
+
+def build_chat_system_prompt(
+    company,
+    today,
+    user_name,
+    jira_context_section="",
+    active_tasks_section="",
+    referenced_issues_section="",
+    lang_directive="",
+    include_search_tools=True,
+    include_actions=False,
+    analysis_mode=False,
+):
+    """Build a task-scoped prompt while preserving the legacy full prompt constant."""
+    header, tool_marker, remainder = CHAT_SYSTEM_PROMPT.partition("## 도구 선택")
+    tool_body, action_marker, remainder = remainder.partition("## 데이터 변경")
+    action_body, follow_marker, remainder = remainder.partition("## 후속 질문")
+    follow_body, context_marker, context_body = remainder.partition("## 컨텍스트")
+
+    if not (tool_marker and action_marker and follow_marker and context_marker):
+        return CHAT_SYSTEM_PROMPT.format(
+            company=company,
+            today=today,
+            user_name=user_name,
+            jira_context_section=jira_context_section,
+            active_tasks_section=active_tasks_section,
+            referenced_issues_section=referenced_issues_section,
+            lang_directive=lang_directive,
+        )
+
+    header = header.replace(
+        "업무 카드, 일정, 제품 정보, 문서를 조회해 답하고, 데이터 변경은 사용자가 승인하는 '실행 제안 카드'로만 제시합니다.",
+        "일반 질문은 직접 답하고, 사내 정보는 권한이 확인된 조회 결과로 답합니다. 데이터 변경은 명시적으로 요청된 경우에만 제안합니다.",
+    )
+    header = header.replace(
+        '1. 근거: 도구 결과에 있는 내용만 답합니다. 찾지 못하면 "찾지 못했습니다"라고 말하고 추측하지 않습니다. 업무 카드는 코드(예: DEV-1), 제품은 모델명을 함께 적습니다.',
+        '1. 근거: 사내 정보는 권한이 확인된 도구 결과와 참조 컨텍스트만 근거로 답합니다. 일반 지식 질문은 일반 지식으로 답하되 사내 사실처럼 단정하지 않습니다. 업무 카드는 코드(예: DEV-1), 제품은 모델명을 함께 적습니다.',
+    )
+
+    sections = [header.rstrip()]
+    if include_search_tools:
+        sections.append("## 도구 선택" + tool_body)
+    if include_actions:
+        sections.append("## 데이터 변경" + action_body)
+    else:
+        sections.append(
+            "## 읽기 전용 안전 규칙\n"
+            "- 현재 요청에서 명시적으로 요청하지 않은 업무 변경은 제안하거나 실행하지 않습니다.\n"
+            "- 검색 결과가 비어 있어도 새 작업 생성 의도로 해석하지 않습니다."
+        )
+    if analysis_mode:
+        sections.append(
+            "## 다중 도메인 분석\n"
+            "- 각 도메인에서 확인된 사실을 구분해 정리합니다.\n"
+            "- 서로 다른 출처가 충돌하면 충돌 사실을 밝히고 임의로 하나를 선택하지 않습니다.\n"
+            "- 근거가 없는 결론은 추정으로 표시합니다."
+        )
+    sections.append("## 후속 질문" + follow_body)
+    sections.append("## 컨텍스트" + context_body)
+    template = "\n\n".join(section for section in sections if section.strip())
+    return template.format(
+        company=company,
+        today=today,
+        user_name=user_name,
+        jira_context_section=jira_context_section,
+        active_tasks_section=active_tasks_section,
+        referenced_issues_section=referenced_issues_section,
+        lang_directive=lang_directive,
+    )
+
 JIRA_ON = """Jira 연동: 켜져 있습니다. 일부 업무 카드는 Jira 이슈와 동기화되어 있으며, 사용자가 Jira를 언급하면 Jira라고 부르고 해당 카드를 조회해 답합니다."""
 
 JIRA_OFF = """Jira 연동: 꺼져 있습니다. 답변과 :::quick-actions에서 "Jira"라는 이름을 쓰지 않고 "업무 카드"라고 부릅니다. 사용자가 Jira를 물으면 다음 취지로 안내합니다: 현재 워크스페이스는 Jira 연동이 꺼져 있어 모든 작업을 ARGOS WORKS 업무 카드로 관리하며, 필요하면 관리자에게 환경설정의 'API 및 외부 연동'에서 켜 달라고 요청할 수 있습니다."""
