@@ -723,41 +723,49 @@ def _tool_search_documents(args, current_user, cfg):
     # matches. Previously this ran only when vector results were below the limit,
     # so a full vector result set could hide exact-code/title matches entirely.
     if query:
-        records, _ = merged_records(cfg)
-        records = visible_records(current_user, records)
-        keyword_candidates = search_records(records, query, limit=min(limit * 2, 20))
-        existing_titles = {
-            str(r.get("title") or "").strip().casefold() for r in results
-        }
-        existing_source_ids = {
-            str(r.get("source_id") or "").strip() for r in results
-        }
+        try:
+            records, _ = merged_records(cfg)
+            records = visible_records(current_user, records)
+            keyword_candidates = search_records(records, query, limit=min(limit * 2, 20))
+            existing_titles = {
+                str(r.get("title") or "").strip().casefold() for r in results
+                if str(r.get("title") or "").strip()
+            }
+            existing_source_ids = {
+                str(r.get("source_id") or "").strip() for r in results
+                if str(r.get("source_id") or "").strip()
+            }
 
-        for record in keyword_candidates:
-            title = str(record.get("title") or "")
-            source_id = record.get("cardCode") or record.get("id")
-            normalized_source = str(source_id or "").strip()
-            if (
-                title.strip().casefold() in existing_titles
-                or (normalized_source and normalized_source in existing_source_ids)
-            ):
-                continue
-            evidence = str(
-                record.get("summary") or record.get("memo") or record.get("description") or ""
-            )
-            results.append({
-                "source_id": source_id,
-                "title": title,
-                "doc_type": "record",
-                "summary": evidence[:500],
-                "evidence": evidence[:1200],
-                "similarity": None,
-                "date": record.get("date", ""),
-            })
-            if title.strip():
-                existing_titles.add(title.strip().casefold())
-            if normalized_source:
-                existing_source_ids.add(normalized_source)
+            for record in keyword_candidates:
+                title = str(record.get("title") or "")
+                source_id = record.get("cardCode") or record.get("id")
+                normalized_source = str(source_id or "").strip()
+                normalized_title = title.strip().casefold()
+                if (
+                    (normalized_title and normalized_title in existing_titles)
+                    or (normalized_source and normalized_source in existing_source_ids)
+                ):
+                    continue
+                evidence = str(
+                    record.get("summary") or record.get("memo") or record.get("description") or ""
+                )
+                results.append({
+                    "source_id": source_id,
+                    "title": title,
+                    "doc_type": "record",
+                    "summary": evidence[:500],
+                    "evidence": evidence[:1200],
+                    "similarity": None,
+                    "date": record.get("date", ""),
+                })
+                if normalized_title:
+                    existing_titles.add(normalized_title)
+                if normalized_source:
+                    existing_source_ids.add(normalized_source)
+        except Exception as e:
+            # Keyword search is a supplement; keep usable vector results if the
+            # legacy record search is temporarily unavailable.
+            log_line("[Chat Tool] 키워드 검색 오류:", e)
 
     query_terms = {
         token.casefold()
