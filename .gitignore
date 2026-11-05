@@ -77,7 +77,10 @@ Desktop.ini
 docs/*
 !docs/*.md
 !docs/images/.gitkeep
-docs/images/
+!docs/images/
+docs/images/*
+!docs/images/brochure/
+!docs/images/brochure/*
 .env.bak*
 temp_env.txt
 

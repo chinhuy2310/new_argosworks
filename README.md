@@ -1,4 +1,69 @@
-# ARGOS WORKS — 프로젝트 구조 및 파일 명세서
+# ARGOS WORKS
+
+> **ON-PREMISE · PRIVATE CLOUD · AI READY**  
+> 우리 회사 서버에서 운영하는 업무 관리 및 기술 지식 플랫폼  
+> *“기업의 데이터는 기업에 남고, 먼저 일한 사람의 경험은 뒤에 오는 사람의 자산이 됩니다.”*
+
+---
+
+## 📑 제품 소개서 (Product Brochure)
+
+<div align="center">
+
+### 표지 (Cover)
+<img src="docs/images/brochure/page_01.png" alt="ARGOS WORKS Cover" width="100%" />
+
+---
+
+### 이런 문제를 겪고 계십니까? / 5가지 운영 가치
+<img src="docs/images/brochure/page_02.png" alt="소개 개요 및 5가지 운영 가치" width="100%" />
+
+---
+
+### 1. 업무 카드가 곧 완전한 기록 (빠른 인수인계와 신규 인력의 빠른 적응)
+<img src="docs/images/brochure/page_03.png" alt="운영 가치 1: 업무 기록과 인수인계" width="100%" />
+
+---
+
+### 2. 데이터는 우리 회사 서버에 (보안의 주도권은 기업에)
+<img src="docs/images/brochure/page_04.png" alt="운영 가치 2: 데이터 주권과 보안" width="100%" />
+
+---
+
+### 3. 인력 일정과 업무 마감을 한 화면에서 (연차·출장·회의와 업무 마감을 하나의 캘린더로)
+<img src="docs/images/brochure/page_05.png" alt="운영 가치 3: 일정 통합" width="100%" />
+
+---
+
+### 4. 제품 정보 통합 관리 PIM (모델·사양·가격·자료를 한곳에서 조회)
+<img src="docs/images/brochure/page_06.png" alt="운영 가치 4: 제품 정보 관리" width="100%" />
+
+---
+
+### 5. 사내 데이터 기반 AI 질의응답 (자연어로 묻고, 출처와 함께 답을 받습니다)
+<img src="docs/images/brochure/page_07.png" alt="운영 가치 5: AI 질의응답 (1)" width="100%" />
+
+---
+
+### 5. AI가 돕고, 결정은 사람이 (제안은 AI가, 실행은 [확인 및 실행] 이후에만)
+<img src="docs/images/brochure/page_08.png" alt="운영 가치 5: AI 질의응답 (2)" width="100%" />
+
+---
+
+### 연동 및 적합 조직 (기존 업무 방식은 그대로, 연결은 더 쉽게)
+<img src="docs/images/brochure/page_09.png" alt="연동 및 적합 조직" width="100%" />
+
+---
+
+### 도입과 운영 (배포 방식, 권장 구성, 라이선스, 품질 관리)
+<img src="docs/images/brochure/page_10.png" alt="도입과 운영" width="100%" />
+
+</div>
+
+---
+
+## 🏗️ 시스템 아키텍처 및 파일 명세서 (Architecture & Specifications)
+
 
 본 문서는 **ARGOS WORKS** 시스템의 전체 아키텍처, 디렉터리 구조 및 각 파일의 상세 기능과 역할을 설명합니다.
 
