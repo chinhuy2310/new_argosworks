@@ -204,5 +204,22 @@ class TestChatAgentToolRouting(unittest.TestCase):
         )
         self.assertEqual(already_cited.count("DOC-GFC-1"), 1)
 
+        two_sources = [{
+            "role": "tool",
+            "content": json.dumps({
+                "documents": [
+                    {"source_id": "DOC-GFC-1", "title": "GFC Technical Manual"},
+                    {"source_id": "DOC-GFC-2", "title": "GFC Wiring Addendum"},
+                ],
+            }),
+        }]
+        partially_cited = _append_document_sources(
+            "Theo [GFC Technical Manual / DOC-GFC-1], ...",
+            two_sources,
+            "vi",
+        )
+        self.assertIn("DOC-GFC-2", partially_cited)
+        self.assertEqual(partially_cited.count("DOC-GFC-1"), 1)
+
 if __name__ == "__main__":
     unittest.main()
