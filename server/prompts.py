@@ -25,7 +25,8 @@ CHAT_SYSTEM_PROMPT = """당신은 {company}의 사내 업무 비서입니다. �
 
 ## 도구 선택
 - 업무 카드(담당자, 상태, 키워드): search_issues. 업무 코드가 있거나 원인, 해결, 진행 상황을 묻는 질문은 get_issue_details로 설명과 댓글(comments)을 읽고 구체적으로 답합니다.
-- 인수인계 기록, 사내 기록: search_internal_records. 연차, 출장, 회의 같은 일정: get_calendar_schedule.
+- 인수인계 기록, 사내 기록: search_internal_records.
+- 연차, 출장, 회의 같은 일정: get_calendar_schedule.
 - 제품, 모델, 사양, 가격: search_products. 상세 스펙은 get_product_details. 제품 ID가 있으면 [PIM:제품ID] 형식으로 병기합니다.
 - 문서, 첨부파일 내용: search_documents. 결과의 evidence는 원문 발췌, source_id는 출처 식별자입니다. 사내 문서의 사실을 답할 때는 가능한 경우 [문서 제목 / source_id]로 근거를 표시.
 - 주간/업무 보고서, 엑셀 요청: generate_work_report. 결과에 download_url이 있으면 [📥 파일명 다운로드](download_url) 링크로 제공합니다.
@@ -157,6 +158,8 @@ def build_chat_system_prompt(
     include_search_tools=True,
     include_actions=False,
     analysis_mode=False,
+    tool_domains=None,
+    include_followups=True,
 ):
     """Build a task-scoped prompt while preserving the legacy full prompt constant."""
     header, tool_marker, remainder = CHAT_SYSTEM_PROMPT.partition("## 도구 선택")
@@ -191,7 +194,35 @@ def build_chat_system_prompt(
 
     sections = [header.rstrip()]
     if include_search_tools:
-        sections.append("## 도구 선택" + tool_body)
+        if tool_domains is None:
+            selected_tool_body = tool_body
+        else:
+            selected_domains = set(tool_domains or [])
+            if "knowledge" in selected_domains:
+                selected_domains.update({"tasks", "records", "products", "documents"})
+            markers = {
+                "tasks": ("업무 카드(", "하위 작업 목록"),
+                "records": ("인수인계 기록",),
+                "calendar": ("연차, 출장, 회의",),
+                "products": ("제품, 모델",),
+                "documents": ("문서, 첨부파일",),
+                "reports": ("주간/업무 보고서",),
+            }
+            selected_markers = tuple(
+                marker
+                for domain in selected_domains
+                for marker in markers.get(domain, ())
+            )
+            selected_lines = [
+                line for line in tool_body.splitlines()
+                if line.strip().startswith("-") and (
+                    "도구가 빈 결과" in line
+                    or any(marker in line for marker in selected_markers)
+                )
+            ]
+            selected_tool_body = "\\n" + "\\n".join(selected_lines) if selected_lines else ""
+        if selected_tool_body.strip():
+            sections.append("## 도구 선택" + selected_tool_body)
     if include_actions:
         sections.append("## 데이터 변경" + action_body)
     else:
@@ -207,7 +238,8 @@ def build_chat_system_prompt(
             "- 서로 다른 출처가 충돌하면 충돌 사실을 밝히고 임의로 하나를 선택하지 않습니다.\n"
             "- 근거가 없는 결론은 추정으로 표시합니다."
         )
-    sections.append("## 후속 질문" + follow_body)
+    if include_followups:
+        sections.append("## 후속 질문" + follow_body)
     sections.append("## 컨텍스트" + context_body)
     template = "\n\n".join(section for section in sections if section.strip())
     return template.format(
