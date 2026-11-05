@@ -155,3 +155,34 @@ def test_cancel_only_changes_an_owned_pending_proposal_state(tmp_db):
     replay_handler = DummyActionHandler(session)
     handle_cancel_action(replay_handler, json.dumps(payload).encode(), "127.0.0.1")
     assert replay_handler.responses[0][0] == 409
+
+
+def test_legacy_create_document_proposal_uses_canonical_task_action(tmp_db):
+    proposal = {
+        "action_type": "create_document",
+        "proposal_status": "pending",
+        "summary": "Legacy task title",
+        "description": "Legacy task description",
+        "status": "대기",
+        "priority": "보통",
+    }
+    session, session_id, message_id, _proposal = _setup_pending_proposal(tmp_db, proposal)
+    handler = DummyActionHandler(session)
+    payload = {
+        "session_id": session_id,
+        "message_id": message_id,
+        "action_type": "create_task",
+    }
+
+    with patch(
+        "handlers.chat_handler.execute_tool",
+        return_value={"success": True},
+    ) as execute_mock:
+        handle_execute_action(handler, json.dumps(payload).encode(), "127.0.0.1")
+
+    assert handler.responses[0][0] == 200
+    assert execute_mock.call_args.args[0] == "create_issue"
+    saved = load_history(session_id, limit=10)
+    stored = saved[-1]["metadata"]["action_proposal"]
+    assert stored["action_type"] == "create_task"
+    assert stored["proposal_status"] == "executed"
