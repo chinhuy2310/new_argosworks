@@ -261,9 +261,9 @@ def _resolve_conversation_lang(message, history, client_lang=None):
     # Detect ordinary English sentences before falling back to the UI language.
     # An acronym-only input such as "GFC" remains ambiguous and uses client_lang.
     has_english = bool(re.search(
-        r"\\b(?:what|is|are|how|why|when|where|who|which|please|can|could|would|"
+        r"\b(?:what|is|are|how|why|when|where|who|which|please|can|could|would|"
         r"show|find|search|create|make|explain|tell|give|need|want|the|my|your|"
-        r"with|about|from|for|does|do|did|task|issue|product|document)\\b",
+        r"with|about|from|for|does|do|did|task|issue|product|document)\b",
         message,
         re.I,
     ))
