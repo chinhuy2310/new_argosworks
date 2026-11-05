@@ -327,7 +327,7 @@ def handle_chat_stream(handler, raw_body, ip):
     )
     if not chat_intent.get("requires_action"):
         system_prompt += (
-            "\\n\\n## Action safety\\n"
+            "\n\n## Action safety\n"
             "The current user request is not an explicit business-action request. "
             "Do not emit an :::action-proposal block or imply that a task should be created. "
             "Answer the question or perform only the requested read/search operation."
@@ -380,7 +380,7 @@ def handle_chat_stream(handler, raw_body, ip):
         # the immediately preceding quick-action menu).
         if not chat_intent.get("requires_action"):
             answer = re.sub(
-                r":::action-proposal\\r?\\n.*?\\r?\\n:::",
+                r":::action-proposal\r?\n.*?\r?\n:::",
                 "", answer, flags=re.DOTALL
             ).strip()
 

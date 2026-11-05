@@ -35,9 +35,9 @@ class TestChatIntentActionGuard(unittest.TestCase):
         history = [{
             "role": "assistant",
             "content": (
-                "Bạn muốn xử lý thế nào?\\n:::quick-actions\\n"
-                "- Thêm bình luận vào thẻ hiện tại\\n"
-                "- Tạo mới thành một Task riêng\\n:::" 
+                "Bạn muốn xử lý thế nào?\n:::quick-actions\n"
+                "- Thêm bình luận vào thẻ hiện tại\n"
+                "- Tạo mới thành một Task riêng\n:::" 
             ),
         }]
         intent = classify_chat_intent("Tạo mới", history)
