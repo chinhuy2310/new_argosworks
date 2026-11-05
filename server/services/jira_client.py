@@ -870,11 +870,19 @@ def _sync_jira_cache_unlocked(cfg, force_full=False):
         return dict(_jira_cache)
 
     from services.jira_db import (
-        get_last_sync_time, set_last_sync_time, upsert_jira_records, load_all_jira_from_db,
+        get_last_sync_time, set_last_sync_time, get_last_full_sync_time, set_last_full_sync_time,
+        upsert_jira_records, load_all_jira_from_db,
         upsert_jira_activities, load_all_jira_activities_from_db
     )
 
-    last_sync = None if force_full else get_last_sync_time()
+    last_full_sync = get_last_full_sync_time()
+    full_sync_due = force_full or not last_full_sync
+    if last_full_sync and not force_full:
+        try:
+            full_sync_due = (datetime.now() - datetime.fromisoformat(last_full_sync)).total_seconds() >= 24 * 60 * 60
+        except (TypeError, ValueError):
+            full_sync_due = True
+    last_sync = None if full_sync_due else get_last_sync_time()
     sync_started_at = datetime.now()
     project_keys = jira_project_keys(cfg)
     # A successful /myself response does not prove Browse Projects permission.
@@ -937,6 +945,8 @@ def _sync_jira_cache_unlocked(cfg, force_full=False):
                 # Store the start watermark, not the end: updates arriving during pagination
                 # remain eligible for the next run. The next query also uses a 2-minute overlap.
                 set_last_sync_time(sync_started_at.isoformat())
+                if full_sync:
+                    set_last_full_sync_time(sync_started_at.isoformat())
             else:
                 log_line("[Jira] 동기화 결과가 불완전하여(미완료 페이지 존재) last_sync_time 커서를 전진시키지 않습니다.")
             all_records = load_all_jira_from_db()
