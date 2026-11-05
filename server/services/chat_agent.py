@@ -64,6 +64,28 @@ def select_agent_tools(intent=None):
     ]
 
 
+def resolve_agent_max_turns(intent=None, requested=4):
+    """Bound ReAct calls by intent while preserving enough steps for multi-tool work."""
+    try:
+        requested = max(1, int(requested))
+    except (TypeError, ValueError):
+        requested = 4
+    if not isinstance(intent, dict):
+        return requested
+
+    intent_type = intent.get("type")
+    limits = {
+        "general_question": 1,
+        "knowledge_search": 2,
+        "enterprise_search": 3,
+    }
+    if intent_type in limits:
+        return min(requested, limits[intent_type])
+    # Cross-domain analysis and explicit business actions may require several
+    # read/validate/synthesize steps; retain the caller's configured ceiling.
+    return requested
+
+
 def run_agent_conversation(messages, current_user, cfg,
                            lang="ko", on_status_update=None, max_turns=4, custom_ai_config=None,
                            intent=None, usage_context=None):
@@ -99,6 +121,7 @@ def run_agent_conversation(messages, current_user, cfg,
         effective_cfg["ai"] = user_ai
 
     selected_tools = select_agent_tools(intent)
+    max_turns = resolve_agent_max_turns(intent, max_turns)
     allowed_tool_names = {
         tool.get("function", {}).get("name") for tool in selected_tools
     }
