@@ -2,7 +2,7 @@ name: ARGOS WORKS Enterprise CI/CD & Multi-Engine Test Pipeline
 
 on:
   push:
-    branches: [ "main", "master", "develop", "feat/docker-multi-stage" ]
+    branches: [ "main", "master", "develop", "feat/docker-multi-stage", "fix/main-security-remediation" ]
   pull_request:
     branches: [ "main", "master" ]
 

@@ -11,6 +11,7 @@ from services.chat_store import (
     append_message, load_history, update_session_title, update_proposal_status
 )
 from services.chat_agent import run_agent_conversation
+from services.chat_intent import classify_chat_intent
 from services.chat_tools import execute_tool
 from services.jira_client import jira_ongoing_records_for, get_cached_jira_records
 from utils.http_body import parse_json_dict
@@ -109,7 +110,7 @@ def _extract_referenced_keys(text):
 
 
 
-def _parse_metadata(answer_text):
+def _parse_metadata(answer_text, allow_action_proposal=False):
     """AI 답변에서 구조화된 블록(:::action-proposal, :::quick-actions)을 추출한다."""
     result = {
         "action": "none",
@@ -119,7 +120,7 @@ def _parse_metadata(answer_text):
     
     # Extract action-proposal
     ap_match = re.search(r':::action-proposal\r?\n(.*?)\r?\n:::', answer_text, re.DOTALL)
-    if ap_match:
+    if ap_match and allow_action_proposal:
         raw_content = ap_match.group(1).strip()
         proposal = {}
         if raw_content.startswith('{') and raw_content.endswith('}'):
@@ -143,9 +144,14 @@ def _parse_metadata(answer_text):
             proposal['action_type'] = 'create_task' if act == 'create_issue' else act
         if not proposal.get('summary') and proposal.get('title'):
             proposal['summary'] = proposal.get('title')
-        proposal['proposal_status'] = 'pending'
-        result['action_proposal'] = proposal
-        result['action'] = 'propose_action'
+        allowed_action_types = {
+            'create_task', 'create_subtask', 'add_comment',
+            'update_status', 'schedule_issue'
+        }
+        if proposal.get('action_type') in allowed_action_types:
+            proposal['proposal_status'] = 'pending'
+            result['action_proposal'] = proposal
+            result['action'] = 'propose_action'
     
     # Extract quick-actions
     qa_match = re.search(r':::quick-actions\r?\n(.*?)\r?\n:::', answer_text, re.DOTALL)
@@ -291,6 +297,10 @@ def handle_chat_stream(handler, raw_body, ip):
     # Load context (last 20 messages)
     history = load_history(session_id, limit=20)
     
+    # Classify intent from the current message and the preceding assistant turn.
+    # The current user message is already the last item in history.
+    chat_intent = classify_chat_intent(message, history[:-1])
+
     # 언어 결정: 사용자 질의 언어에 자연스럽게 동기화
     effective_lang = _resolve_conversation_lang(message, history, client_lang)
     
@@ -315,6 +325,13 @@ def handle_chat_stream(handler, raw_body, ip):
     system_prompt = _build_system_prompt(
         user_name, cfg, current_user_ctx, referenced_section=ref_section, lang=effective_lang
     )
+    if not chat_intent.get("requires_action"):
+        system_prompt += (
+            "\\n\\n## Action safety\\n"
+            "The current user request is not an explicit business-action request. "
+            "Do not emit an :::action-proposal block or imply that a task should be created. "
+            "Answer the question or perform only the requested read/search operation."
+        )
     
     ai_messages = [{"role": "system", "content": system_prompt}]
     for h in history:
@@ -358,6 +375,15 @@ def handle_chat_stream(handler, raw_body, ip):
         )
         stop_ping.set()
 
+        # Defense in depth: discard model-generated write proposals unless the
+        # current user turn explicitly requested an action (or selected one from
+        # the immediately preceding quick-action menu).
+        if not chat_intent.get("requires_action"):
+            answer = re.sub(
+                r":::action-proposal\\r?\\n.*?\\r?\\n:::",
+                "", answer, flags=re.DOTALL
+            ).strip()
+
         if client_disconnected.is_set():
             log_line(f"[Chat Stream] 클라이언트 연결 조기 종료 감지: session={session_id}")
             return
@@ -373,7 +399,9 @@ def handle_chat_stream(handler, raw_body, ip):
             time.sleep(0.012)  # 12ms delay for smooth streaming
         
         # Parse metadata
-        metadata = _parse_metadata(answer)
+        metadata = _parse_metadata(
+            answer, allow_action_proposal=bool(chat_intent.get("requires_action"))
+        )
         
         # Context warning
         if len(history) >= 20:
