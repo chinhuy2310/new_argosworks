@@ -334,6 +334,21 @@ class TestJiraPaginationAndSyncGuards:
                 _cfg()["jira"], "/rest/api/3/issue/TEST-1/changelog", "values", page_size=1
             )
 
+    def test_child_endpoint_rejects_empty_page_before_total(self, monkeypatch):
+        calls = {"count": 0}
+
+        def fake_urlopen(req, *args, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return _StatusResponse({"comments": [{"id": "1"}], "total": 2})
+            return _StatusResponse({"comments": [], "total": 2})
+
+        monkeypatch.setattr(jira_client, "_urlopen", fake_urlopen)
+        with pytest.raises(RuntimeError, match="empty page"):
+            jira_client._jira_fetch_all_pages(
+                _cfg()["jira"], "/rest/api/3/issue/TEST-1/comment", "comments", page_size=1
+            )
+
     def test_db_rejection_does_not_advance_sync_watermarks(self, monkeypatch):
         from services import jira_db
 
