@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Integration tests for all chatbot action confirmation and execution flows."""
+"""Tests for the persisted chatbot action-proposal confirmation lifecycle."""
 import json
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from config import load_config
-from handlers.chat_handler import handle_execute_action, handle_cancel_action, _parse_metadata
-from services.chat_store import create_session, append_message, get_session
+from handlers.chat_handler import handle_execute_action, handle_cancel_action
+from services.chat_store import create_session, append_message, load_history
 
 
 class MockHttpHandler:
@@ -34,173 +34,138 @@ class TestActionProposalExecutionFlows(unittest.TestCase):
             "org": "mgmt",
             "dept_id": "mgmt",
             "role": "admin",
-            "email": "admin@argos.local"
+            "email": "admin@argos.local",
         }
 
     def setUp(self):
-        # Create a fresh chat session for test tracking
         self.chat_sess = create_session(user_name="uy", user_org="mgmt", title="Test Action Flow")
         self.session_id = self.chat_sess["id"]
 
-    def test_flow_1_create_task(self):
-        """Test confirming create_task creates the issue and records execution status."""
+    def _store_proposal(self, action_type, **fields):
+        """Persist the same server-owned proposal metadata the UI confirmation flow uses."""
+        message = append_message(
+            self.session_id,
+            "assistant",
+            "아래 제안을 확인해 주세요.",
+            "ARGOS",
+            metadata={
+                "action_proposal": {
+                    "action_type": action_type,
+                    "proposal_status": "pending",
+                    **fields,
+                }
+            },
+        )
+        return message["id"]
+
+    def _execute(self, action_type, fields, result=None):
+        message_id = self._store_proposal(action_type, **fields)
         handler = MockHttpHandler(self.admin_user, self.cfg)
         payload = json.dumps({
-            "action_type": "create_task",
+            "action_type": action_type,
             "session_id": self.session_id,
-            "summary": "Integration Test Task - Auto Verification",
-            "description": "1. Purpose: Test\n2. Details: Verify execution\n3. Acceptance: Success",
-            "assignee": "uy",
-            "status": "진행중",
-            "priority": "보통",
-            "start_date": "2026-10-30",
-            "due_date": "2026-11-05"
+            "message_id": message_id,
         }).encode("utf-8")
+        tool_result = result or {"success": True, "issue_key": "TEST-100"}
+        with patch("handlers.chat_handler.execute_tool", return_value=tool_result) as execute_tool:
+            handle_execute_action(handler, payload, "127.0.0.1")
+        self.assertEqual(handler.status, 200, handler.response_data)
+        self.assertTrue(handler.response_data.get("ok"), handler.response_data)
+        self.assertTrue(handler.response_data.get("result", {}).get("success"))
+        stored = next(m for m in load_history(self.session_id, limit=100) if m["id"] == message_id)
+        self.assertEqual(stored["metadata"]["action_proposal"]["proposal_status"], "executed")
+        return handler.response_data["result"], execute_tool
 
-        handle_execute_action(handler, payload, "127.0.0.1")
-        self.assertEqual(handler.status, 200)
-        self.assertTrue(handler.response_data.get("ok"))
-        res = handler.response_data.get("result", {})
-        self.assertTrue(res.get("success") or res.get("ok"))
-        
-        # Verify card code or ID returned
-        card_code = res.get("cardCode") or res.get("issue_key") or res.get("id")
-        self.assertTrue(bool(card_code))
+    def test_flow_1_create_task(self):
+        result, tool = self._execute(
+            "create_task",
+            {
+                "summary": "Integration Test Task",
+                "description": "Purpose, details and acceptance criteria",
+                "assignee": "uy",
+                "status": "진행중",
+                "priority": "보통",
+                "start_date": "2026-10-30",
+                "due_date": "2026-11-05",
+            },
+        )
+        self.assertEqual(tool.call_args.args[0], "create_issue")
+        self.assertEqual(tool.call_args.args[1]["summary"], "Integration Test Task")
+        self.assertTrue(result.get("issue_key"))
 
     def test_flow_2_create_subtask(self):
-        """Test confirming create_subtask creates child task under parent."""
-        handler = MockHttpHandler(self.admin_user, self.cfg)
-        
-        # First create parent task
-        create_payload = json.dumps({
-            "action_type": "create_task",
-            "session_id": self.session_id,
-            "summary": "Parent Task for Subtask Test",
-            "description": "Parent task description",
-            "assignee": "uy",
-            "status": "대기",
-            "priority": "보통"
-        }).encode("utf-8")
-        handle_execute_action(handler, create_payload, "127.0.0.1")
-        parent_code = handler.response_data["result"].get("cardCode") or handler.response_data["result"].get("issue_key")
-
-        # Now create subtask
-        sub_payload = json.dumps({
-            "action_type": "create_subtask",
-            "session_id": self.session_id,
-            "issue_key": parent_code,
-            "summary": "Subtask Unit Test",
-            "description": "Child work details",
-            "assignee": "uy",
-            "status": "대기",
-            "priority": "낮음",
-            "due_date": "2026-11-06"
-        }).encode("utf-8")
-        
-        handle_execute_action(handler, sub_payload, "127.0.0.1")
-        self.assertEqual(handler.status, 200)
-        self.assertTrue(handler.response_data.get("ok"))
-        sub_res = handler.response_data.get("result", {})
-        self.assertTrue(sub_res.get("success") or sub_res.get("ok"))
+        self._execute(
+            "create_task",
+            {"summary": "Parent task", "description": "Parent description"},
+            {"success": True, "issue_key": "TEST-200"},
+        )
+        result, tool = self._execute(
+            "create_subtask",
+            {
+                "summary": "Subtask Unit Test",
+                "description": "Child work details",
+                "parent_key": "TEST-200",
+                "assignee": "uy",
+                "status": "대기",
+                "priority": "낮음",
+                "due_date": "2026-11-06",
+            },
+            {"success": True, "issue_key": "TEST-201"},
+        )
+        self.assertEqual(tool.call_args.args[0], "create_issue")
+        self.assertEqual(tool.call_args.args[1]["parent_key"], "TEST-200")
+        self.assertEqual(result["issue_key"], "TEST-201")
 
     def test_flow_3_add_comment(self):
-        """Test confirming add_comment posts a comment to the task."""
-        handler = MockHttpHandler(self.admin_user, self.cfg)
-        
-        # Create task first
-        create_payload = json.dumps({
-            "action_type": "create_task",
-            "session_id": self.session_id,
-            "summary": "Task for Comment Test",
-            "assignee": "uy"
-        }).encode("utf-8")
-        handle_execute_action(handler, create_payload, "127.0.0.1")
-        card_code = handler.response_data["result"].get("cardCode") or handler.response_data["result"].get("issue_key")
-
-        # Add comment
-        comment_payload = json.dumps({
-            "action_type": "add_comment",
-            "session_id": self.session_id,
-            "issue_key": card_code,
-            "comment": "Testing confirmation comment: API verification complete."
-        }).encode("utf-8")
-
-        handle_execute_action(handler, comment_payload, "127.0.0.1")
-        self.assertEqual(handler.status, 200)
-        self.assertTrue(handler.response_data.get("ok"))
-        comm_res = handler.response_data.get("result", {})
-        self.assertTrue(comm_res.get("success") or comm_res.get("ok"))
+        _, tool = self._execute(
+            "add_comment",
+            {
+                "issue_key": "TEST-300",
+                "comment": "Testing confirmation comment: API verification complete.",
+            },
+        )
+        self.assertEqual(tool.call_args.args[0], "add_issue_comment")
+        self.assertEqual(tool.call_args.args[1]["issue_key"], "TEST-300")
 
     def test_flow_4_update_status(self):
-        """Test confirming update_status changes card status."""
-        handler = MockHttpHandler(self.admin_user, self.cfg)
-        
-        # Create task first
-        create_payload = json.dumps({
-            "action_type": "create_task",
-            "session_id": self.session_id,
-            "summary": "Task for Status Update Test",
-            "assignee": "uy",
-            "status": "대기"
-        }).encode("utf-8")
-        handle_execute_action(handler, create_payload, "127.0.0.1")
-        card_code = handler.response_data["result"].get("cardCode") or handler.response_data["result"].get("issue_key")
-
-        # Update status to 완료
-        status_payload = json.dumps({
-            "action_type": "update_status",
-            "session_id": self.session_id,
-            "issue_key": card_code,
-            "status": "완료"
-        }).encode("utf-8")
-
-        handle_execute_action(handler, status_payload, "127.0.0.1")
-        self.assertEqual(handler.status, 200)
-        self.assertTrue(handler.response_data.get("ok"))
-        stat_res = handler.response_data.get("result", {})
-        self.assertTrue(stat_res.get("success") or stat_res.get("ok"))
+        _, tool = self._execute(
+            "update_status",
+            {"issue_key": "TEST-400", "status": "완료"},
+        )
+        self.assertEqual(tool.call_args.args[0], "update_issue_status")
+        self.assertEqual(tool.call_args.args[1]["status"], "완료")
 
     def test_flow_5_schedule_issue(self):
-        """Test confirming schedule_issue updates start_date and due_date."""
-        handler = MockHttpHandler(self.admin_user, self.cfg)
-        
-        # Create task first
-        create_payload = json.dumps({
-            "action_type": "create_task",
-            "session_id": self.session_id,
-            "summary": "Task for Scheduling Test",
-            "assignee": "uy"
-        }).encode("utf-8")
-        handle_execute_action(handler, create_payload, "127.0.0.1")
-        card_code = handler.response_data["result"].get("cardCode") or handler.response_data["result"].get("issue_key")
-
-        # Schedule task
-        sched_payload = json.dumps({
-            "action_type": "schedule_issue",
-            "session_id": self.session_id,
-            "issue_key": card_code,
-            "start_date": "2026-11-01",
-            "due_date": "2026-11-10"
-        }).encode("utf-8")
-
-        handle_execute_action(handler, sched_payload, "127.0.0.1")
-        self.assertEqual(handler.status, 200)
-        self.assertTrue(handler.response_data.get("ok"))
-        sched_res = handler.response_data.get("result", {})
-        self.assertTrue(sched_res.get("success") or sched_res.get("ok"))
+        _, tool = self._execute(
+            "schedule_issue",
+            {
+                "issue_key": "TEST-500",
+                "start_date": "2026-11-01",
+                "due_date": "2026-11-10",
+            },
+        )
+        self.assertEqual(tool.call_args.args[0], "schedule_issue")
+        self.assertEqual(tool.call_args.args[1]["due_date"], "2026-11-10")
 
     def test_flow_cancel_action(self):
-        """Test canceling proposal marks status as rejected/cancelled."""
+        message_id = self._store_proposal(
+            "create_task",
+            summary="Rejected Task Proposal",
+            description="Should never be executed",
+        )
         handler = MockHttpHandler(self.admin_user, self.cfg)
-        cancel_payload = json.dumps({
+        payload = json.dumps({
             "session_id": self.session_id,
+            "message_id": message_id,
             "action_type": "create_task",
-            "summary": "Rejected Task Proposal"
         }).encode("utf-8")
 
-        handle_cancel_action(handler, cancel_payload, "127.0.0.1")
-        self.assertEqual(handler.status, 200)
+        handle_cancel_action(handler, payload, "127.0.0.1")
+
+        self.assertEqual(handler.status, 200, handler.response_data)
         self.assertTrue(handler.response_data.get("ok"))
+        stored = next(m for m in load_history(self.session_id, limit=100) if m["id"] == message_id)
+        self.assertEqual(stored["metadata"]["action_proposal"]["proposal_status"], "cancelled")
 
 
 if __name__ == "__main__":
