@@ -141,6 +141,14 @@ def upsert_jira_records(records, replace_existing=False):
                 )
             )
 
+            # Reconcile remote comments only after the caller fetched every page.
+            # Preserve locally-created comments stored with source='local'.
+            if r.get("_jira_comments_complete") is True:
+                cur.execute(
+                    "DELETE FROM jira_comments WHERE UPPER(jira_key) = UPPER(?) AND source = 'jira'",
+                    (key,)
+                )
+
             # 2. UPSERT comments for this issue
             comments = r.get("comments") or []
             for c in comments:
@@ -165,6 +173,11 @@ def upsert_jira_records(records, replace_existing=False):
                         source = excluded.source""",
                     (unique_cid, key, c_author, c_body, c_created, c_source)
                 )
+
+            # Attachment metadata is a complete Jira issue field snapshot.
+            # Replace stale rows only when the caller marks the snapshot complete.
+            if r.get("_jira_attachments_complete") is True:
+                cur.execute("DELETE FROM jira_attachments WHERE UPPER(jira_key) = UPPER(?)", (key,))
 
             # 3. UPSERT attachments for this issue
             attachments = r.get("attachments") or []
