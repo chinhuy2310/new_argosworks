@@ -103,6 +103,8 @@ class TestPromptsOptimization(unittest.TestCase):
         )
         self.assertNotIn("search_issues", general)
         self.assertNotIn("action_type: create_task", general)
+        self.assertIn("일반 지식 질문은 일반 지식으로 답하되", general)
+        self.assertNotIn("도구 결과에 있는 내용만 답합니다", general)
         self.assertIn("search_issues", search)
         self.assertNotIn("action_type: create_task", search)
         self.assertIn("action_type: create_task", action)
