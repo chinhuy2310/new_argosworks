@@ -48,6 +48,8 @@ def _build_system_prompt(
     include_search_tools=True,
     include_actions=False,
     analysis_mode=False,
+    tool_domains=None,
+    include_followups=True,
 ):
     """시스템 프롬프트를 조립한다.
 
@@ -121,6 +123,8 @@ def _build_system_prompt(
         include_search_tools=include_search_tools,
         include_actions=include_actions,
         analysis_mode=analysis_mode,
+        tool_domains=tool_domains,
+        include_followups=include_followups,
     )
 
 
@@ -358,6 +362,10 @@ def handle_chat_stream(handler, raw_body, ip):
         include_search_tools=chat_intent.get("type") != "general_question",
         include_actions=bool(chat_intent.get("requires_action")),
         analysis_mode=chat_intent.get("type") == "analysis",
+        tool_domains=chat_intent.get("domains") or (
+            [chat_intent.get("domain")] if chat_intent.get("domain") else None
+        ),
+        include_followups=chat_intent.get("type") != "general_question",
     )
     if not chat_intent.get("requires_action"):
         system_prompt += (
