@@ -69,6 +69,27 @@ class TestChatIntentActionGuard(unittest.TestCase):
         )
 
 
+
+    def test_short_ordinary_words_do_not_trigger_acronym_lookup(self):
+        intent = classify_chat_intent("Show my active tasks")
+        self.assertEqual(intent["type"], "enterprise_search")
+        self.assertEqual(intent["domain"], "tasks")
+
+    def test_gfc_acronym_remains_a_knowledge_lookup(self):
+        for message in ("gfc", "gfc là gì?", "What is GFC?", "GFC가 뭐야?"):
+            with self.subTest(message=message):
+                self.assertEqual(
+                    classify_chat_intent(message)["type"], "knowledge_search"
+                )
+
+    def test_active_task_query_is_flagged_for_specific_tool(self):
+        from services.chat_intent import should_include_active_tasks
+
+        self.assertTrue(should_include_active_tasks("Show my active tasks"))
+        self.assertTrue(should_include_active_tasks("내 진행 중 업무"))
+        self.assertTrue(should_include_active_tasks("Danh sách công việc của tôi"))
+        self.assertFalse(should_include_active_tasks("Tìm Task GFC"))
+
     def test_short_reply_without_action_menu_is_not_an_action(self):
         self.assertFalse(classify_chat_intent("Tạo mới")["requires_action"])
 

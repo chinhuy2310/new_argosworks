@@ -30,6 +30,21 @@ class TestChatAgentToolRouting(unittest.TestCase):
         self.assertNotIn("search_products", names)
         self.assertNotIn("get_calendar_schedule", names)
 
+
+    def test_active_task_tool_is_only_selected_for_active_task_list(self):
+        task_search = _names({
+            "type": "enterprise_search",
+            "domain": "tasks",
+            "include_active_tasks": False,
+        })
+        active_tasks = _names({
+            "type": "enterprise_search",
+            "domain": "tasks",
+            "include_active_tasks": True,
+        })
+        self.assertNotIn("get_active_tasks", task_search)
+        self.assertIn("get_active_tasks", active_tasks)
+
     def test_product_query_gets_product_tools(self):
         names = _names({"type": "enterprise_search", "domain": "products"})
         self.assertIn("search_products", names)

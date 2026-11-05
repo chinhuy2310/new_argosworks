@@ -112,6 +112,21 @@ def _selected_create_quick_action(message, history):
 
 
 
+_ACTIVE_TASK_CONTEXT = re.compile(
+    r"(?:내\s*(?:진행\s*중\s*)?업무|내가\s*진행\s*중인\s*(?:업무|작업)|"
+    r"진행\s*중인\s*업무|진행중\s*업무|"
+    r"my\s+(?:active\s+|current\s+)?tasks?|tasks?\s+assigned\s+to\s+me|"
+    r"công\s+việc\s+(?:đang\s+làm|hiện\s+tại|của\s+tôi)|"
+    r"việc\s+đang\s+làm)",
+    re.IGNORECASE,
+)
+
+
+def should_include_active_tasks(message):
+    """Return true only when the user explicitly asks for their active-task list."""
+    return bool(_ACTIVE_TASK_CONTEXT.search(message or ""))
+
+
 def classify_chat_intent(message, history=None):
     """Return a conservative intent label; only explicit writes enable proposals."""
     text = (message or "").strip()
@@ -119,6 +134,7 @@ def classify_chat_intent(message, history=None):
         return {
             "type": "ambiguous",
             "domain": None,
+            "domains": [],
             "requires_action": False,
             "confidence": 0.0,
         }
@@ -139,22 +155,6 @@ def classify_chat_intent(message, history=None):
             "domains": ["tasks"],
             "requires_action": True,
             "confidence": 0.95,
-        }
-
-    # Short acronym/definition lookups are knowledge searches, never task creation.
-    words = re.findall(r"[A-Za-z0-9가-힣_-]+", text)
-    is_short_acronym = (
-        len(words) <= 5
-        and any(_ACRONYM_QUESTION.fullmatch(word) for word in words)
-        and text.lower() not in _GREETING_ONLY
-    )
-    if is_short_acronym:
-        return {
-            "type": "knowledge_search",
-            "domain": "knowledge",
-            "domains": ["knowledge"],
-            "requires_action": False,
-            "confidence": 0.75,
         }
 
     lowered = text.lower()
@@ -185,6 +185,35 @@ def classify_chat_intent(message, history=None):
             "domains": matched_domains,
             "requires_action": False,
             "confidence": 0.85,
+        }
+
+    # Only treat an actual acronym/token as a knowledge lookup. Do not mistake
+    # ordinary short words such as "my" in "my active tasks" for an acronym.
+    ascii_tokens = re.findall(r"[A-Za-z0-9_-]+", text)
+    has_uppercase_acronym = any(
+        token.isupper() and 2 <= len(token) <= 10 for token in ascii_tokens
+    )
+    has_lowercase_definition = bool(_QUESTION_OR_HOWTO.search(text)) and any(
+        token.isalpha() and token.islower() and 2 <= len(token) <= 5
+        for token in ascii_tokens
+    )
+    is_single_short_token = (
+        len(ascii_tokens) == 1
+        and 2 <= len(ascii_tokens[0]) <= 8
+    )
+    is_short_acronym = (
+        has_uppercase_acronym
+        or has_lowercase_definition
+        or is_single_short_token
+    ) and text.lower() not in _GREETING_ONLY
+
+    if is_short_acronym:
+        return {
+            "type": "knowledge_search",
+            "domain": "knowledge",
+            "domains": ["knowledge"],
+            "requires_action": False,
+            "confidence": 0.75,
         }
 
     return {

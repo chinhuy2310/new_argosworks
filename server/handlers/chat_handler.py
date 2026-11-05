@@ -11,7 +11,7 @@ from services.chat_store import (
     append_message, load_history, update_session_title, update_proposal_status
 )
 from services.chat_agent import run_agent_conversation
-from services.chat_intent import classify_chat_intent
+from services.chat_intent import classify_chat_intent, should_include_active_tasks
 from services.chat_tools import execute_tool
 from services.jira_client import jira_ongoing_records_for, get_cached_jira_records
 from utils.http_body import parse_json_dict
@@ -325,6 +325,7 @@ def handle_chat_stream(handler, raw_body, ip):
     # Classify intent from the current message and the preceding assistant turn.
     # The current user message is already the last item in history.
     chat_intent = classify_chat_intent(message, history[:-1])
+    chat_intent["include_active_tasks"] = should_include_active_tasks(message)
 
     # 언어 결정: 사용자 질의 언어에 자연스럽게 동기화
     effective_lang = _resolve_conversation_lang(message, history, client_lang)

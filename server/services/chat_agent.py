@@ -53,6 +53,8 @@ def select_agent_tools(intent=None):
     allowed_names = set()
     for domain in domains:
         allowed_names.update(_TOOL_GROUPS.get(domain, set()))
+    if "tasks" in domains and not intent.get("include_active_tasks"):
+        allowed_names.discard("get_active_tasks")
     if not allowed_names:
         allowed_names = _TOOL_GROUPS["knowledge"]
 
