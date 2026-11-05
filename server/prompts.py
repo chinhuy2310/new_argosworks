@@ -288,6 +288,19 @@ FORCE_FINAL_READ_ONLY = {
     "en": "Do not call more tools. Write the final answer in English using only collected information, state what is missing, and do not emit :::action-proposal.",
 }
 
+POST_TOOL_NOTE_KNOWLEDGE = {
+    "ko": "[내부 지식 검색 후] 내부 검색 결과에 근거가 있으면 출처와 함께 답하세요. 결과가 없거나 불충분하면 회사 내부 자료에서 확인되지 않았다고 분명히 말하세요. 약어의 일반적인 의미를 확실히 알고 있을 때만 '일반적으로는...'이라고 구분해 설명하고, 회사 내부 정의라고 단정하지 마세요. 의미가 여러 개면 분야나 사용 맥락을 질문하세요. 업무 변경 제안이나 :::action-proposal은 출력하지 마세요.",
+    "vi": "[Sau khi tìm kiếm tri thức nội bộ] Nếu có bằng chứng nội bộ, hãy trả lời kèm nguồn. Nếu không có hoặc chưa đủ, nói rõ rằng chưa tìm thấy định nghĩa trong dữ liệu nội bộ. Chỉ nêu nghĩa phổ biến khi bạn thực sự chắc chắn và phải ghi rõ đó là nghĩa chung, không khẳng định là định nghĩa của công ty. Nếu có nhiều nghĩa, hãy hỏi lĩnh vực hoặc ngữ cảnh sử dụng. Không đề xuất thay đổi công việc và không xuất :::action-proposal.",
+    "en": "[After internal knowledge search] Answer with citations when internal evidence exists. If results are missing or insufficient, state that no internal definition was found. Give a common/general meaning only when confident, clearly label it as general, and never present it as the company's definition. If multiple meanings are possible, ask for the domain or context. Do not propose business actions or emit :::action-proposal.",
+}
+
+FORCE_FINAL_KNOWLEDGE = {
+    "ko": "도구를 더 호출하지 말고 지금까지 확인한 내용으로 한국어 최종 답변을 쓰세요. 내부 근거가 없으면 내부 자료에서 확인되지 않았다고 밝히고, 확실한 일반적 의미만 일반 지식으로 구분해 설명하세요. 회사 내부 정의라고 추측하지 말고, 필요하면 분야나 맥락을 질문하세요. :::action-proposal은 출력하지 마세요.",
+    "vi": "Không gọi thêm công cụ. Hãy trả lời cuối bằng tiếng Việt dựa trên những gì đã kiểm tra. Nếu không có bằng chứng nội bộ, nói rõ chưa tìm thấy trong dữ liệu nội bộ; chỉ giải thích nghĩa phổ biến khi chắc chắn và phải ghi rõ đó là kiến thức chung. Không suy đoán định nghĩa riêng của công ty; nếu cần hãy hỏi lĩnh vực hoặc ngữ cảnh. Không xuất :::action-proposal.",
+    "en": "Do not call more tools. Write the final answer using what has been checked. If internal evidence is absent, say so; explain a common meaning only when confident and label it as general knowledge. Do not guess the company's definition; ask for domain or context when needed. Do not emit :::action-proposal.",
+}
+
+
 TOOL_STATUS = {
     "ko": {
         "search_issues": "업무 카드 검색 중...",
