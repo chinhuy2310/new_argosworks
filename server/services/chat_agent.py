@@ -13,6 +13,8 @@ from prompts import (
     FORCE_FINAL,
     POST_TOOL_NOTE_READ_ONLY,
     FORCE_FINAL_READ_ONLY,
+    POST_TOOL_NOTE_KNOWLEDGE,
+    FORCE_FINAL_KNOWLEDGE,
     tool_status_text,
 )
 
@@ -189,7 +191,9 @@ def run_agent_conversation(messages, current_user, cfg,
                     "content": json.dumps(result, ensure_ascii=False, default=str)
                 })
             
-            if intent is not None and not intent.get("requires_action"):
+            if intent is not None and intent.get("type") == "knowledge_search":
+                post_note_table = POST_TOOL_NOTE_KNOWLEDGE
+            elif intent is not None and not intent.get("requires_action"):
                 post_note_table = POST_TOOL_NOTE_READ_ONLY
             else:
                 post_note_table = POST_TOOL_NOTE
@@ -207,7 +211,9 @@ def run_agent_conversation(messages, current_user, cfg,
     
     # Max turns exceeded — force final answer without tools
     log_line(f"[Agent] Max turns ({max_turns}) exceeded, forcing final answer")
-    if intent is not None and not intent.get("requires_action"):
+    if intent is not None and intent.get("type") == "knowledge_search":
+        force_table = FORCE_FINAL_KNOWLEDGE
+    elif intent is not None and not intent.get("requires_action"):
         force_table = FORCE_FINAL_READ_ONLY
     else:
         force_table = FORCE_FINAL
