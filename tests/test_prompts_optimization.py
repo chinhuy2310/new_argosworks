@@ -122,5 +122,47 @@ class TestPromptsOptimization(unittest.TestCase):
         self.assertIn('[{"id": 1, "category": "...", "task": "...", "type": "일간 또는 주간"}, ...]', formatted)
 
 
+    def test_tool_guidance_is_scoped_to_intent_domains(self):
+        common = {
+            "company": "ARGOS WORKS",
+            "today": "2026-11-05",
+            "user_name": "Test User",
+            "jira_context_section": "",
+            "active_tasks_section": "",
+            "referenced_issues_section": "",
+            "lang_directive": "Respond in English.",
+            "include_search_tools": True,
+        }
+        task_prompt = prompts.build_chat_system_prompt(
+            **common, tool_domains=["tasks"]
+        )
+        product_prompt = prompts.build_chat_system_prompt(
+            **common, tool_domains=["products"]
+        )
+
+        self.assertIn("search_issues", task_prompt)
+        self.assertIn("get_active_tasks", task_prompt)
+        self.assertNotIn("search_products", task_prompt)
+        self.assertNotIn("get_calendar_schedule", task_prompt)
+        self.assertNotIn("search_documents", task_prompt)
+
+        self.assertIn("search_products", product_prompt)
+        self.assertNotIn("search_issues", product_prompt)
+        self.assertNotIn("get_calendar_schedule", product_prompt)
+
+    def test_general_prompt_can_omit_unneeded_followup_instructions(self):
+        prompt = prompts.build_chat_system_prompt(
+            company="ARGOS WORKS",
+            today="2026-11-05",
+            user_name="Test User",
+            lang_directive="Respond in English.",
+            include_search_tools=False,
+            include_actions=False,
+            include_followups=False,
+        )
+        self.assertNotIn("답변 끝에 이어서 물을 만한 질문", prompt)
+        self.assertNotIn("## 후속 질문", prompt)
+
+
 if __name__ == "__main__":
     unittest.main()
