@@ -601,8 +601,6 @@ _ACTION_TYPE_ALIASES = {
     "create_issue": "create_task",
     "task": "create_task",
     "create": "create_task",
-    "create_document": "create_task",
-    "document": "create_task",
     "subtask": "create_subtask",
     "comment": "add_comment",
     "status": "update_status",
