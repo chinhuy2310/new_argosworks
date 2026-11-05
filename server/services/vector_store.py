@@ -1138,8 +1138,88 @@ def search_vector_store(cfg, query_text, limit=6, min_similarity=0.42, session=N
                 log_line(f"[Vector Store] 경고: 쿼리 임베딩 차원({q_dim})과 일치하는 문서가 없습니다. (총 {total_cnt}개 문서는 다른 차원 모델로 생성됨 -> /api/settings 또는 자동 동기화로 재색인이 필요합니다)")
             return []
 
-        import heapq
         perm_ctx = build_doc_permission_context(session) if session is not None else None
+
+        # 1. 고속 NumPy C-BLAS 벡터화 검색 (O(1) 메모리 재사용 & SIMD 병렬 내적 계산)
+        try:
+            import numpy as np
+
+            query_arr = np.array(query_vec, dtype=np.float32)
+            q_norm = float(np.linalg.norm(query_arr))
+            if q_norm > 0:
+                query_arr /= q_norm
+
+            all_bytes = b"".join(r["vector_blob"] for r in rows)
+            n_rows = len(rows)
+            doc_matrix = np.frombuffer(all_bytes, dtype=np.float32).reshape(n_rows, q_dim)
+
+            doc_norms = np.linalg.norm(doc_matrix, axis=1)
+            doc_norms[doc_norms == 0] = 1e-12
+            sims = np.dot(doc_matrix, query_arr) / doc_norms
+
+            match_mask = sims >= min_similarity
+            candidate_indices = np.where(match_mask)[0]
+            if candidate_indices.size == 0:
+                return []
+
+            # 유사도 내림차순 정렬
+            sorted_indices = candidate_indices[np.argsort(-sims[candidate_indices])]
+
+            results = []
+            for idx in sorted_indices:
+                row = rows[idx]
+                sim = float(sims[idx])
+
+                try:
+                    meta = json.loads(row["metadata_json"] or "{}")
+                except Exception:
+                    meta = {}
+
+                # Privacy isolation: doc_type별 RBAC (record / jira / schedule)
+                if session is not None and not can_view_vector_doc(session, row["doc_type"], meta, perm_ctx):
+                    continue
+                elif session is None:
+                    # Unauthenticated search: never expose private records or internal schedules
+                    if row["doc_type"] in ("record", "jira") and bool(meta.get("is_private")):
+                        continue
+                    if row["doc_type"] == "schedule":
+                        continue
+
+                can_view_price = (
+                    can_view_vector_price(session, perm_ctx) if session is not None else False
+                )
+                summary_text = meta.get("summary") or ""
+                if not summary_text and row["doc_type"] != "product":
+                    summary_text = row["content"][:200]
+                evidence_text = str(row["content"] or "")
+                if row["doc_type"] == "product" and not can_view_price:
+                    summary_text = _mask_price_text(summary_text, max_len=200)
+                    evidence_text = _mask_price_text(evidence_text)
+
+                results.append({
+                    "id": meta.get("id") or row["doc_id"],
+                    "doc_id": row["doc_id"],
+                    "source_id": row["doc_id"],
+                    "doc_type": row["doc_type"],
+                    "title": row["title"],
+                    "similarity": round(sim, 4),
+                    "summary": summary_text,
+                    "evidence": evidence_text[:1200],
+                    "org": meta.get("org") or "",
+                    "category": meta.get("category") or "",
+                    "date": meta.get("date") or "",
+                    "assignee": meta.get("assignee") or "",
+                    "jira": meta.get("jira")
+                })
+                if len(results) >= limit:
+                    break
+
+            return results
+        except Exception as np_err:
+            log_line("[Vector Store] NumPy 고속 검색 실패 또는 미설치, 기본 순차 루프로 전환:", np_err)
+
+        # 2. NumPy 미사용 환경 또는 예외 발생 시 안전한 순차 루프(Fallback)
+        import heapq
         top_heap = []
         counter = 0
 
@@ -1198,7 +1278,7 @@ def search_vector_store(cfg, query_text, limit=6, min_similarity=0.42, session=N
                 elif sim > top_heap[0][0]:
                     heapq.heapreplace(top_heap, (sim, counter, item))
 
-        # 3. 유사도 내림차순 정렬
+        # 유사도 내림차순 정렬
         top_heap.sort(key=lambda x: x[0], reverse=True)
         return [entry[2] for entry in top_heap]
     finally:

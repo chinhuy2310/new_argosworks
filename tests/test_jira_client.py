@@ -466,7 +466,9 @@ class TestConcurrentSyncAndSafeWatermark:
         # 2. Verify new cursor is the sync START time (before completion)
         assert len(captured_new_cursor) == 1
         new_cursor = captured_new_cursor[0]
-        assert "2026-11-05" in new_cursor
+        from datetime import datetime
+        cursor_dt = datetime.fromisoformat(new_cursor)
+        assert abs((datetime.now() - cursor_dt).total_seconds()) < 60
 
 
 class TestSubresourceReconciliationAndPagination:
