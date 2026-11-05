@@ -185,8 +185,8 @@ def build_chat_system_prompt(
     )
     if not include_search_tools:
         header = header.replace(
-            "3. 내부 도구 이름(search_issues 등)을 답변에 쓰지 않습니다. \\"업무 카드 검색\\", \\"제품 사양 조회\\"처럼 자연스러운 말로 설명합니다.",
-            "3. 내부 도구 이름이나 구현 세부사항을 답변에 쓰지 않고 자연스러운 업무 용어로 설명합니다.",
+            "3. 내부 도구 이름(search_issues 등)을 답변에 쓰지 않습니다.",
+            "3. 내부 도구 이름이나 구현 세부사항을 답변에 쓰지 않습니다.",
         )
 
     sections = [header.rstrip()]
