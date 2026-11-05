@@ -356,7 +356,7 @@ class TestAuditRemediationSuite(unittest.TestCase):
              patch("services.jira_client.jira_search_issues", return_value=(fake_records, [], False)), \
              patch("services.jira_db.get_last_sync_time", return_value=None), \
              patch("services.jira_db.set_last_sync_time", mock_set_sync), \
-             patch("services.jira_db.jira_db.get_last_full_sync_time", return_value=None) if False else patch("services.jira_db.get_last_full_sync_time", return_value=None), \
+             patch("services.jira_db.get_last_full_sync_time", return_value=None), \
              patch("services.jira_db.set_last_full_sync_time"), \
              patch("services.jira_client.jira_fetch_project_categories", return_value=[]):
             sync_jira_cache(jira_cfg, force_full=True)
