@@ -5,6 +5,7 @@ AI가 도구를 호출하면 실행 결과를 피드백하고,
 """
 
 import json
+import re
 from utils.logging import log_line
 from services.ai_client import call_ai_chat_completions
 from services.chat_tools import AGENT_READ_TOOLS, execute_tool
@@ -64,6 +65,62 @@ def select_agent_tools(intent=None):
         tool for tool in AGENT_READ_TOOLS
         if tool.get("function", {}).get("name") in allowed_names
     ]
+
+
+def _append_document_sources(answer, messages, lang="ko"):
+    """Ensure retrieved document evidence remains traceable in the final answer."""
+    sources = []
+    seen = set()
+    for message in messages or []:
+        if not isinstance(message, dict) or message.get("role") != "tool":
+            continue
+        try:
+            payload = json.loads(message.get("content") or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        documents = payload.get("documents") if isinstance(payload, dict) else None
+        if not isinstance(documents, list):
+            continue
+        for document in documents:
+            if not isinstance(document, dict):
+                continue
+            source_id = str(document.get("source_id") or "").strip()
+            title = re.sub(r"\s+", " ", str(document.get("title") or "")).strip()
+            if not source_id or source_id in seen:
+                continue
+            seen.add(source_id)
+            sources.append((title, source_id))
+            if len(sources) >= 3:
+                break
+        if len(sources) >= 3:
+            break
+
+    answer = str(answer or "")
+    if not sources or any(source_id in answer for _, source_id in sources):
+        return answer
+
+    labels = {
+        "ko": "출처",
+        "vi": "Nguồn tham khảo",
+        "en": "Sources",
+    }
+    label = labels.get(lang, labels["ko"])
+    refs = "; ".join(
+        f"[{title} / {source_id}]" if title else f"[{source_id}]"
+        for title, source_id in sources
+    )
+    citation_line = f"{label}: {refs}"
+
+    # Keep action-proposal and quick-action blocks at the end of the response.
+    markers = [
+        match.start()
+        for pattern in (r":::action-proposal\s*\r?\n", r":::quick-actions\s*\r?\n")
+        if (match := re.search(pattern, answer))
+    ]
+    if markers:
+        index = min(markers)
+        return answer[:index].rstrip() + "\n\n" + citation_line + "\n\n" + answer[index:].lstrip()
+    return answer.rstrip() + "\n\n" + citation_line
 
 
 def resolve_agent_max_turns(intent=None, requested=4):
@@ -207,7 +264,7 @@ def run_agent_conversation(messages, current_user, cfg,
         
         # Branch B: AI returned final text
         content = assistant_msg.get("content") or ""
-        return content
+        return _append_document_sources(content, current_messages, lang)
     
     # Max turns exceeded — force final answer without tools
     log_line(f"[Agent] Max turns ({max_turns}) exceeded, forcing final answer")
@@ -231,5 +288,6 @@ def run_agent_conversation(messages, current_user, cfg,
         usage_context=usage_context
     )
     if response and response.get("choices"):
-        return response["choices"][0].get("message", {}).get("content", "")
+        content = response["choices"][0].get("message", {}).get("content", "")
+        return _append_document_sources(content, current_messages, lang)
     return "죄송합니다. 응답을 생성하는 데 실패했습니다."
