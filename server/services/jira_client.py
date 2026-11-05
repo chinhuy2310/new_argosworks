@@ -1355,6 +1355,10 @@ def transition_jira_issue(cfg, issue_key, target_status_name):
                                 else:
                                     r["status"] = "예정"
                                 break
+                try:
+                    sync_jira_cache(cfg)
+                except Exception as e:
+                    log_line(f"[Jira] Transition succeeded but immediate cache refresh failed for {issue_key}:", e)
                 return True, f"상태가 '{new_status_name}'(으)로 변경되었습니다."
             return False, f"전이 실패: {err}"
 
@@ -1401,6 +1405,10 @@ def transition_jira_issue(cfg, issue_key, target_status_name):
                                         r["statusName"] = to_name
                                         r["status"] = "진행"
                                         break
+                        try:
+                            sync_jira_cache(cfg)
+                        except Exception as e:
+                            log_line(f"[Jira] Transition succeeded but immediate cache refresh failed for {issue_key}:", e)
                         return True, f"상태가 '{to_name}'(으)로 변경되었습니다."
 
     if is_review_target:
@@ -1411,8 +1419,12 @@ def transition_jira_issue(cfg, issue_key, target_status_name):
             if "진행" in to_n or "progress" in to_n.lower():
                 succ, err = post_transition(t["id"])
                 if succ:
+                    try:
+                        sync_jira_cache(cfg)
+                    except Exception as e:
+                        log_line(f"[Jira] Transition succeeded but immediate cache refresh failed for {issue_key}:", e)
                     return True, "Jira 워크플로에 '검토' 상태가 없어 '진행'(In Progress)으로 설정되었습니다."
-        return True, "Jira 워크플로에 '검토' 상태가 없어 현재 상태가 유지됩니다."
+        return False, "Jira 워크플로에 '검토' 상태로 전이할 수 없고, '진행' 전이도 성공하지 못했습니다."
 
     return False, f"'{clean_target}' 상태로 전이할 수 있는 워크플로 경로를 찾지 못했습니다."
 
