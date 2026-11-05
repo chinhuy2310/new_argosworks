@@ -68,6 +68,16 @@ class TestChatIntentActionGuard(unittest.TestCase):
             _parse_metadata(answer, allow_action_proposal=True)["action_proposal"]
         )
 
+
+    def test_active_task_context_is_loaded_only_for_active_task_queries(self):
+        from services.chat_intent import should_include_active_tasks
+
+        self.assertTrue(should_include_active_tasks("Show my active tasks"))
+        self.assertTrue(should_include_active_tasks("내 진행 중 업무"))
+        self.assertTrue(should_include_active_tasks("Danh sách công việc của tôi"))
+        self.assertFalse(should_include_active_tasks("Tìm Task GFC"))
+        self.assertFalse(should_include_active_tasks("GFC là gì?"))
+
     def test_short_reply_without_action_menu_is_not_an_action(self):
         self.assertFalse(classify_chat_intent("Tạo mới")["requires_action"])
 

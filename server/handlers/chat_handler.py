@@ -11,7 +11,7 @@ from services.chat_store import (
     append_message, load_history, update_session_title, update_proposal_status
 )
 from services.chat_agent import run_agent_conversation
-from services.chat_intent import classify_chat_intent
+from services.chat_intent import classify_chat_intent, should_include_active_tasks
 from services.chat_tools import execute_tool
 from services.jira_client import jira_ongoing_records_for, get_cached_jira_records
 from utils.http_body import parse_json_dict
@@ -356,7 +356,7 @@ def handle_chat_stream(handler, raw_body, ip):
         current_user_ctx,
         referenced_section=ref_section,
         lang=effective_lang,
-        include_active_tasks="tasks" in intent_domains,
+        include_active_tasks=should_include_active_tasks(message),
         include_search_tools=chat_intent.get("type") != "general_question",
         include_actions=bool(chat_intent.get("requires_action")),
         analysis_mode=chat_intent.get("type") == "analysis",

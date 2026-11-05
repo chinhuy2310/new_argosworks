@@ -8,7 +8,13 @@ import json
 from utils.logging import log_line
 from services.ai_client import call_ai_chat_completions
 from services.chat_tools import AGENT_READ_TOOLS, execute_tool
-from prompts import POST_TOOL_NOTE, FORCE_FINAL, tool_status_text
+from prompts import (
+    POST_TOOL_NOTE,
+    FORCE_FINAL,
+    POST_TOOL_NOTE_READ_ONLY,
+    FORCE_FINAL_READ_ONLY,
+    tool_status_text,
+)
 
 
 
@@ -158,7 +164,11 @@ def run_agent_conversation(messages, current_user, cfg,
                     "content": json.dumps(result, ensure_ascii=False, default=str)
                 })
             
-            post_note = POST_TOOL_NOTE.get(lang) or POST_TOOL_NOTE["ko"]
+            if intent is not None and not intent.get("requires_action"):
+                post_note_table = POST_TOOL_NOTE_READ_ONLY
+            else:
+                post_note_table = POST_TOOL_NOTE
+            post_note = post_note_table.get(lang) or post_note_table["ko"]
             current_messages.append({
                 "role": "system",
                 "content": post_note
@@ -172,7 +182,11 @@ def run_agent_conversation(messages, current_user, cfg,
     
     # Max turns exceeded — force final answer without tools
     log_line(f"[Agent] Max turns ({max_turns}) exceeded, forcing final answer")
-    force_msg = FORCE_FINAL.get(lang) or FORCE_FINAL["ko"]
+    if intent is not None and not intent.get("requires_action"):
+        force_table = FORCE_FINAL_READ_ONLY
+    else:
+        force_table = FORCE_FINAL
+    force_msg = force_table.get(lang) or force_table["ko"]
     current_messages.append({
         "role": "user",
         "content": force_msg

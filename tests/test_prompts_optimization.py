@@ -107,6 +107,14 @@ class TestPromptsOptimization(unittest.TestCase):
         self.assertNotIn("action_type: create_task", search)
         self.assertIn("action_type: create_task", action)
 
+
+    def test_read_only_agent_notes_do_not_contain_action_instructions(self):
+        for lang in ("ko", "vi", "en"):
+            self.assertNotIn("action_type: create_task", prompts.POST_TOOL_NOTE_READ_ONLY.get(lang, ""))
+            self.assertNotIn("action_type: create_task", prompts.FORCE_FINAL_READ_ONLY.get(lang, ""))
+        self.assertIn("action_type: create_task", prompts.POST_TOOL_NOTE["vi"])
+        self.assertIn("action_type: create_task", prompts.FORCE_FINAL["vi"])
+
     def test_report_classify_tail_formatting(self):
         """REPORT_CLASSIFY_TAIL must be format-safe with escaped JSON braces."""
         formatted = prompts.REPORT_CLASSIFY_TAIL.format(cards="- Card DEV-1")

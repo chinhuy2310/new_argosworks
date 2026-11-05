@@ -243,6 +243,19 @@ FORCE_FINAL = {
     "en": "Do not call more tools. Write the final answer in English using only what has been collected, and say what is missing. If the user asked to create a task and no related card was found, output a valid :::action-proposal block at the end.",
 }
 
+
+POST_TOOL_NOTE_READ_ONLY = {
+    "ko": "[도구 결과 확인 후] 위 결과만 근거로 한국어로 답하세요. 새 작업 제안이나 :::action-proposal은 출력하지 마세요.",
+    "vi": "[Sau khi có kết quả công cụ] Chỉ dựa trên kết quả trên để trả lời bằng tiếng Việt. Không đề xuất tạo hoặc thay đổi công việc và không xuất :::action-proposal.",
+    "en": "[After tool results] Answer in English using only the results above. Do not propose or emit any :::action-proposal.",
+}
+
+FORCE_FINAL_READ_ONLY = {
+    "ko": "도구를 더 호출하지 말고 지금까지 수집한 내용만으로 한국어 최종 답변을 쓰세요. 부족한 부분은 부족하다고 밝히고 :::action-proposal은 출력하지 마세요.",
+    "vi": "Không gọi thêm công cụ. Hãy trả lời cuối bằng tiếng Việt chỉ dựa trên thông tin đã thu thập, nêu rõ phần còn thiếu và không xuất :::action-proposal.",
+    "en": "Do not call more tools. Write the final answer in English using only collected information, state what is missing, and do not emit :::action-proposal.",
+}
+
 TOOL_STATUS = {
     "ko": {
         "search_issues": "업무 카드 검색 중...",
