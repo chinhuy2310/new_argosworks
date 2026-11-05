@@ -408,7 +408,13 @@ def handle_chat_stream(handler, raw_body, ip):
             on_status_update=on_status,
             max_turns=4,
             custom_ai_config=custom_ai,
-            intent=chat_intent
+            intent=chat_intent,
+            usage_context={
+                "user_name": user_name,
+                "dept_id": user_org,
+                "session_id": session_id,
+                "feature": "chat",
+            }
         )
         stop_ping.set()
 
@@ -447,28 +453,7 @@ def handle_chat_stream(handler, raw_body, ip):
         # Save assistant message
         saved_msg = append_message(session_id, "assistant", answer, "AI", metadata=metadata)
         
-        # Track AI Token Usage per user & session
-        try:
-            from services.ai_usage_service import record_ai_usage
-            # Estimate prompt tokens from system_prompt + message
-            p_tok = (len(system_prompt) + len(message)) // 3
-            c_tok = len(answer) // 3
-            t_tok = p_tok + c_tok
-            ai_prov = (custom_ai or {}).get("provider") or cfg.get("ai", {}).get("provider", "gemini")
-            ai_mod = (custom_ai or {}).get("model") or cfg.get("ai", {}).get("model", "")
-            record_ai_usage(
-                user_name=user_name,
-                dept_id=user_org,
-                provider=ai_prov,
-                model=ai_mod,
-                prompt_tokens=p_tok,
-                completion_tokens=c_tok,
-                total_tokens=t_tok,
-                session_id=session_id,
-                feature="chat"
-            )
-        except Exception as e:
-            log_line("[AI Usage] record failed:", e)
+        # Token usage is recorded per provider call in ai_client.py.
 
         # Send completion event
         handler._send_sse_event({

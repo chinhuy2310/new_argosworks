@@ -57,7 +57,8 @@ def select_agent_tools(intent=None):
 
 
 def run_agent_conversation(messages, current_user, cfg,
-                           lang="ko", on_status_update=None, max_turns=4, custom_ai_config=None, intent=None):
+                           lang="ko", on_status_update=None, max_turns=4, custom_ai_config=None,
+                           intent=None, usage_context=None):
     """멀티턴 ReAct 에이전트 루프를 실행한다.
     
     Args:
@@ -111,7 +112,8 @@ def run_agent_conversation(messages, current_user, cfg,
             tools=selected_tools or None,
             tool_choice="auto" if selected_tools else None,
             max_tokens=2048,
-            timeout=90
+            timeout=90,
+            usage_context=usage_context
         )
         
         if not response:
@@ -180,7 +182,8 @@ def run_agent_conversation(messages, current_user, cfg,
         messages=current_messages,
         tools=None,
         max_tokens=2048,
-        timeout=30
+        timeout=30,
+        usage_context=usage_context
     )
     if response and response.get("choices"):
         return response["choices"][0].get("message", {}).get("content", "")
