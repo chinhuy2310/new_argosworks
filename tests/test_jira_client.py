@@ -294,3 +294,75 @@ class TestEmptySearchIsCrossCheckedWithAuth:
         assert "authenticated" in error
 
 
+
+
+# ---------------------------------------------------------------------------
+# Regression coverage for safe incremental/full Jira synchronization
+# ---------------------------------------------------------------------------
+class TestJiraPaginationAndSyncGuards:
+    def test_child_endpoint_pagination_collects_every_page(self, monkeypatch):
+        requested = []
+
+        def fake_urlopen(req, *args, **kwargs):
+            url = req.full_url
+            requested.append(url)
+            if "startAt=0" in url:
+                return _StatusResponse({"comments": [{"id": "1"}], "startAt": 0, "total": 2})
+            return _StatusResponse({"comments": [{"id": "2"}], "startAt": 1, "total": 2})
+
+        monkeypatch.setattr(jira_client, "_urlopen", fake_urlopen)
+        items = jira_client._jira_fetch_all_pages(
+            _cfg()["jira"], "/rest/api/3/issue/TEST-1/comment", "comments", page_size=1
+        )
+
+        assert [item["id"] for item in items] == ["1", "2"]
+        assert len(requested) == 2
+        assert "startAt=1" in requested[1]
+
+    def test_child_endpoint_pagination_propagates_page_failure(self, monkeypatch):
+        calls = {"count": 0}
+
+        def fake_urlopen(req, *args, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return _StatusResponse({"values": [{"id": "1"}], "total": 2})
+            raise urllib.error.URLError("second page unavailable")
+
+        monkeypatch.setattr(jira_client, "_urlopen", fake_urlopen)
+        with pytest.raises(urllib.error.URLError):
+            jira_client._jira_fetch_all_pages(
+                _cfg()["jira"], "/rest/api/3/issue/TEST-1/changelog", "values", page_size=1
+            )
+
+    def test_db_rejection_does_not_advance_sync_watermarks(self, monkeypatch):
+        from services import jira_db
+
+        cfg = _cfg()
+        cfg["jira"]["project_map"] = {"dev": {"project_key": "TEST"}}
+        record = {"id": "jira-TEST-1", "jira": {"key": "TEST-1", "summary": "test"}}
+        advanced = []
+        monkeypatch.setattr(jira_db, "get_last_sync_time", lambda: None)
+        monkeypatch.setattr(jira_db, "get_last_full_sync_time", lambda: None)
+        monkeypatch.setattr(jira_db, "set_last_sync_time", lambda value=None: advanced.append(("incremental", value)))
+        monkeypatch.setattr(jira_db, "set_last_full_sync_time", lambda value=None: advanced.append(("full", value)))
+        monkeypatch.setattr(jira_db, "upsert_jira_records", lambda *a, **k: False)
+        monkeypatch.setattr(jira_db, "load_all_jira_from_db", lambda: [])
+        monkeypatch.setattr(jira_db, "load_all_jira_activities_from_db", lambda: [])
+        monkeypatch.setattr(jira_client, "jira_project_keys", lambda _cfg: ["TEST"])
+        monkeypatch.setattr(jira_client, "_urlopen", lambda *a, **k: _StatusResponse({"key": "TEST"}))
+        monkeypatch.setattr(
+            jira_client, "jira_search_issues",
+            lambda *a, **k: ([record], [], True),
+        )
+        monkeypatch.setattr(jira_client, "jira_fetch_project_categories", lambda *a, **k: [])
+
+        with jira_client._jira_cache_lock:
+            jira_client._jira_cache.update({
+                "records": None, "activities": [], "categories": {},
+                "synced_at": None, "error": None
+            })
+
+        result = jira_client.sync_jira_cache(cfg, force_full=True)
+
+        assert advanced == []
+        assert result["error"] is not None
