@@ -96,7 +96,13 @@ def _append_document_sources(answer, messages, lang="ko"):
             break
 
     answer = str(answer or "")
-    if not answer.strip() or not sources or any(source_id in answer for _, source_id in sources):
+    if not answer.strip() or not sources:
+        return answer
+    missing_sources = [
+        (title, source_id) for title, source_id in sources
+        if source_id not in answer
+    ]
+    if not missing_sources:
         return answer
 
     labels = {
@@ -107,7 +113,7 @@ def _append_document_sources(answer, messages, lang="ko"):
     label = labels.get(lang, labels["ko"])
     refs = "; ".join(
         f"[{title} / {source_id}]" if title else f"[{source_id}]"
-        for title, source_id in sources
+        for title, source_id in missing_sources
     )
     citation_line = f"{label}: {refs}"
 
