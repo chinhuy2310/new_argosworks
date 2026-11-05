@@ -413,7 +413,7 @@ def handle_chat_stream(handler, raw_body, ip):
                 "user_name": user_name,
                 "dept_id": user_org,
                 "session_id": session_id,
-                "feature": "chat",
+                "feature": "chat_actual",
             }
         )
         stop_ping.set()

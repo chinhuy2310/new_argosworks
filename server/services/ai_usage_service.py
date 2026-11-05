@@ -54,6 +54,14 @@ def get_ai_usage_stats(period="month", from_date=None, to_date=None):
         where_sql = "WHERE created_at >= ?"
         params = [month_ago]
 
+    # Exclude historical chat rows created by character-count estimation.
+    # New provider-reported chat usage is stored as feature="chat_actual".
+    if where_sql:
+        where_sql += " AND feature <> ?"
+    else:
+        where_sql = "WHERE feature <> ?"
+    params.append("chat")
+
     # 1. Tổng quát
     summary_row = query(
         f"""SELECT COUNT(*) as total_calls,

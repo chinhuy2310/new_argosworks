@@ -106,6 +106,20 @@ class TestNormalizeProviderTokenUsage(unittest.TestCase):
         self.assertEqual(recorded[0]["prompt_tokens"], 11)
         self.assertEqual(recorded[0]["completion_tokens"], 7)
         self.assertEqual(recorded[0]["total_tokens"], 18)
+        self.assertEqual(recorded[0]["feature"], "chat_actual")
+
+    def test_usage_stats_excludes_legacy_character_estimates(self):
+        from services.ai_usage_service import get_ai_usage_stats
+
+        with patch("services.ai_usage_service.query", return_value=[]) as query_mock:
+            result = get_ai_usage_stats(period="all")
+
+        self.assertEqual(result["summary"]["total_tokens"], 0)
+        self.assertEqual(query_mock.call_count, 5)
+        for call in query_mock.call_args_list:
+            self.assertIn("feature <> ?", call.args[0])
+            self.assertIn("chat", call.args[1])
+
 
     def test_invalid_values_are_safely_normalized(self):
         self.assertEqual(
