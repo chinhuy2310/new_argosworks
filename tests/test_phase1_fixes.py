@@ -73,7 +73,7 @@ def test_delete_record_attachment_removes_file_and_protects_traversal(tmp_path, 
     assert len(query("SELECT * FROM record_attachments WHERE id = 2")) == 0
 
 
-def test_chat_stream_records_ai_usage_without_nameerror(tmp_db, monkeypatch):
+def test_chat_stream_does_not_create_estimated_duplicate_usage_rows(tmp_db, monkeypatch):
     from handlers.chat_handler import handle_chat_stream
     from db import query
 
@@ -106,11 +106,10 @@ def test_chat_stream_records_ai_usage_without_nameerror(tmp_db, monkeypatch):
     with patch("handlers.chat_handler.run_agent_conversation", return_value="Why did the chicken cross the road?"):
         handle_chat_stream(handler, payload, "127.0.0.1")
 
-    # In the bugged state, NameError on user_msg is swallowed by except: pass, so ai_usage table is EMPTY!
+    # The agent is mocked, so no provider call (and no provider usage) occurred.
+    # The handler must not add a second character-based estimate as if it were actual.
     rows = query("SELECT * FROM ai_usage")
-    assert len(rows) == 1, "Expected ai_usage to record 1 row for chat completion"
-    assert rows[0]["total_tokens"] > 0
-    assert rows[0]["user_name"] == "alice"
+    assert rows == []
 
 
 def test_handle_account_register_handles_db_error_cleanly(monkeypatch, tmp_db):

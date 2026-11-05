@@ -1166,19 +1166,26 @@ def search_vector_store(cfg, query_text, limit=6, min_similarity=0.42, session=N
 
                 counter += 1
 
+                can_view_price = (
+                    can_view_vector_price(session, perm_ctx) if session is not None else False
+                )
                 summary_text = meta.get("summary") or ""
                 if not summary_text and row["doc_type"] != "product":
                     summary_text = row["content"][:200]
-                if row["doc_type"] == "product" and not can_view_vector_price(session, perm_ctx):
+                evidence_text = str(row["content"] or "")
+                if row["doc_type"] == "product" and not can_view_price:
                     summary_text = _mask_price_text(summary_text, max_len=200)
+                    evidence_text = _mask_price_text(evidence_text)
 
                 item = {
                     "id": meta.get("id") or row["doc_id"],
                     "doc_id": row["doc_id"],
+                    "source_id": row["doc_id"],
                     "doc_type": row["doc_type"],
                     "title": row["title"],
                     "similarity": round(sim, 4),
                     "summary": summary_text,
+                    "evidence": evidence_text[:1200],
                     "org": meta.get("org") or "",
                     "category": meta.get("category") or "",
                     "date": meta.get("date") or "",

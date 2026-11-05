@@ -339,11 +339,27 @@ class TestAuditRemediationSuite(unittest.TestCase):
         # 2. Mock jira_search_issues returning is_complete=False
         fake_records = [{"jira": {"key": "TEST-PAG-NEW", "summary": "New Issue"}}]
         mock_set_sync = MagicMock()
-        with patch("services.jira_client.jira_search_issues", return_value=(fake_records, [], False)), \
+        project_response = MagicMock()
+        project_response.status = 200
+        project_response.__enter__.return_value = project_response
+        jira_cfg = {
+            "jira": {
+                "enabled": True,
+                "base_url": "https://jira.example.test",
+                "email": "ci@example.test",
+                "api_token": "test-token",
+                "project_map": {"dev": {"project_key": "TEST"}},
+            }
+        }
+        with patch("services.jira_client.jira_project_keys", return_value=["TEST"]), \
+             patch("services.jira_client._urlopen", return_value=project_response), \
+             patch("services.jira_client.jira_search_issues", return_value=(fake_records, [], False)), \
              patch("services.jira_db.get_last_sync_time", return_value=None), \
              patch("services.jira_db.set_last_sync_time", mock_set_sync), \
+             patch("services.jira_db.get_last_full_sync_time", return_value=None), \
+             patch("services.jira_db.set_last_full_sync_time"), \
              patch("services.jira_client.jira_fetch_project_categories", return_value=[]):
-            sync_jira_cache({"jira": {"enabled": True, "project_map": {}}}, force_full=True)
+            sync_jira_cache(jira_cfg, force_full=True)
 
         # 3. Verify OLD issue was NOT deleted because reconciliation was safely skipped!
         rows_old = query("SELECT jira_key FROM jira_issues WHERE jira_key = 'TEST-PAG-OLD'")
@@ -356,11 +372,15 @@ class TestAuditRemediationSuite(unittest.TestCase):
 
         # 5. When is_complete=True, sync cursor IS advanced and reconciliation runs
         mock_set_sync_complete = MagicMock()
-        with patch("services.jira_client.jira_search_issues", return_value=(fake_records, [], True)), \
+        with patch("services.jira_client.jira_project_keys", return_value=["TEST"]), \
+             patch("services.jira_client._urlopen", return_value=project_response), \
+             patch("services.jira_client.jira_search_issues", return_value=(fake_records, [], True)), \
              patch("services.jira_db.get_last_sync_time", return_value=None), \
              patch("services.jira_db.set_last_sync_time", mock_set_sync_complete), \
+             patch("services.jira_db.get_last_full_sync_time", return_value=None), \
+             patch("services.jira_db.set_last_full_sync_time"), \
              patch("services.jira_client.jira_fetch_project_categories", return_value=[]):
-            sync_jira_cache({"jira": {"enabled": True, "project_map": {}}}, force_full=True)
+            sync_jira_cache(jira_cfg, force_full=True)
 
         mock_set_sync_complete.assert_called_once()
         rows_old_after = query("SELECT jira_key FROM jira_issues WHERE jira_key = 'TEST-PAG-OLD'")
