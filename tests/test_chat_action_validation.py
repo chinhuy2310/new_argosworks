@@ -2,7 +2,7 @@
 import json
 from unittest.mock import patch
 
-from handlers.chat_handler import handle_execute_action
+from handlers.chat_handler import handle_cancel_action, handle_execute_action
 from services.chat_store import append_message, create_session, load_history
 
 
@@ -133,3 +133,25 @@ def test_failed_action_returns_proposal_to_pending_without_overwriting_task_stat
     stored = saved[-1]["metadata"]["action_proposal"]
     assert stored["proposal_status"] == "pending"
     assert stored["status"] == "진행중"
+
+
+def test_cancel_only_changes_an_owned_pending_proposal_state(tmp_db):
+    session, session_id, message_id, _proposal = _setup_pending_proposal(tmp_db)
+    payload = {
+        "sessionId": session_id,
+        "messageId": message_id,
+        "action_type": "create_task",
+        "summary": "Client-provided summary is not authoritative",
+    }
+    handler = DummyActionHandler(session)
+    handle_cancel_action(handler, json.dumps(payload).encode(), "127.0.0.1")
+
+    assert handler.responses[0][0] == 200
+    saved = load_history(session_id, limit=10)
+    stored = saved[-1]["metadata"]["action_proposal"]
+    assert stored["proposal_status"] == "cancelled"
+    assert stored["status"] == "대기"
+
+    replay_handler = DummyActionHandler(session)
+    handle_cancel_action(replay_handler, json.dumps(payload).encode(), "127.0.0.1")
+    assert replay_handler.responses[0][0] == 409
