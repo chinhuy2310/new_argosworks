@@ -202,11 +202,11 @@ def build_chat_system_prompt(
                 selected_domains.update({"tasks", "records", "products", "documents"})
             markers = {
                 "tasks": ("업무 카드(", "하위 작업 목록"),
-                "records": ("인수인계 기록",),
-                "calendar": ("연차, 출장, 회의",),
-                "products": ("제품, 모델",),
+                "records": ("인수인계 기록", "문서, 첨부파일"),
+                "calendar": ("연차, 출장, 회의", "인수인계 기록"),
+                "products": ("제품, 모델", "문서, 첨부파일"),
                 "documents": ("문서, 첨부파일",),
-                "reports": ("주간/업무 보고서",),
+                "reports": ("주간/업무 보고서", "업무 카드("),
             }
             selected_markers = tuple(
                 marker
