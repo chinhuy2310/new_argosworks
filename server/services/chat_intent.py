@@ -26,6 +26,12 @@ _ACTION_PATTERNS = (
         r"(?:task|issue|ticket|comment|status|due\s+date)\b",
         re.IGNORECASE,
     ),
+    re.compile(
+        r"\b(?:i|we)\s+(?:want|need)\s+(?:you\s+to\s+)?"
+        r"(?:create|make|add|update|change|delete|remove|schedule|post|leave)\s+"
+        r"(?:(?:a|the|new)\s+)?(?:task|issue|ticket|comment|status|due\s+date)\b",
+        re.IGNORECASE,
+    ),
     # Korean imperative forms
     re.compile(
         r"(?:업무|작업|카드|태스크|티켓|이슈|댓글|상태)"
@@ -46,10 +52,19 @@ _QUESTION_OR_HOWTO = re.compile(
     re.IGNORECASE,
 )
 
-_NEGATED = re.compile(
-    r"(?:\bkhông\b|\bđừng\b|\bnot\b|\bdon't\b|\bdo\s+not\b|"
-    r"하지\s*마|만들지\s*마|등록하지\s*마|취소)",
-    re.IGNORECASE,
+_NEGATED_ACTION = re.compile(
+    r"(?:\b(?:đừng|không)\s+(?:(?:cần|muốn)\s+)?"
+    r"(?:tạo|thêm|cập nhật|sửa|xóa|đăng ký|ghi nhận|lên lịch|đặt lịch|"
+    r"đổi trạng thái|thay đổi trạng thái|bình luận|comment)\b|"
+    r"\b(?:don't|do not|never|can't|cannot)\s+(?:please\s+)?"
+    r"(?:create|make|add|update|change|delete|remove|schedule|post|leave)\b|"
+    r"\b(?:i|we)\s+(?:don't|do not|never)\s+(?:want|need)\s+to\s+"
+    r"(?:create|make|add|update|change|delete|remove|schedule|post|leave)\b|"
+    r"(?:업무|작업|카드|태스크|티켓|이슈|댓글|상태)?.{0,20}"
+    r"(?:등록하지|만들지|생성하지|추가하지|수정하지|변경하지|삭제하지)\s*말(?:아|아줘|아주세요)|"
+    r"(?:등록하지|만들지|생성하지|추가하지|수정하지|변경하지|삭제하지)\s*말(?:아|아줘|아주세요)"
+    r".{0,20}(?:업무|작업|카드|태스크|티켓|이슈|댓글|상태))",
+    re.IGNORECASE | re.DOTALL,
 )
 
 _FOLLOWUP_CREATE = re.compile(
@@ -139,7 +154,7 @@ def classify_chat_intent(message, history=None):
             "confidence": 0.0,
         }
 
-    if _NEGATED.search(text):
+    if _NEGATED_ACTION.search(text):
         explicit_action = False
     elif _QUESTION_OR_HOWTO.search(text):
         explicit_action = False
