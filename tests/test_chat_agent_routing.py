@@ -117,5 +117,64 @@ class TestChatAgentToolRouting(unittest.TestCase):
         self.assertEqual(cfg["ai"]["api_key"], "server-key")
 
 
+    def test_knowledge_search_uses_cautious_no_internal_evidence_instruction(self):
+        from unittest.mock import patch
+        from services.chat_agent import run_agent_conversation
+        from prompts import POST_TOOL_NOTE_KNOWLEDGE
+
+        tool_response = {
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [{
+                        "id": "call_gfc_search",
+                        "type": "function",
+                        "function": {
+                            "name": "search_documents",
+                            "arguments": json.dumps({"query": "GFC"}),
+                        },
+                    }],
+                }
+            }]
+        }
+        final_response = {
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "No internal definition was found for GFC.",
+                }
+            }]
+        }
+        with patch(
+            "services.chat_agent.call_ai_chat_completions",
+            side_effect=[tool_response, final_response],
+        ) as ai_mock, patch(
+            "services.chat_agent.execute_tool",
+            return_value={"found_count": 0, "documents": []},
+        ):
+            answer = run_agent_conversation(
+                messages=[
+                    {"role": "system", "content": "Answer carefully."},
+                    {"role": "user", "content": "GFC là gì?"},
+                ],
+                current_user={"name": "Alice", "org": "dev"},
+                cfg={"ai": {"enabled": True}},
+                lang="vi",
+                intent={
+                    "type": "knowledge_search",
+                    "domains": ["knowledge"],
+                    "requires_action": False,
+                },
+            )
+
+        self.assertIn("GFC", answer)
+        second_messages = ai_mock.call_args_list[1].kwargs["messages"]
+        self.assertIn(
+            POST_TOOL_NOTE_KNOWLEDGE["vi"],
+            [message.get("content") for message in second_messages],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
