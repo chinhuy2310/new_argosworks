@@ -59,6 +59,17 @@ def upsert_jira_records(records, replace_existing=False):
         log_line("Refusing Jira full-sync reconciliation because a returned issue has no stable key.")
         return False
 
+    if replace_existing and not incoming_keys:
+        try:
+            row = get_one("SELECT COUNT(*) as cnt FROM jira_issues")
+            cnt = (row["cnt"] if row else 0) or 0
+            if cnt > 0:
+                log_line(f"[Jira] Cảnh báo an toàn: Từ chối xóa toàn bộ cache ({cnt} issue hiện có) trong reconciliation khi incoming_keys rỗng.")
+                return False
+        except Exception as e:
+            log_line("Lỗi kiểm tra jira_issues trong upsert_jira_records:", e)
+            return False
+
     def _do_upsert(conn):
         cur = conn.cursor()
         if replace_existing:
@@ -68,6 +79,8 @@ def upsert_jira_records(records, replace_existing=False):
                 str(row[0] if isinstance(row, (tuple, list)) else row.get("jira_key")).upper()
                 for row in existing_rows
             }
+            if not incoming_keys and existing_keys:
+                return
             stale_keys = sorted(existing_keys - incoming_keys)
             for offset in range(0, len(stale_keys), 500):
                 batch = stale_keys[offset:offset + 500]
@@ -141,14 +154,16 @@ def upsert_jira_records(records, replace_existing=False):
                 )
             )
 
-            # 2. UPSERT comments for this issue
+            # 2. UPSERT comments for this issue & reconcile deletions
             comments = r.get("comments") or []
+            incoming_comment_ids = set()
             for c in comments:
                 c_id = str(c.get("id") or "")
                 if not c_id:
                     continue
                 # If local or duplicate comment id, prefix with jira key
                 unique_cid = f"{key}_{c_id}" if c_id == "local" else c_id
+                incoming_comment_ids.add(unique_cid)
                 c_author = c.get("author") or "사용자"
                 c_body = c.get("body") or ""
                 c_created = c.get("created") or ""
@@ -166,12 +181,27 @@ def upsert_jira_records(records, replace_existing=False):
                     (unique_cid, key, c_author, c_body, c_created, c_source)
                 )
 
-            # 3. UPSERT attachments for this issue
+            # Reconcile deleted comments for this issue
+            cur.execute("SELECT comment_id FROM jira_comments WHERE UPPER(jira_key) = ?", (key.upper(),))
+            existing_cids = {
+                str(row[0] if isinstance(row, (tuple, list)) else row.get("comment_id"))
+                for row in cur.fetchall()
+            }
+            stale_cids = sorted(existing_cids - incoming_comment_ids)
+            if stale_cids:
+                for off in range(0, len(stale_cids), 500):
+                    batch_c = stale_cids[off:off + 500]
+                    placeholders = ", ".join("?" for _ in batch_c)
+                    cur.execute(f"DELETE FROM jira_comments WHERE comment_id IN ({placeholders})", tuple(batch_c))
+
+            # 3. UPSERT attachments for this issue & reconcile deletions
             attachments = r.get("attachments") or []
+            incoming_att_ids = set()
             for a in attachments:
                 a_id = str(a.get("id") or "")
                 if not a_id:
                     continue
+                incoming_att_ids.add(a_id)
                 a_name = a.get("name") or "file"
                 a_size = int(a.get("size") or 0)
                 a_url = a.get("url") or ""
@@ -186,6 +216,19 @@ def upsert_jira_records(records, replace_existing=False):
                         jira_url = excluded.jira_url""",
                     (a_id, key, a_name, a_size, a_url)
                 )
+
+            # Reconcile deleted attachments for this issue
+            cur.execute("SELECT attachment_id FROM jira_attachments WHERE UPPER(jira_key) = ?", (key.upper(),))
+            existing_aids = {
+                str(row[0] if isinstance(row, (tuple, list)) else row.get("attachment_id"))
+                for row in cur.fetchall()
+            }
+            stale_aids = sorted(existing_aids - incoming_att_ids)
+            if stale_aids:
+                for off in range(0, len(stale_aids), 500):
+                    batch_a = stale_aids[off:off + 500]
+                    placeholders = ", ".join("?" for _ in batch_a)
+                    cur.execute(f"DELETE FROM jira_attachments WHERE attachment_id IN ({placeholders})", tuple(batch_a))
 
     try:
         transaction(_do_upsert)

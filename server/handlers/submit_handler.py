@@ -218,6 +218,13 @@ def handle_submit(handler, raw_body, ip):
         "jira": jira
     }
     append_record(record)
+    if jira and jira.get("key"):
+        try:
+            import threading
+            from services.jira_client import sync_jira_cache
+            threading.Thread(target=sync_jira_cache, args=(handler.cfg, False), daemon=True).start()
+        except Exception:
+            pass
     access_log(ip, "submit", 200, "id=%s org=%s code=%s jira=%s" % (record_id, dept["id"], card_code, jira["key"] if jira else "-"))
 
     # Log to JARVIS activity store
