@@ -63,5 +63,16 @@ class TestChatAgentToolRouting(unittest.TestCase):
         )
 
 
+    def test_agent_turn_limit_tracks_request_complexity(self):
+        from services.chat_agent import resolve_agent_max_turns
+
+        self.assertEqual(resolve_agent_max_turns({"type": "general_question"}, 4), 1)
+        self.assertEqual(resolve_agent_max_turns({"type": "knowledge_search"}, 4), 2)
+        self.assertEqual(resolve_agent_max_turns({"type": "enterprise_search"}, 4), 3)
+        self.assertEqual(resolve_agent_max_turns({"type": "analysis"}, 4), 4)
+        self.assertEqual(resolve_agent_max_turns({"type": "business_action"}, 2), 2)
+        self.assertEqual(resolve_agent_max_turns(None, 4), 4)
+
+
 if __name__ == "__main__":
     unittest.main()
