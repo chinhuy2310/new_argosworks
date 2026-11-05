@@ -74,5 +74,48 @@ class TestChatAgentToolRouting(unittest.TestCase):
         self.assertEqual(resolve_agent_max_turns(None, 4), 4)
 
 
+    def test_byok_uses_exported_provider_defaults_without_mutating_server_config(self):
+        from unittest.mock import patch
+        from services.chat_agent import run_agent_conversation
+        from services.ai_client import PROVIDER_CONFIGS
+
+        cfg = {
+            "ai": {
+                "enabled": True,
+                "provider": "openai",
+                "model": "server-model",
+                "api_key": "server-key",
+            }
+        }
+        response = {
+            "choices": [{"message": {"role": "assistant", "content": "ok"}}]
+        }
+        with patch(
+            "services.chat_agent.call_ai_chat_completions",
+            return_value=response,
+        ) as call_mock:
+            result = run_agent_conversation(
+                messages=[{"role": "system", "content": "test"}],
+                current_user={"name": "Alice"},
+                cfg=cfg,
+                intent={"type": "general_question"},
+                custom_ai_config={
+                    "provider": "gemini",
+                    "model": "personal-model",
+                    "apiKey": "personal-key",
+                    "base_url": "https://attacker.invalid/v1",
+                },
+            )
+
+        self.assertEqual(result, "ok")
+        effective_cfg = call_mock.call_args.kwargs["cfg"]
+        self.assertEqual(effective_cfg["ai"]["provider"], "gemini")
+        self.assertEqual(effective_cfg["ai"]["model"], "personal-model")
+        self.assertEqual(effective_cfg["ai"]["api_key"], "personal-key")
+        self.assertEqual(effective_cfg["ai"]["base_url"], PROVIDER_CONFIGS["gemini"]["base_url"])
+        self.assertEqual(cfg["ai"]["provider"], "openai")
+        self.assertEqual(cfg["ai"]["api_key"], "server-key")
+
+
 if __name__ == "__main__":
     unittest.main()
