@@ -15,7 +15,7 @@ _ACTION_PATTERNS = (
         re.IGNORECASE | re.DOTALL,
     ),
     re.compile(
-        r"\b(?:task|công việc|thẻ|ticket|issue|lịch|lịch trình)\b"
+        r"\b(?:task|công việc|thẻ|ticket|issue)\b"
         r".{0,80}\b(?:mới|riêng|được tạo|đăng ký|cập nhật|thay đổi|xóa)\b",
         re.IGNORECASE | re.DOTALL,
     ),
@@ -112,11 +112,11 @@ def _selected_create_quick_action(message, history):
 
 
 _ACTIVE_TASK_CONTEXT = re.compile(
-    r"(?:내\\s*(?:진행\\s*중\\s*)?업무|내가\\s*진행\\s*중인\\s*(?:업무|작업)|"
-    r"진행\\s*중인\\s*업무|진행중\\s*업무|"
-    r"my\\s+(?:active\\s+|current\\s+)?tasks?|tasks?\\s+assigned\\s+to\\s+me|"
-    r"công\\s+việc\\s+(?:đang\\s+làm|hiện\\s+tại|của\\s+tôi)|"
-    r"việc\\s+đang\\s+làm)",
+    r"(?:내\s*(?:진행\s*중\s*)?업무|내가\s*진행\s*중인\s*(?:업무|작업)|"
+    r"진행\s*중인\s*업무|진행중\s*업무|"
+    r"my\s+(?:active\s+|current\s+)?tasks?|tasks?\s+assigned\s+to\s+me|"
+    r"công\s+việc\s+(?:đang\s+làm|hiện\s+tại|của\s+tôi)|"
+    r"việc\s+đang\s+làm)",
     re.IGNORECASE,
 )
 
