@@ -179,3 +179,31 @@ class TestChatAgentToolRouting(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_document_sources_are_appended_before_quick_actions(self):
+        import json
+        from services.chat_agent import _append_document_sources
+
+        messages = [{
+            "role": "tool",
+            "content": json.dumps({
+                "found_count": 1,
+                "documents": [{
+                    "source_id": "DOC-GFC-1",
+                    "title": "GFC Technical Manual",
+                }],
+            }),
+        }]
+        answer = "Đã tìm thấy hướng dẫn liên quan.\n\n:::quick-actions\n- Xem chi tiết\n:::"
+        result = _append_document_sources(answer, messages, "vi")
+
+        self.assertIn("Nguồn tham khảo: [GFC Technical Manual / DOC-GFC-1]", result)
+        self.assertLess(result.index("Nguồn tham khảo"), result.index(":::quick-actions"))
+
+        already_cited = _append_document_sources(
+            "Theo [GFC Technical Manual / DOC-GFC-1], ...",
+            messages,
+            "vi",
+        )
+        self.assertEqual(already_cited.count("DOC-GFC-1"), 1)
