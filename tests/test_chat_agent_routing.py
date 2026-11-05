@@ -26,7 +26,7 @@ class TestChatAgentToolRouting(unittest.TestCase):
         names = _names({"type": "enterprise_search", "domain": "tasks"})
         self.assertIn("search_issues", names)
         self.assertIn("get_issue_details", names)
-        self.assertIn("get_active_tasks", names)
+        self.assertNotIn("get_active_tasks", names)
         self.assertNotIn("search_products", names)
         self.assertNotIn("get_calendar_schedule", names)
 
