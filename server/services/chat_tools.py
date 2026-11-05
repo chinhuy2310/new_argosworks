@@ -705,17 +705,13 @@ def _tool_search_documents(args, current_user, cfg):
             v_results = search_vector_store(cfg, query, limit=limit, min_similarity=0.38, session=current_user)
 
             results = [{
-
+                "source_id": r.get("source_id") or r.get("doc_id") or r.get("id"),
                 "title": r.get("title", ""),
-
                 "doc_type": r.get("doc_type", ""),
-
-                "summary": r.get("summary", "")[:500],
-
+                "summary": str(r.get("summary") or "")[:500],
+                "evidence": str(r.get("evidence") or r.get("summary") or "")[:1200],
                 "similarity": r.get("similarity", 0),
-
                 "date": r.get("date", ""),
-
             } for r in v_results]
 
         except Exception as e:
@@ -742,21 +738,16 @@ def _tool_search_documents(args, current_user, cfg):
 
             if r.get("title") not in existing_titles:
 
+                record_evidence = str(r.get("summary") or r.get("memo") or "")
                 results.append({
-
+                    "source_id": r.get("cardCode") or r.get("id"),
                     "title": r.get("title", ""),
-
                     "doc_type": "record",
-
-                    "summary": (r.get("summary") or r.get("memo") or "")[:500],
-
+                    "summary": record_evidence[:500],
+                    "evidence": record_evidence[:1200],
                     "similarity": None,
-
                     "date": r.get("date", ""),
-
-                })
-
-    
+                })    
 
     return {"found_count": len(results[:limit]), "documents": results[:limit]}
 
