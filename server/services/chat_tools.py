@@ -683,27 +683,30 @@ def _tool_search_issues(args, current_user, cfg):
 
 
 def _tool_search_documents(args, current_user, cfg):
-
+    """Hybrid semantic + keyword retrieval with bounded evidence and source IDs."""
+    import re
     from services.vector_store import search_vector_store, is_voyage_configured
-
     from services.search import merged_records, search_records
+    from services.auth import visible_records
 
-    query = args.get("query", "")
-
-    limit = min(int(args.get("limit", 5)), 10)
-
-    
+    query = str(args.get("query") or "").strip()
+    try:
+        limit = max(1, min(int(args.get("limit", 5)), 10))
+    except (TypeError, ValueError, OverflowError):
+        limit = 5
 
     results = []
-
-    # Try vector search first (with session privacy isolation)
-
-    if is_voyage_configured(cfg):
-
+    if query and is_voyage_configured(cfg):
         try:
-
-            v_results = search_vector_store(cfg, query, limit=limit, min_similarity=0.38, session=current_user)
-
+            # Retrieve a wider candidate pool, then rerank before returning the
+            # requested number of results.
+            vector_candidates = search_vector_store(
+                cfg,
+                query,
+                limit=min(limit * 2, 20),
+                min_similarity=0.38,
+                session=current_user,
+            )
             results = [{
                 "source_id": r.get("source_id") or r.get("doc_id") or r.get("id"),
                 "title": r.get("title", ""),
@@ -712,46 +715,88 @@ def _tool_search_documents(args, current_user, cfg):
                 "evidence": str(r.get("evidence") or r.get("summary") or "")[:1200],
                 "similarity": r.get("similarity", 0),
                 "date": r.get("date", ""),
-            } for r in v_results]
-
+            } for r in vector_candidates]
         except Exception as e:
-
             log_line("[Chat Tool] 벡터 검색 오류:", e)
 
-    
-
-    # Fallback/supplement with keyword search (strictly scoped to visible_records)
-
-    if len(results) < limit:
-
-        from services.auth import visible_records
-
+    # Always supplement semantic candidates with permission-filtered keyword
+    # matches. Previously this ran only when vector results were below the limit,
+    # so a full vector result set could hide exact-code/title matches entirely.
+    if query:
         records, _ = merged_records(cfg)
-
         records = visible_records(current_user, records)
+        keyword_candidates = search_records(records, query, limit=min(limit * 2, 20))
+        existing_titles = {
+            str(r.get("title") or "").strip().casefold() for r in results
+        }
+        existing_source_ids = {
+            str(r.get("source_id") or "").strip() for r in results
+        }
 
-        k_results = search_records(records, query, limit=limit)
+        for record in keyword_candidates:
+            title = str(record.get("title") or "")
+            source_id = record.get("cardCode") or record.get("id")
+            normalized_source = str(source_id or "").strip()
+            if (
+                title.strip().casefold() in existing_titles
+                or (normalized_source and normalized_source in existing_source_ids)
+            ):
+                continue
+            evidence = str(
+                record.get("summary") or record.get("memo") or record.get("description") or ""
+            )
+            results.append({
+                "source_id": source_id,
+                "title": title,
+                "doc_type": "record",
+                "summary": evidence[:500],
+                "evidence": evidence[:1200],
+                "similarity": None,
+                "date": record.get("date", ""),
+            })
+            if title.strip():
+                existing_titles.add(title.strip().casefold())
+            if normalized_source:
+                existing_source_ids.add(normalized_source)
 
-        existing_titles = {r["title"] for r in results}
+    query_terms = {
+        token.casefold()
+        for token in re.findall(r"[^\W_]{2,}", query, flags=re.UNICODE)
+    }
 
-        for r in k_results:
+    def _lexical_score(item):
+        if not query_terms:
+            return 0.0
+        searchable = " ".join((
+            str(item.get("title") or ""),
+            str(item.get("summary") or ""),
+            str(item.get("evidence") or ""),
+        )).casefold()
+        item_terms = {
+            token.casefold()
+            for token in re.findall(r"[^\W_]{2,}", searchable, flags=re.UNICODE)
+        }
+        return len(query_terms & item_terms) / len(query_terms)
 
-            if r.get("title") not in existing_titles:
+    for item in results:
+        lexical = _lexical_score(item)
+        similarity = item.get("similarity")
+        try:
+            semantic = max(0.0, min(1.0, float(similarity))) if similarity is not None else 0.0
+        except (TypeError, ValueError, OverflowError):
+            semantic = 0.0
+        item["_rank_score"] = (
+            0.75 * semantic + 0.25 * lexical
+            if similarity is not None
+            else lexical
+        )
 
-                record_evidence = str(r.get("summary") or r.get("memo") or "")
-                results.append({
-                    "source_id": r.get("cardCode") or r.get("id"),
-                    "title": r.get("title", ""),
-                    "doc_type": "record",
-                    "summary": record_evidence[:500],
-                    "evidence": record_evidence[:1200],
-                    "similarity": None,
-                    "date": r.get("date", ""),
-                })    
+    results.sort(key=lambda item: item.get("_rank_score", 0.0), reverse=True)
+    selected = results[:limit]
+    for item in selected:
+        item.pop("_rank_score", None)
 
-    return {"found_count": len(results[:limit]), "documents": results[:limit]}
-
-
+    return {"found_count": len(selected), "documents": selected}
 
 def _tool_get_issue_details(args, current_user, cfg):
 
