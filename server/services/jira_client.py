@@ -439,11 +439,19 @@ def _jira_fetch_all_pages(j, endpoint, list_key, page_size=100):
             raise ValueError(f"Unexpected Jira pagination response for {endpoint}")
         items.extend(page)
         total = data.get("total")
+        if total is not None:
+            total = int(total)
         if data.get("isLast") is True:
+            if total is not None and len(items) < total:
+                raise RuntimeError(f"Incomplete Jira page sequence for {endpoint}: {len(items)}/{total}")
             break
-        if total is not None and len(items) >= int(total):
+        if total is not None and len(items) >= total:
             break
-        if not page or (total is None and len(page) < page_size):
+        if not page:
+            if total is not None and len(items) < total:
+                raise RuntimeError(f"Jira returned an empty page before all results for {endpoint}: {len(items)}/{total}")
+            break
+        if total is None and len(page) < page_size:
             break
         start_at += len(page)
     return items
