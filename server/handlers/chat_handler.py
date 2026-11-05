@@ -666,7 +666,7 @@ def _claim_pending_action_proposal(session, session_id, message_id, requested_ac
     return proposal, None
 
 
-def _set_action_proposal_state(session_id, message_id, expected_state, new_state):
+def _set_action_proposal_state(session_id, message_id, expected_state, new_state, expected_action_type=None):
     """Update only proposal_status, preserving the task's own business status."""
     from db import get_one, execute_rowcount
 
@@ -689,6 +689,8 @@ def _set_action_proposal_state(session_id, message_id, expected_state, new_state
 
     proposal = metadata.get("action_proposal")
     if not isinstance(proposal, dict) or proposal.get("proposal_status") != expected_state:
+        return False
+    if expected_action_type and proposal.get("action_type") != expected_action_type:
         return False
 
     proposal["proposal_status"] = new_state
@@ -824,35 +826,52 @@ def handle_execute_action(handler, raw_body, ip):
     access_log(ip, f"chat_action_{proposal['action_type']}", 200, proposal.get("issue_key", ""))
 
 def handle_cancel_action(handler, raw_body, ip):
-    """POST /api/chat/cancel-action — 액션 제안 취소 상태를 영구 저장한다."""
+    """POST /api/chat/cancel-action — cancel only a pending proposal owned by this user."""
     session = handler._get_session_or_401()
     if not session:
         return
-    body = {}
-    if raw_body:
-        try:
-            body, body_err = parse_json_dict(raw_body)
-            if body_err:
-                handler._send_json(400, {"ok": False, "error": body_err})
-                return
-        except Exception:
-            handler._send_json(400, {"ok": False, "error": "잘못된 요청"})
+
+    try:
+        body, body_err = parse_json_dict(raw_body or b"{}")
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
             return
-            
+    except Exception:
+        handler._send_json(400, {"ok": False, "error": "잘못된 요청"})
+        return
+
     session_id = body.get("sessionId") or body.get("session_id")
     message_id = body.get("messageId") or body.get("message_id")
-    summary = body.get("summary")
     action_type = body.get("action_type") or body.get("actionType")
-    
-    ok = False
-    if session_id:
-        ok = update_proposal_status(
-            session_id=session_id,
-            status="cancelled",
-            message_id=message_id,
-            summary=summary,
-            action_type=action_type,
-            user_name=session["name"],
-            user_dept_id=session.get("org", "")
-        )
-    handler._send_json(200, {"ok": True, "updated": ok})
+
+    if not session_id or not message_id:
+        handler._send_json(400, {
+            "ok": False,
+            "error": "sessionId와 messageId가 필요합니다.",
+        })
+        return
+
+    chat_sess = get_chat_session(session_id)
+    if not chat_sess:
+        handler._send_json(404, {"ok": False, "error": "채팅 세션을 찾을 수 없습니다."})
+        return
+    if not _chat_session_owned(chat_sess, session):
+        handler._send_json(403, {"ok": False, "error": "접근 권한이 없습니다."})
+        return
+
+    updated = _set_action_proposal_state(
+        session_id,
+        message_id,
+        expected_state="pending",
+        new_state="cancelled",
+        expected_action_type=action_type,
+    )
+    if not updated:
+        handler._send_json(409, {
+            "ok": False,
+            "error": "취소할 수 있는 대기 상태의 제안을 찾지 못했습니다.",
+        })
+        return
+
+    handler._send_json(200, {"ok": True, "updated": True})
+    access_log(ip, "chat_action_cancelled", 200, "")
