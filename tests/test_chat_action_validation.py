@@ -56,7 +56,7 @@ def test_execute_action_requires_a_stored_pending_proposal(tmp_db):
         "summary": "Client-invented task",
     }
 
-    with patch("handlers.chat_handler.execute_tool") as execute_mock:
+    with patch("handlers.chat_handler.execute_tool", return_value={"success": True}) as execute_mock:
         handle_execute_action(handler, json.dumps(payload).encode(), "127.0.0.1")
 
     assert handler.responses[0][0] == 200
