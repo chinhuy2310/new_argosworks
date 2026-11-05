@@ -727,13 +727,16 @@ def _tool_search_documents(args, current_user, cfg):
             records, _ = merged_records(cfg)
             records = visible_records(current_user, records)
             keyword_candidates = search_records(records, query, limit=min(limit * 2, 20))
-            existing_titles = {
-                str(r.get("title") or "").strip().casefold() for r in results
-                if str(r.get("title") or "").strip()
-            }
             existing_source_ids = {
                 str(r.get("source_id") or "").strip() for r in results
                 if str(r.get("source_id") or "").strip()
+            }
+            # Same-title documents can be distinct revisions or sources. Only
+            # use title-based deduplication when a candidate has no stable ID.
+            existing_titles_without_id = {
+                str(r.get("title") or "").strip().casefold() for r in results
+                if not str(r.get("source_id") or "").strip()
+                and str(r.get("title") or "").strip()
             }
 
             for record in keyword_candidates:
@@ -742,8 +745,8 @@ def _tool_search_documents(args, current_user, cfg):
                 normalized_source = str(source_id or "").strip()
                 normalized_title = title.strip().casefold()
                 if (
-                    (normalized_title and normalized_title in existing_titles)
-                    or (normalized_source and normalized_source in existing_source_ids)
+                    (normalized_source and normalized_source in existing_source_ids)
+                    or (not normalized_source and normalized_title and normalized_title in existing_titles_without_id)
                 ):
                     continue
                 evidence = str(
@@ -758,8 +761,8 @@ def _tool_search_documents(args, current_user, cfg):
                     "similarity": None,
                     "date": record.get("date", ""),
                 })
-                if normalized_title:
-                    existing_titles.add(normalized_title)
+                if normalized_title and not normalized_source:
+                    existing_titles_without_id.add(normalized_title)
                 if normalized_source:
                     existing_source_ids.add(normalized_source)
         except Exception as e:
