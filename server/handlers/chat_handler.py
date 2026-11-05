@@ -387,6 +387,14 @@ def handle_chat_stream(handler, raw_body, ip):
             "Answer the question or perform only the requested read/search operation."
         )
     
+    history_chars = sum(len(str(h.get("content") or "")) for h in history)
+    log_line(
+        "[Chat Prompt Metrics] "
+        f"intent={chat_intent.get('type')} "
+        f"domains={','.join(chat_intent.get('domains') or [])} "
+        f"system_chars={len(system_prompt)} history_messages={len(history)} "
+        f"history_chars={history_chars} current_chars={len(message)}"
+    )
     ai_messages = [{"role": "system", "content": system_prompt}]
     for h in history:
         role = h.get("role", "user")
