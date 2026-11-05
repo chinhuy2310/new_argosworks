@@ -220,7 +220,7 @@ def build_chat_system_prompt(
                     or any(marker in line for marker in selected_markers)
                 )
             ]
-            selected_tool_body = "\\n" + "\\n".join(selected_lines) if selected_lines else ""
+            selected_tool_body = "\n" + "\n".join(selected_lines) if selected_lines else ""
         if selected_tool_body.strip():
             sections.append("## 도구 선택" + selected_tool_body)
     if include_actions:
