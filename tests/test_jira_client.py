@@ -366,3 +366,38 @@ class TestJiraPaginationAndSyncGuards:
 
         assert advanced == []
         assert result["error"] is not None
+
+
+    def test_db_reconciles_only_remote_comment_and_attachment_rows(self, monkeypatch):
+        from types import SimpleNamespace
+        from services import jira_db
+
+        statements = []
+
+        class Cursor:
+            def execute(self, sql, params=()):
+                statements.append((sql, params))
+            def fetchall(self):
+                return []
+
+        cursor = Cursor()
+        monkeypatch.setattr(
+            jira_db, "transaction",
+            lambda callback: callback(SimpleNamespace(cursor=lambda: cursor)),
+        )
+
+        ok = jira_db.upsert_jira_records([{
+            "id": "jira-TEST-1",
+            "jira": {"key": "TEST-1", "summary": "test"},
+            "comments": [],
+            "attachments": [],
+            "_jira_comments_complete": True,
+            "_jira_attachments_complete": True,
+        }])
+
+        assert ok is True
+        comment_deletes = [sql for sql, _ in statements if "DELETE FROM jira_comments" in sql]
+        attachment_deletes = [sql for sql, _ in statements if "DELETE FROM jira_attachments" in sql]
+        assert len(comment_deletes) == 1
+        assert "source = 'jira'" in comment_deletes[0]
+        assert len(attachment_deletes) == 1
