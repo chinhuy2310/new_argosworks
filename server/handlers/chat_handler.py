@@ -568,37 +568,177 @@ def handle_get_history(handler, parsed, ip):
     handler._send_json(200, {"ok": True, "messages": messages, "hasMore": len(messages) >= limit})
 
 
+def _claim_pending_action_proposal(session, session_id, message_id, requested_action_type):
+    """Atomically claim a server-stored pending proposal for one-time execution."""
+    from db import get_one, execute_rowcount
+
+    if not session_id or not message_id:
+        return None, (400, "session_id và message_id là bắt buộc.")
+
+    chat_sess = get_chat_session(session_id)
+    if not chat_sess:
+        return None, (404, "Không tìm thấy phiên chat.")
+    if not _chat_session_owned(chat_sess, session):
+        return None, (403, "접근 권한이 없습니다.")
+
+    try:
+        numeric_message_id = int(message_id)
+    except (TypeError, ValueError):
+        return None, (400, "message_id không hợp lệ.")
+
+    row = get_one(
+        "SELECT metadata FROM chat_messages WHERE session_id = ? AND id = ?",
+        (session_id, numeric_message_id),
+    )
+    if not row or not row.get("metadata"):
+        return None, (404, "Không tìm thấy đề xuất hành động.")
+
+    raw_metadata = row["metadata"]
+    try:
+        metadata = (
+            dict(raw_metadata)
+            if isinstance(raw_metadata, dict)
+            else json.loads(raw_metadata)
+        )
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None, (409, "Dữ liệu đề xuất không hợp lệ.")
+
+    proposal = metadata.get("action_proposal")
+    if not isinstance(proposal, dict):
+        return None, (409, "Tin nhắn này không chứa đề xuất hành động hợp lệ.")
+
+    if proposal.get("proposal_status") != "pending":
+        return None, (409, "Đề xuất này đã được xử lý hoặc không còn ở trạng thái chờ xác nhận.")
+
+    stored_action_type = proposal.get("action_type")
+    if not stored_action_type or requested_action_type != stored_action_type:
+        return None, (409, "Loại hành động không khớp với đề xuất đã lưu.")
+
+    allowed_action_types = {
+        "create_task", "create_subtask", "add_comment",
+        "update_status", "schedule_issue",
+    }
+    if stored_action_type not in allowed_action_types:
+        return None, (400, "Loại hành động không được hỗ trợ.")
+
+    # Validate the trusted, persisted proposal before claiming it.
+    if stored_action_type == "create_task" and not str(proposal.get("summary") or "").strip():
+        return None, (400, "Thiếu tiêu đề công việc.")
+    if stored_action_type == "create_subtask":
+        if not str(proposal.get("summary") or "").strip() or not str(
+            proposal.get("parent_key") or proposal.get("issue_key") or ""
+        ).strip():
+            return None, (400, "Thiếu tiêu đề hoặc mã công việc cha.")
+    if stored_action_type == "add_comment":
+        comment = proposal.get("comment") or proposal.get("description") or proposal.get("summary")
+        if not str(proposal.get("issue_key") or "").strip() or not str(comment or "").strip():
+            return None, (400, "Thiếu mã công việc hoặc nội dung bình luận.")
+    if stored_action_type == "update_status":
+        if not str(proposal.get("issue_key") or "").strip() or not str(proposal.get("status") or "").strip():
+            return None, (400, "Thiếu mã công việc hoặc trạng thái mới.")
+    if stored_action_type == "schedule_issue":
+        if not str(proposal.get("issue_key") or "").strip() or not (
+            proposal.get("start_date") or proposal.get("due_date")
+        ):
+            return None, (400, "Thiếu mã công việc hoặc ngày cần cập nhật.")
+
+    # Compare-and-swap on the metadata prevents concurrent clicks/replays from
+    # executing the same stored proposal more than once.
+    proposal["proposal_status"] = "executing"
+    new_metadata = json.dumps(metadata, ensure_ascii=False)
+    claimed = execute_rowcount(
+        """UPDATE chat_messages
+           SET metadata = ?
+           WHERE session_id = ? AND id = ? AND metadata = ?""",
+        (new_metadata, session_id, numeric_message_id, raw_metadata),
+    )
+    if claimed != 1:
+        return None, (409, "Đề xuất đã được thay đổi hoặc đang được xử lý.")
+
+    return proposal, None
+
+
+def _set_action_proposal_state(session_id, message_id, expected_state, new_state):
+    """Update only proposal_status, preserving the task's own business status."""
+    from db import get_one, execute_rowcount
+
+    row = get_one(
+        "SELECT metadata FROM chat_messages WHERE session_id = ? AND id = ?",
+        (session_id, int(message_id)),
+    )
+    if not row or not row.get("metadata"):
+        return False
+
+    raw_metadata = row["metadata"]
+    try:
+        metadata = (
+            dict(raw_metadata)
+            if isinstance(raw_metadata, dict)
+            else json.loads(raw_metadata)
+        )
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False
+
+    proposal = metadata.get("action_proposal")
+    if not isinstance(proposal, dict) or proposal.get("proposal_status") != expected_state:
+        return False
+
+    proposal["proposal_status"] = new_state
+    new_metadata = json.dumps(metadata, ensure_ascii=False)
+    return execute_rowcount(
+        """UPDATE chat_messages
+           SET metadata = ?
+           WHERE session_id = ? AND id = ? AND metadata = ?""",
+        (new_metadata, session_id, int(message_id), raw_metadata),
+    ) == 1
+
+
 def handle_execute_action(handler, raw_body, ip):
-    """POST /api/chat/execute-action — 사용자가 확인한 액션 실행"""
+    """POST /api/chat/execute-action — execute only the stored proposal the user confirmed."""
     session = handler._get_session_or_401()
     if not session:
         return
-    
-    body = {}
-    if raw_body:
-        try:
-            body, body_err = parse_json_dict(raw_body)
-            if body_err:
-                handler._send_json(400, {"ok": False, "error": body_err})
-                return
-        except Exception:
-            handler._send_json(400, {"ok": False, "error": "잘못된 요청"})
+
+    try:
+        body, body_err = parse_json_dict(raw_body or b"{}")
+        if body_err:
+            handler._send_json(400, {"ok": False, "error": body_err})
             return
-    
-    action_type = body.get("action_type", "")
-    cfg = handler.cfg
-    # Pass full authenticated session (id, role, name, org, email) for proper RBAC & license checks
+    except Exception:
+        handler._send_json(400, {"ok": False, "error": "잘못된 요청"})
+        return
+
+    session_id = body.get("session_id") or body.get("sessionId")
+    message_id = body.get("message_id") or body.get("messageId")
+    requested_action_type = body.get("action_type") or ""
+
     current_user = {
         "id": session.get("id") or session.get("user_id"),
-        "name": session["name"],
+        "name": session.get("name", ""),
         "org": session.get("org", "lab"),
         "dept_id": session.get("org", "lab"),
         "role": session.get("role", "member"),
         "is_admin": session.get("role") == "admin",
-        "email": session.get("email", "")
+        "email": session.get("email", ""),
     }
-    
-    # Map action_type to tool name
+
+    from services.auth import can_write_data
+    if not can_write_data(current_user):
+        handler._send_json(403, {
+            "ok": False,
+            "error": "조회 전용(Viewer) 권한으로는 쓰기 작업을 실행할 수 없습니다.",
+        })
+        return
+
+    proposal, claim_error = _claim_pending_action_proposal(
+        session, session_id, message_id, requested_action_type
+    )
+    if claim_error:
+        status_code, error_message = claim_error
+        handler._send_json(status_code, {"ok": False, "error": error_message})
+        return
+
+    cfg = handler.cfg
     action_tool_map = {
         "create_task": "create_issue",
         "create_subtask": "create_issue",
@@ -606,66 +746,74 @@ def handle_execute_action(handler, raw_body, ip):
         "update_status": "update_issue_status",
         "schedule_issue": "schedule_issue",
     }
-    
-    tool_name = action_tool_map.get(action_type)
-    if not tool_name:
-        handler._send_json(400, {"ok": False, "error": f"알 수 없는 액션: {action_type}"})
-        return
-    
-    # Build tool args from body
-    tool_args = {}
-    if action_type in ("create_task", "create_subtask"):
-        is_sub = (action_type == "create_subtask")
-        tool_args = {
-            "summary": body.get("summary", ""),
-            "description": body.get("description", ""),
-            "issue_type": body.get("issue_type") or ("하위 작업" if is_sub else "메인프로젝트"),
-            "parent_key": (body.get("parent_key") or body.get("issue_key")) if is_sub else None,
-            "priority": body.get("priority", "Medium"),
-            "assignee": body.get("assignee"),
-            "status": body.get("status"),
-            "start_date": body.get("start_date"),
-            "due_date": body.get("due_date"),
-        }
-    elif action_type == "add_comment":
-        tool_args = {
-            "issue_key": body.get("issue_key", ""),
-            "comment": body.get("comment") or body.get("description") or body.get("summary", ""),
-        }
-    elif action_type == "update_status":
-        tool_args = {
-            "issue_key": body.get("issue_key", ""),
-            "status": body.get("status", ""),
-        }
-    elif action_type == "schedule_issue":
-        tool_args = {
-            "issue_key": body.get("issue_key", ""),
-            "start_date": body.get("start_date", ""),
-            "due_date": body.get("due_date", ""),
-        }
-    
-    # 사용자가 UI에서 직접 승인한 액션이므로 allow_write=True 허용
-    result = execute_tool(tool_name, tool_args, current_user, cfg, allow_write=True)
-    
-    # Persist proposal status as executed if session_id provided
-    session_id = body.get("session_id") or body.get("sessionId")
-    if session_id and result and (result.get("success") or result.get("ok") or not result.get("error")):
-        try:
-            update_proposal_status(
-                session_id=session_id,
-                status="executed",
-                message_id=body.get("message_id") or body.get("messageId"),
-                summary=body.get("summary"),
-                action_type=action_type,
-                user_name=session["name"],
-                user_dept_id=session.get("org", "")
-            )
-        except Exception as e:
-            log_line("executed 상태 저장 오류:", e)
-            
-    handler._send_json(200, {"ok": True, "result": result})
-    access_log(ip, f"chat_action_{action_type}", 200, body.get("issue_key", ""))
+    tool_name = action_tool_map[proposal["action_type"]]
 
+    # Build execution arguments exclusively from the server-stored proposal.
+    if proposal["action_type"] in ("create_task", "create_subtask"):
+        is_subtask = proposal["action_type"] == "create_subtask"
+        tool_args = {
+            "summary": proposal.get("summary", ""),
+            "description": proposal.get("description", ""),
+            "issue_type": proposal.get("issue_type") or ("하위 작업" if is_subtask else "메인프로젝트"),
+            "parent_key": (
+                proposal.get("parent_key") or proposal.get("issue_key")
+            ) if is_subtask else None,
+            "priority": proposal.get("priority", "Medium"),
+            "assignee": proposal.get("assignee"),
+            "status": proposal.get("status"),
+            "start_date": proposal.get("start_date"),
+            "due_date": proposal.get("due_date"),
+        }
+    elif proposal["action_type"] == "add_comment":
+        comment = proposal.get("comment") or proposal.get("description") or proposal.get("summary", "")
+        if proposal.get("summary") and proposal.get("description") and proposal["summary"] != proposal["description"]:
+            comment = proposal["summary"] + "\n\n" + proposal["description"]
+        tool_args = {
+            "issue_key": proposal.get("issue_key", ""),
+            "comment": comment,
+        }
+    elif proposal["action_type"] == "update_status":
+        tool_args = {
+            "issue_key": proposal.get("issue_key", ""),
+            "status": proposal.get("status", ""),
+        }
+    else:
+        tool_args = {
+            "issue_key": proposal.get("issue_key", ""),
+            "start_date": proposal.get("start_date", ""),
+            "due_date": proposal.get("due_date", ""),
+        }
+
+    try:
+        result = execute_tool(tool_name, tool_args, current_user, cfg, allow_write=True)
+    except Exception as e:
+        # Leave the proposal in "executing" on an unknown outcome: replaying a
+        # possibly completed external write would be less safe than requiring review.
+        log_line("[Chat Action] 실행 결과 불명확:", e)
+        handler._send_json(500, {
+            "ok": False,
+            "error": "실행 결과를 확인할 수 없습니다. 중복 실행을 막기 위해 제안 상태를 보류했습니다.",
+        })
+        return
+
+    failed = (
+        not isinstance(result, dict)
+        or bool(result.get("error"))
+        or result.get("success") is False
+        or result.get("ok") is False
+    )
+    if failed:
+        _set_action_proposal_state(session_id, message_id, "executing", "pending")
+        handler._send_json(400, {
+            "ok": False,
+            "error": (result or {}).get("error", "액션 실행에 실패했습니다.") if isinstance(result, dict) else "액션 실행에 실패했습니다.",
+            "result": result,
+        })
+        return
+
+    _set_action_proposal_state(session_id, message_id, "executing", "executed")
+    handler._send_json(200, {"ok": True, "result": result})
+    access_log(ip, f"chat_action_{proposal['action_type']}", 200, proposal.get("issue_key", ""))
 
 def handle_cancel_action(handler, raw_body, ip):
     """POST /api/chat/cancel-action — 액션 제안 취소 상태를 영구 저장한다."""
