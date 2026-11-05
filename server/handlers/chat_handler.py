@@ -8,7 +8,7 @@ from utils.logging import log_line, access_log
 from services.auth import get_session
 from services.chat_store import (
     list_sessions, create_session, get_session as get_chat_session,
-    append_message, load_history, update_session_title, update_proposal_status
+    append_message, load_history, update_session_title
 )
 from services.chat_agent import run_agent_conversation
 from services.chat_intent import classify_chat_intent, should_include_active_tasks
