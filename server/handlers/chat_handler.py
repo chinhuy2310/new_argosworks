@@ -892,6 +892,11 @@ def handle_cancel_action(handler, raw_body, ip):
             "error": "sessionId와 messageId가 필요합니다.",
         })
         return
+    try:
+        message_id = int(message_id)
+    except (TypeError, ValueError, OverflowError):
+        handler._send_json(400, {"ok": False, "error": "messageId không hợp lệ."})
+        return
 
     chat_sess = get_chat_session(session_id)
     if not chat_sess:
