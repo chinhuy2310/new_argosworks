@@ -1088,6 +1088,12 @@ def sync_jira_cache(cfg, force_full=False):
                         # Watermark: tiến cursor bằng thời điểm BẮT ĐẦU lần đồng bộ (sync_start_iso),
                         # đảm bảo mọi thay đổi phát sinh trong lúc đồng bộ đều sẽ được lấy ở lần kế tiếp.
                         set_last_sync_time(sync_start_iso)
+                        if can_reconcile:
+                            try:
+                                from services.jira_db import set_last_full_sync_time
+                                set_last_full_sync_time(sync_start_iso)
+                            except Exception:
+                                pass
                     else:
                         log_line("[Jira] 동기화 결과가 불완전하여(미완료 페이지 존재) last_sync_time 커서를 전진시키지 않습니다.")
                     all_records = load_all_jira_from_db()

@@ -100,11 +100,7 @@ def _write_env_updates(updates):
         k, _, _ = trimmed.partition("=")
         key = k.strip()
         if key in updates:
-            raw_val = updates[key]
-            if isinstance(raw_val, (dict, list)):
-                raw_val = json.dumps(raw_val, ensure_ascii=False)
-            else:
-                raw_val = str(raw_val).strip()
+            raw_val = str(updates[key]).strip()
             # Resolve secrets if key is sensitive and contains masked placeholder
             if key in SENSITIVE_KEYS:
                 current_real = env_dict.get(key, os.environ.get(key, ""))
@@ -127,10 +123,7 @@ def _write_env_updates(updates):
     # Append any brand new keys
     for k, v in updates.items():
         if k not in updated_keys:
-            if isinstance(v, (dict, list)):
-                raw_val = json.dumps(v, ensure_ascii=False)
-            else:
-                raw_val = str(v).strip()
+            raw_val = str(v).strip()
             if k in SENSITIVE_KEYS:
                 current_real = env_dict.get(k, os.environ.get(k, ""))
                 val = _resolve_submitted_secret(k, raw_val, current_real)
@@ -401,11 +394,7 @@ def handle_post_settings(handler, raw_body, ip):
             try:
                 raw_map = json.loads(raw_map)
             except Exception:
-                try:
-                    import ast
-                    raw_map = ast.literal_eval(raw_map)
-                except Exception:
-                    pass
+                pass
         if isinstance(raw_map, dict):
             cfg.setdefault("jira", {})["project_map"] = raw_map
 

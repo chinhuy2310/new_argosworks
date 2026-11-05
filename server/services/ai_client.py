@@ -18,6 +18,41 @@ from prompts import (
 )
 from utils.text import guess_category, VALID_CATEGORIES
 
+
+def normalize_token_usage(usage):
+    """Normalize provider-reported token usage; return None when unavailable."""
+    if not isinstance(usage, dict):
+        return None
+
+    prompt_value = usage.get(
+        "prompt_tokens",
+        usage.get("input_tokens", usage.get("promptTokenCount")),
+    )
+    completion_value = usage.get(
+        "completion_tokens",
+        usage.get("output_tokens", usage.get("candidatesTokenCount")),
+    )
+    total_value = usage.get("total_tokens", usage.get("totalTokenCount"))
+    if prompt_value is None and completion_value is None and total_value is None:
+        return None
+
+    def _safe_int(value):
+        try:
+            return max(0, int(value or 0))
+        except (TypeError, ValueError, OverflowError):
+            return 0
+
+    prompt_tokens = _safe_int(prompt_value)
+    completion_tokens = _safe_int(completion_value)
+    total_tokens = _safe_int(total_value)
+    if total_value is None:
+        total_tokens = prompt_tokens + completion_tokens
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+    }
+
 # Concurrency control: Limit simultaneous AI API outbound calls to 32 (out of 128 workers)
 # This guarantees that at least 96 workers in the 128-thread pool remain
 # completely responsive for UI navigation, dashboard, CRUD, and static file serving.
@@ -336,7 +371,10 @@ def _execute_ai_chat_completion_single(prov, api_key, messages, tools, tool_choi
             msg = {"role": "assistant", "content": "\n".join(text_parts) if text_parts else None}
             if tool_calls:
                 msg["tool_calls"] = tool_calls
-            return {"choices": [{"message": msg}]}, None, ""
+            return {
+                "choices": [{"message": msg}],
+                "usage": data.get("usage") or {},
+            }, None, ""
 
         else:
             if base_url.endswith("/chat/completions"):
@@ -472,7 +510,7 @@ def call_ai_raw(cfg, prompt, max_tokens=600, timeout=30):
 
 
 def call_ai_chat_completions(cfg, messages, tools=None, tool_choice="auto",
-                              max_tokens=2048, timeout=90):
+                              max_tokens=2048, timeout=90, usage_context=None):
     """
     OpenAI 호환 /chat/completions 엔드포인트를 호출한다. (멀티턴 ReAct 에이전트 및 Tool Calling)
     주(Primary) 제공자 호출 후 실패 시 보조(Fallback) 제공자로 전환 (다중 키 자동 회전 지원)
@@ -510,14 +548,32 @@ def call_ai_chat_completions(cfg, messages, tools=None, tool_choice="auto",
                     if not is_primary:
                         log_line(f"[AI Client] 보조 AI ({p_name} - {prov['model']}) 채팅/도구 응답 성공")
                     try:
-                        from services.ai_usage_service import record_ai_usage
-                        usage = res.get("usage") if isinstance(res, dict) else {}
-                        p_tok = (usage or {}).get("prompt_tokens", 0)
-                        c_tok = (usage or {}).get("completion_tokens", 0)
-                        t_tok = (usage or {}).get("total_tokens", p_tok + c_tok)
-                        record_ai_usage("chat_agent", "", p_name, prov.get("model", ""), p_tok, c_tok, t_tok, "", "chat_agent")
-                    except Exception:
-                        pass
+                        usage = normalize_token_usage(
+                            res.get("usage") if isinstance(res, dict) else None
+                        )
+                        if usage is not None:
+                            from services.ai_usage_service import record_ai_usage
+                            context = usage_context if isinstance(usage_context, dict) else {}
+                            record_ai_usage(
+                                user_name=context.get("user_name") or "chat_agent",
+                                dept_id=context.get("dept_id") or "",
+                                provider=p_name,
+                                model=prov.get("model", ""),
+                                prompt_tokens=usage["prompt_tokens"],
+                                completion_tokens=usage["completion_tokens"],
+                                total_tokens=usage["total_tokens"],
+                                session_id=context.get("session_id") or "",
+                                feature=context.get("feature") or (
+                                    "chat" if usage_context else "chat_agent"
+                                ),
+                            )
+                        else:
+                            log_line(
+                                f"[AI Usage] Provider {p_name} returned no token usage; "
+                                "skipping estimated-as-actual accounting."
+                            )
+                    except Exception as usage_error:
+                        log_line("[AI Usage] actual usage record failed:", usage_error)
                     return res
 
                 log_line(f"[AI Client] {p_name.upper()} 키 #{key_idx+1} 오류 ({err_type}): {str(err_msg)[:120]}")

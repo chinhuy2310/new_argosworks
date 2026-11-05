@@ -251,13 +251,7 @@ def load_config():
         try:
             parsed_map = json.loads(raw_project_map)
         except Exception as e:
-            try:
-                import ast
-                parsed_val = ast.literal_eval(raw_project_map)
-                if isinstance(parsed_val, dict):
-                    parsed_map = parsed_val
-            except Exception:
-                log_line("JIRA_PROJECT_MAP 값이 올바른 JSON이 아니어서 무시했습니다:", e)
+            log_line("JIRA_PROJECT_MAP 값이 올바른 JSON이 아니어서 무시했습니다:", e)
         if isinstance(parsed_map, dict):
             jira_cfg['project_map'] = parsed_map
         elif parsed_map is not None:

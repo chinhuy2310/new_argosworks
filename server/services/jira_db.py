@@ -34,6 +34,32 @@ def set_last_sync_time(iso_ts=None):
         log_line("Error saving jira_last_sync to sync_meta:", e)
 
 
+def get_last_full_sync_time():
+    """Returns the last complete Jira snapshot reconciliation timestamp."""
+    try:
+        row = get_one("SELECT value FROM sync_meta WHERE key = 'jira_last_full_sync'")
+        return row["value"] if row else None
+    except Exception as e:
+        log_line("Error reading jira_last_full_sync from sync_meta:", e)
+        return None
+
+
+def set_last_full_sync_time(iso_ts=None):
+    """Persists the last complete full-snapshot reconciliation timestamp."""
+    ts = iso_ts or datetime.now().isoformat()
+    try:
+        execute(
+            """INSERT INTO sync_meta (key, value, updated_at)
+               VALUES ('jira_last_full_sync', ?, (strftime('%Y-%m-%dT%H:%M:%S','now')))
+               ON CONFLICT(key) DO UPDATE SET
+                   value = excluded.value,
+                   updated_at = excluded.updated_at""",
+            (ts,)
+        )
+    except Exception as e:
+        log_line("Error saving jira_last_full_sync to sync_meta:", e)
+
+
 def upsert_jira_record(record):
     """Upsert a single parsed Jira record dict into jira_issues, jira_comments, jira_attachments."""
     upsert_jira_records([record])
