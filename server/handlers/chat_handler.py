@@ -258,6 +258,18 @@ def _resolve_conversation_lang(message, history, client_lang=None):
     if has_hangul and not has_vietnamese:
         return "ko"
 
+    # Detect ordinary English sentences before falling back to the UI language.
+    # An acronym-only input such as "GFC" remains ambiguous and uses client_lang.
+    has_english = bool(re.search(
+        r"\\b(?:what|is|are|how|why|when|where|who|which|please|can|could|would|"
+        r"show|find|search|create|make|explain|tell|give|need|want|the|my|your|"
+        r"with|about|from|for|does|do|did|task|issue|product|document)\\b",
+        message,
+        re.I,
+    ))
+    if has_english and not has_vietnamese and not has_hangul:
+        return "en"
+
     # 3. 클라이언트 UI 언어 설정 반영
     if client_lang in ("vi", "ko", "en"):
         return client_lang
