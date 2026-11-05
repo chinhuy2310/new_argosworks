@@ -94,7 +94,7 @@ class TestNormalizeProviderTokenUsage(unittest.TestCase):
                     "user_name": "alice",
                     "dept_id": "dev",
                     "session_id": "session-123",
-                    "feature": "chat",
+                    "feature": "chat_actual",
                 },
             )
 

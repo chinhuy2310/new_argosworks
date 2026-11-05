@@ -111,20 +111,6 @@ def _selected_create_quick_action(message, history):
     return bool(_FOLLOWUP_CREATE.search(selected))
 
 
-_ACTIVE_TASK_CONTEXT = re.compile(
-    r"(?:내\s*(?:진행\s*중\s*)?업무|내가\s*진행\s*중인\s*(?:업무|작업)|"
-    r"진행\s*중인\s*업무|진행중\s*업무|"
-    r"my\s+(?:active\s+|current\s+)?tasks?|tasks?\s+assigned\s+to\s+me|"
-    r"công\s+việc\s+(?:đang\s+làm|hiện\s+tại|của\s+tôi)|"
-    r"việc\s+đang\s+làm)",
-    re.IGNORECASE,
-)
-
-
-def should_include_active_tasks(message):
-    """Load the user's active-task list only when the question asks for it."""
-    return bool(_ACTIVE_TASK_CONTEXT.search(message or ""))
-
 
 def classify_chat_intent(message, history=None):
     """Return a conservative intent label; only explicit writes enable proposals."""
