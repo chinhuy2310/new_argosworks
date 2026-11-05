@@ -1497,14 +1497,16 @@ def add_jira_comment(cfg, issue_key, comment_text, author_name=None):
                 "created": (data.get("created") or datetime.now().isoformat())[:19],
                 "source": "jira"
             }
-            from db import get_one, execute
+            from db import get_one
             row = get_one("SELECT raw_json FROM jira_issues WHERE UPPER(jira_key) = ?", (issue_key.upper(),))
             if row and row.get("raw_json"):
                 d = json.loads(row["raw_json"])
                 cur_comments = d.get("comments") or []
                 cur_comments.append(new_comment_obj)
                 d["comments"] = cur_comments
-                execute("UPDATE jira_issues SET raw_json = ? WHERE UPPER(jira_key) = ?", (json.dumps(d, ensure_ascii=False), issue_key.upper()))
+                # Keep normalized comment rows and raw_json in the same DB write path.
+                from services.jira_db import upsert_jira_records
+                upsert_jira_records([d])
 
             with _jira_cache_lock:
                 if _jira_cache and _jira_cache.get("records"):
