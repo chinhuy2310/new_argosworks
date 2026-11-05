@@ -576,6 +576,25 @@ def handle_get_history(handler, parsed, ip):
     handler._send_json(200, {"ok": True, "messages": messages, "hasMore": len(messages) >= limit})
 
 
+
+_ACTION_TYPE_ALIASES = {
+    "create_issue": "create_task",
+    "task": "create_task",
+    "create": "create_task",
+    "create_document": "create_task",
+    "document": "create_task",
+    "subtask": "create_subtask",
+    "comment": "add_comment",
+    "status": "update_status",
+    "status_change": "update_status",
+    "schedule": "schedule_issue",
+}
+
+
+def _canonical_action_type(value):
+    action_type = str(value or "").strip().lower()
+    return _ACTION_TYPE_ALIASES.get(action_type, action_type)
+
 def _claim_pending_action_proposal(session, session_id, message_id, requested_action_type):
     """Atomically claim a server-stored pending proposal for one-time execution."""
     from db import get_one, execute_rowcount
@@ -618,9 +637,12 @@ def _claim_pending_action_proposal(session, session_id, message_id, requested_ac
     if proposal.get("proposal_status") != "pending":
         return None, (409, "Đề xuất này đã được xử lý hoặc không còn ở trạng thái chờ xác nhận.")
 
-    stored_action_type = proposal.get("action_type")
+    stored_action_type = _canonical_action_type(proposal.get("action_type"))
+    requested_action_type = _canonical_action_type(requested_action_type)
     if not stored_action_type or requested_action_type != stored_action_type:
         return None, (409, "Loại hành động không khớp với đề xuất đã lưu.")
+    # Normalize legacy proposal aliases before claiming/executing them.
+    proposal["action_type"] = stored_action_type
 
     allowed_action_types = {
         "create_task", "create_subtask", "add_comment",
@@ -690,7 +712,7 @@ def _set_action_proposal_state(session_id, message_id, expected_state, new_state
     proposal = metadata.get("action_proposal")
     if not isinstance(proposal, dict) or proposal.get("proposal_status") != expected_state:
         return False
-    if expected_action_type and proposal.get("action_type") != expected_action_type:
+    if expected_action_type and _canonical_action_type(proposal.get("action_type")) != _canonical_action_type(expected_action_type):
         return False
 
     proposal["proposal_status"] = new_state
