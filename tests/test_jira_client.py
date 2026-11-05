@@ -414,5 +414,5 @@ class TestJiraPaginationAndSyncGuards:
         comment_deletes = [sql for sql, _ in statements if "DELETE FROM jira_comments" in sql]
         attachment_deletes = [sql for sql, _ in statements if "DELETE FROM jira_attachments" in sql]
         assert len(comment_deletes) == 1
-        assert "source = 'jira'" in comment_deletes[0]
+        assert "COALESCE(source, 'jira') = 'jira'" in comment_deletes[0]
         assert len(attachment_deletes) == 1
