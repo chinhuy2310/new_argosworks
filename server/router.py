@@ -1961,6 +1961,13 @@ def handle_post_issue_attachment(handler, raw_body, ip):
         })
         return
 
+    # Refresh the persisted Jira snapshot so the new attachment appears immediately.
+    if uploaded_files:
+        try:
+            sync_jira_cache(handler.cfg)
+        except Exception as e:
+            log_line(f"Jira attachment upload succeeded but cache refresh failed for {issue_key}:", e)
+
     # Log Jira attachment upload activity to JARVIS activity store under current logged-in user
     if uploaded_files:
         try:
