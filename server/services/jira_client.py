@@ -969,15 +969,12 @@ def jira_fetch_project_subtask_type(cfg, project_key):
 def jira_auto_sync_loop(cfg):
     """Jira 연동이 켜져 있는 동안, 별도 데몬 스레드에서 주기적으로 캐시를 다시 채운다.
     한 번의 동기화 실패가 루프 자체를 죽이지 않도록 매 회차를 개별적으로 감싼다.
-    매 480회차(약 24시간, 180초 주기 기준)마다 안전한 full reconciliation(force_full=True)을
-    수행하여 Jira 상에서 삭제된 이슈를 로컬 DB에서 자동 정리한다."""
-    cycle = 0
+    동기화 루프는 DB(sync_meta)에 영구 저장된 jira_last_full_sync 타임스탬프를 기준으로
+    24시간 경과 여부를 판별하여 프로세스 재시작(restart)과 무관하게 안정적인 full reconciliation을 수행한다."""
     while True:
         time.sleep(JIRA_AUTO_SYNC_INTERVAL_SEC)
         try:
-            cycle += 1
-            force_full = (cycle % 480 == 0)
-            sync_jira_cache(cfg, force_full=force_full)
+            sync_jira_cache(cfg)
         except Exception as e:
             log_line("Jira 자동 동기화 중 오류(다음 주기에 재시도):", e)
 
@@ -1005,7 +1002,8 @@ def sync_jira_cache(cfg, force_full=False):
         sync_start_iso = sync_start_dt.isoformat()
 
         from services.jira_db import (
-            get_last_sync_time, set_last_sync_time, upsert_jira_records, load_all_jira_from_db,
+            get_last_sync_time, set_last_sync_time, get_last_full_sync_time, set_last_full_sync_time,
+            upsert_jira_records, load_all_jira_from_db,
             upsert_jira_activities, load_all_jira_activities_from_db
         )
 
@@ -1022,7 +1020,23 @@ def sync_jira_cache(cfg, force_full=False):
                         _jira_cache["synced_at"] = sync_start_iso
             return dict(_jira_cache)
 
-        last_sync = None if force_full else get_last_sync_time()
+        # Persistent Full Sync Watermark:
+        # Thay vì đếm chu kỳ trong RAM (bị reset khi restart server), hệ thống đọc mốc
+        # jira_last_full_sync từ DB. Nếu chưa từng full sync hoặc đã quá 24h, tự động kích hoạt
+        # full sync đối soát (replace_existing=True).
+        last_full = get_last_full_sync_time()
+        full_sync_due = force_full or (last_full is None)
+        if last_full and not force_full:
+            try:
+                clean_full = last_full.split("+")[0].strip()
+                last_full_dt = datetime.fromisoformat(clean_full)
+                full_sync_due = (sync_start_dt - last_full_dt).total_seconds() >= 24 * 3600
+            except Exception as e:
+                log_line("[Jira] Không thể parse last_full_sync_time, dùng incremental sync:", e)
+                full_sync_due = False
+
+        is_full_sync = force_full or full_sync_due
+        last_sync = None if is_full_sync else get_last_sync_time()
         safe_query_cursor = last_sync
         if last_sync:
             try:

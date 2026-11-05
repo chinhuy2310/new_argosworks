@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import urllib.error
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -451,6 +452,7 @@ class TestConcurrentSyncAndSafeWatermark:
         monkeypatch.setattr(jira_client, "jira_search_issues", mock_search)
         monkeypatch.setattr(jira_client, "jira_fetch_project_categories", lambda cfg, pk: [])
         monkeypatch.setattr(jira_db, "get_last_sync_time", lambda: "2026-11-05T12:00:00")
+        monkeypatch.setattr(jira_db, "get_last_full_sync_time", lambda: "2026-11-05T11:00:00")
         monkeypatch.setattr(jira_db, "set_last_sync_time", mock_set_cursor)
 
         cfg = _cfg()
@@ -1014,6 +1016,61 @@ class TestStrictConsistencyRouterHandlers:
         assert "Jira server unavailable" in handler.sent_json["error"]
         # Local comment must NOT have been saved!
         assert len(local_comments_added) == 0
+
+
+class TestPersistentFullSyncWatermark:
+    """Kiểm thử cơ chế Full Sync bền vững dựa trên timestamp trong DB (không reset khi restart server)."""
+
+    def test_persistent_full_sync_triggers_when_never_synced(self, monkeypatch):
+        search_calls = []
+        monkeypatch.setattr(jira_client, "jira_project_keys", lambda cfg: ["VS"])
+        monkeypatch.setattr(jira_client, "jira_search_issues", lambda cfg, **kwargs: (search_calls.append(kwargs), ([], [], True))[1])
+        monkeypatch.setattr("services.jira_db.get_last_full_sync_time", lambda: None)
+        monkeypatch.setattr("services.jira_db.get_last_sync_time", lambda: "2026-11-05T10:00:00")
+        monkeypatch.setattr(jira_client, "verify_jira_projects_access", lambda j, k: (True, {}))
+        monkeypatch.setattr("services.jira_db.load_all_jira_from_db", lambda: [])
+        monkeypatch.setattr("services.jira_db.load_all_jira_activities_from_db", lambda: [])
+
+        # Even with force_full=False, if get_last_full_sync_time is None, it MUST run full sync (since_updated=None)
+        jira_client.sync_jira_cache(_cfg(), force_full=False)
+        assert len(search_calls) == 1
+        assert search_calls[0].get("since_updated") is None
+
+    def test_persistent_full_sync_triggers_when_24h_elapsed(self, monkeypatch):
+        search_calls = []
+        monkeypatch.setattr(jira_client, "jira_project_keys", lambda cfg: ["VS"])
+        monkeypatch.setattr(jira_client, "jira_search_issues", lambda cfg, **kwargs: (search_calls.append(kwargs), ([], [], True))[1])
+        # Last full sync was 25 hours ago
+        last_full = (datetime.now() - timedelta(hours=25)).isoformat()
+        monkeypatch.setattr("services.jira_db.get_last_full_sync_time", lambda: last_full)
+        monkeypatch.setattr("services.jira_db.get_last_sync_time", lambda: "2026-11-05T10:00:00")
+        monkeypatch.setattr(jira_client, "verify_jira_projects_access", lambda j, k: (True, {}))
+        monkeypatch.setattr("services.jira_db.load_all_jira_from_db", lambda: [])
+        monkeypatch.setattr("services.jira_db.load_all_jira_activities_from_db", lambda: [])
+
+        jira_client.sync_jira_cache(_cfg(), force_full=False)
+        assert len(search_calls) == 1
+        # Full sync triggered because 25h > 24h: since_updated should be None
+        assert search_calls[0].get("since_updated") is None
+
+    def test_persistent_full_sync_does_not_trigger_when_recent(self, monkeypatch):
+        search_calls = []
+        monkeypatch.setattr(jira_client, "jira_project_keys", lambda cfg: ["VS"])
+        monkeypatch.setattr(jira_client, "jira_search_issues", lambda cfg, **kwargs: (search_calls.append(kwargs), ([], [], True))[1])
+        # Last full sync was only 2 hours ago
+        last_full = (datetime.now() - timedelta(hours=2)).isoformat()
+        last_sync = (datetime.now() - timedelta(minutes=10)).isoformat()
+        monkeypatch.setattr("services.jira_db.get_last_full_sync_time", lambda: last_full)
+        monkeypatch.setattr("services.jira_db.get_last_sync_time", lambda: last_sync)
+        monkeypatch.setattr(jira_client, "verify_jira_projects_access", lambda j, k: (True, {}))
+        monkeypatch.setattr("services.jira_db.load_all_jira_from_db", lambda: [])
+        monkeypatch.setattr("services.jira_db.load_all_jira_activities_from_db", lambda: [])
+
+        jira_client.sync_jira_cache(_cfg(), force_full=False)
+        assert len(search_calls) == 1
+        # Incremental sync with overlap window: since_updated must NOT be None
+        assert search_calls[0].get("since_updated") is not None
+
 
 
 
