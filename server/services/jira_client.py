@@ -63,6 +63,7 @@ def _urlopen(req, timeout=15, cfg=None):
 JIRA_ONGOING_EXCLUDE_CATEGORIES = [c.strip() for c in os.environ.get("JIRA_ONGOING_EXCLUDE_CATEGORIES", "메인,메인프로젝트").split(",") if c.strip()]
 
 _jira_cache_lock = threading.Lock()
+_jira_sync_lock = threading.Lock()
 _jira_cache = {"records": None, "activities": [], "categories": {}, "synced_at": None, "error": None}
 
 
@@ -422,6 +423,32 @@ def jira_ongoing_records_for(cfg, name, org, email=None):
         })
     return out
 
+def _jira_fetch_all_pages(j, endpoint, list_key, page_size=100):
+    """Fetch every page from Jira comment/changelog endpoints or fail closed."""
+    base_url = (j.get("base_url") or "").rstrip("/")
+    items = []
+    start_at = 0
+    while True:
+        separator = "&" if "?" in endpoint else "?"
+        url = f"{base_url}{endpoint}{separator}startAt={start_at}&maxResults={page_size}"
+        req = urllib.request.Request(url, method="GET", headers=_jira_auth_header(j))
+        with _urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        page = data.get(list_key)
+        if not isinstance(page, list):
+            raise ValueError(f"Unexpected Jira pagination response for {endpoint}")
+        items.extend(page)
+        total = data.get("total")
+        if data.get("isLast") is True:
+            break
+        if total is not None and len(items) >= int(total):
+            break
+        if not page or (total is None and len(page) < page_size):
+            break
+        start_at += len(page)
+    return items
+
+
 def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None, return_complete_flag=False):
     """config.json의 project_map에 연결된 모든 Jira 프로젝트에서 실제로 등록되어 있는
     이슈를 그대로 가져와, JARVIS 대시보드가 쓰는 '기록' 형태로 변환해 돌려준다.
@@ -504,7 +531,25 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None,
     seen_act_keys = set()
 
     for issue in all_issues:
+        issue_key = issue.get("key") or ""
+        if not issue_key:
+            log_line("[Jira] Search returned an issue without a stable key; refusing to treat snapshot as complete.")
+            return (None, None, False) if return_complete_flag else (None, None)
+        try:
+            comments_all = _jira_fetch_all_pages(
+                j, f"/rest/api/3/issue/{urllib.parse.quote(issue_key)}/comment", "comments"
+            )
+            changelog_all = _jira_fetch_all_pages(
+                j, f"/rest/api/3/issue/{urllib.parse.quote(issue_key)}/changelog", "values"
+            )
+        except Exception as e:
+            log_line(f"[Jira] Comment/changelog pagination failed for {issue_key}; preserving previous cache:", e)
+            return (None, None, False) if return_complete_flag else (None, None)
         f = issue.get("fields", {}) or {}
+        f["comment"] = {"comments": comments_all, "total": len(comments_all)}
+        issue["changelog"] = {"histories": changelog_all, "total": len(changelog_all)}
+        issue["_jira_comments_complete"] = True
+        issue["_jira_attachments_complete"] = True
         project = f.get("project") or {}
         project_key = project.get("key", "")
         dept_id = jira_dept_for_project_key(cfg, project_key)
@@ -631,6 +676,8 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None,
             "memo": desc_text,
             "attachments": attachments_list,
             "comments": comments_list,
+            "_jira_comments_complete": True,
+            "_jira_attachments_complete": True,
             "parentKey": parent_key,
             "parentSummary": parent_summary,
             "subtasks": subtasks_list,
@@ -810,7 +857,7 @@ def jira_auto_sync_loop(cfg):
         except Exception as e:
             log_line("Jira 자동 동기화 중 오류(다음 주기에 재시도):", e)
 
-def sync_jira_cache(cfg, force_full=False):
+def _sync_jira_cache_unlocked(cfg, force_full=False):
     """Jira를 실제로 조회해서 DB(SQLite)와 캐시를 갱신한다. Jira 연동이 비활성화되어 있으면 빈 캐시를 반환한다."""
     j = cfg.get("jira", {}) if cfg else {}
     if not j.get("enabled"):
@@ -828,7 +875,34 @@ def sync_jira_cache(cfg, force_full=False):
     )
 
     last_sync = None if force_full else get_last_sync_time()
-    res = jira_search_issues(cfg, since_updated=last_sync, return_complete_flag=True)
+    sync_started_at = datetime.now()
+    project_keys = jira_project_keys(cfg)
+    # A successful /myself response does not prove Browse Projects permission.
+    # Verify every mapped project before accepting any snapshot or reconciliation.
+    for project_key in project_keys:
+        project_url = j["base_url"].rstrip("/") + "/rest/api/3/project/" + urllib.parse.quote(project_key)
+        project_req = urllib.request.Request(project_url, method="GET", headers=_jira_auth_header(j))
+        try:
+            with _urlopen(project_req, timeout=10) as project_resp:
+                if project_resp.status != 200:
+                    raise RuntimeError(f"HTTP {project_resp.status}")
+        except Exception as e:
+            log_line(f"[Jira] Cannot verify Browse Projects access for {project_key}; preserving existing cache:", e)
+            with _jira_cache_lock:
+                _jira_cache["error"] = f"Jira project access verification failed: {project_key}"
+                if _jira_cache["records"] is None:
+                    _jira_cache["records"] = load_all_jira_from_db()
+                    _jira_cache["activities"] = load_all_jira_activities_from_db()
+                return dict(_jira_cache)
+
+    query_since = last_sync
+    if last_sync:
+        try:
+            from datetime import timedelta
+            query_since = (datetime.fromisoformat(last_sync) - timedelta(minutes=2)).isoformat()
+        except (TypeError, ValueError):
+            query_since = last_sync
+    res = jira_search_issues(cfg, since_updated=query_since, return_complete_flag=True)
     is_complete = True
     if isinstance(res, tuple):
         if len(res) == 3:
@@ -849,7 +923,9 @@ def sync_jira_cache(cfg, force_full=False):
             log_line(f"[Jira] Full sync pagination limit reached ({len(records)} issues, has more pages); skipping reconciliation to prevent data loss.")
         try:
             if records or full_sync:
-                upsert_jira_records(records, replace_existing=can_reconcile)
+                saved = upsert_jira_records(records, replace_existing=can_reconcile)
+                if saved is False:
+                    raise RuntimeError("Jira DB rejected the UPSERT/reconciliation snapshot")
                 try:
                     from services.vector_store import trigger_async_vector_sync
                     trigger_async_vector_sync(cfg)
@@ -858,7 +934,9 @@ def sync_jira_cache(cfg, force_full=False):
             if activities:
                 upsert_jira_activities(activities)
             if is_complete:
-                set_last_sync_time(now)
+                # Store the start watermark, not the end: updates arriving during pagination
+                # remain eligible for the next run. The next query also uses a 2-minute overlap.
+                set_last_sync_time(sync_started_at.isoformat())
             else:
                 log_line("[Jira] 동기화 결과가 불완전하여(미완료 페이지 존재) last_sync_time 커서를 전진시키지 않습니다.")
             all_records = load_all_jira_from_db()
@@ -898,6 +976,12 @@ def sync_jira_cache(cfg, force_full=False):
                 _jira_cache["categories"][dept_id] = cats
         _jira_cache["synced_at"] = now
         return dict(_jira_cache)
+
+def sync_jira_cache(cfg, force_full=False):
+    """Serialize the complete Jira fetch -> DB -> cache pipeline."""
+    with _jira_sync_lock:
+        return _sync_jira_cache_unlocked(cfg, force_full=force_full)
+
 
 def get_cached_jira_records(cfg):
     """Jira가 비활성화된 경우 빈 레코드 반환. 캐시가 비어있으면 DB에서 로드."""
