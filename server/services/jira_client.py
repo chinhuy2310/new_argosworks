@@ -163,7 +163,10 @@ def verify_jira_projects_access(cfg_or_j, keys=None, timeout=10):
 
 
 def fetch_all_jira_issue_comments(j, issue_key, initial_comment_obj=None, timeout=10):
-    """Lấy đầy đủ toàn bộ comment của một issue, tự động phân trang nếu total > len(comments)."""
+    """Lấy đầy đủ toàn bộ comment của một issue, tự động phân trang nếu total > len(comments).
+    Thực hiện fail-closed: nếu phân trang bị gián đoạn hoặc không lấy đủ 100% comment theo total,
+    ném ngoại lệ để từ chối snapshot không hoàn chỉnh, tránh xóa nhầm comment khi đối soát.
+    """
     comments = []
     total = None
     if initial_comment_obj and isinstance(initial_comment_obj, dict):
@@ -186,18 +189,26 @@ def fetch_all_jira_issue_comments(j, issue_key, initial_comment_obj=None, timeou
                 data = json.loads(resp.read().decode("utf-8"))
             batch = data.get("comments") or []
             if not batch:
+                if total is not None and len(comments) < total:
+                    raise RuntimeError(f"Jira trả về trang rỗng trước khi tải hết comment của {issue_key}: {len(comments)}/{total}")
                 break
             comments.extend(batch)
             total = data.get("total", len(comments))
             start_at += len(batch)
         except Exception as e:
-            log_line(f"[Jira] Không thể phân trang lấy tiếp comment cho issue {issue_key} (startAt={start_at}):", e)
-            break
+            log_line(f"[Jira] Lỗi phân trang comment cho issue {issue_key} (startAt={start_at}):", e)
+            raise RuntimeError(f"Phân trang comment thất bại cho {issue_key}: {e}") from e
+
+    if total is not None and len(comments) < total:
+        raise RuntimeError(f"Snapshot comment không hoàn chỉnh cho {issue_key}: {len(comments)}/{total}")
+
     return comments
 
 
 def fetch_all_jira_issue_changelog(j, issue_key, initial_cl_obj=None, timeout=10, max_histories=500):
-    """Lấy đầy đủ toàn bộ changelog histories của một issue, tự động phân trang nếu total > len(histories)."""
+    """Lấy đầy đủ toàn bộ changelog histories của một issue, tự động phân trang nếu total > len(histories).
+    Thực hiện fail-closed: nếu phân trang bị gián đoạn, ném ngoại lệ để giữ nguyên cache cũ.
+    """
     histories = []
     total = None
     if initial_cl_obj and isinstance(initial_cl_obj, dict):
@@ -220,6 +231,8 @@ def fetch_all_jira_issue_changelog(j, issue_key, initial_cl_obj=None, timeout=10
                 data = json.loads(resp.read().decode("utf-8"))
             batch = data.get("values") or data.get("histories") or []
             if not batch:
+                if total is not None and len(histories) < min(total, max_histories):
+                    raise RuntimeError(f"Jira trả về trang rỗng trước khi tải hết changelog của {issue_key}: {len(histories)}/{total}")
                 break
             histories.extend(batch)
             total = data.get("total", len(histories))
@@ -227,8 +240,12 @@ def fetch_all_jira_issue_changelog(j, issue_key, initial_cl_obj=None, timeout=10
             if data.get("isLast", False):
                 break
         except Exception as e:
-            log_line(f"[Jira] Không thể phân trang lấy tiếp changelog cho issue {issue_key} (startAt={start_at}):", e)
-            break
+            log_line(f"[Jira] Lỗi phân trang changelog cho issue {issue_key} (startAt={start_at}):", e)
+            raise RuntimeError(f"Phân trang changelog thất bại cho {issue_key}: {e}") from e
+
+    if total is not None and len(histories) < min(total, max_histories):
+        raise RuntimeError(f"Snapshot changelog không hoàn chỉnh cho {issue_key}: {len(histories)}/{total}")
+
     return histories
 
 
@@ -695,7 +712,11 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None,
         raw_comment_obj = f.get("comment") or {}
         raw_comments = raw_comment_obj.get("comments") or []
         if raw_comment_obj.get("total", 0) > len(raw_comments):
-            raw_comments = fetch_all_jira_issue_comments(j, key, raw_comment_obj)
+            try:
+                raw_comments = fetch_all_jira_issue_comments(j, key, raw_comment_obj)
+            except Exception as e:
+                log_line(f"[Jira] Không thể lấy đủ comment của issue {key} — từ chối snapshot để giữ cache an toàn:", e)
+                return (None, None, False) if return_complete_flag else (None, None)
         for c in raw_comments:
             c_author = (c.get("author") or {}).get("displayName") or "사용자"
             c_body = _adf_to_text(c.get("body")) if isinstance(c.get("body"), dict) else str(c.get("body") or "")
@@ -794,7 +815,11 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None,
         cl = issue.get("changelog") or {}
         cl_histories = cl.get("histories") or []
         if cl.get("total", 0) > len(cl_histories):
-            cl_histories = fetch_all_jira_issue_changelog(j, key, cl)
+            try:
+                cl_histories = fetch_all_jira_issue_changelog(j, key, cl)
+            except Exception as e:
+                log_line(f"[Jira] Không thể lấy đủ changelog của issue {key} — từ chối snapshot để giữ cache an toàn:", e)
+                return (None, None, False) if return_complete_flag else (None, None)
         for h in cl_histories:
             h_id = h.get("id") or str(len(activities))
             author_name = (h.get("author") or {}).get("displayName") or "Jira 사용자"
@@ -983,6 +1008,19 @@ def sync_jira_cache(cfg, force_full=False):
             get_last_sync_time, set_last_sync_time, upsert_jira_records, load_all_jira_from_db,
             upsert_jira_activities, load_all_jira_activities_from_db
         )
+
+        keys = jira_project_keys(cfg)
+        if not keys:
+            log_line("[Jira] Không có project nào được cấu hình trong project_map — giữ nguyên cache hiện có.")
+            with _jira_cache_lock:
+                if not _jira_cache["records"]:
+                    all_recs = load_all_jira_from_db()
+                    all_acts = load_all_jira_activities_from_db()
+                    if all_recs is not None:
+                        _jira_cache["records"] = all_recs
+                        _jira_cache["activities"] = all_acts or []
+                        _jira_cache["synced_at"] = sync_start_iso
+            return dict(_jira_cache)
 
         last_sync = None if force_full else get_last_sync_time()
         safe_query_cursor = last_sync
