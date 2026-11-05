@@ -79,7 +79,7 @@ class TestChatDocumentEvidence(unittest.TestCase):
             return_value=[{
                 "id": 1,
                 "cardCode": "REC-1",
-                "title": "GFC connection wiring",
+                "title": "GFC connection",
                 "summary": "GFC connection wiring steps",
             }],
         ):
