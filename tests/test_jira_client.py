@@ -782,6 +782,241 @@ class TestUploadJiraAttachmentSync:
         assert any(a.get("id") == "att-9999" for a in issue_detail.get("attachments", []))
 
 
+class TestFailClosedPaginationAndSnapshotIntegrity:
+    """Kiểm thử cơ chế Fail-closed: từ chối snapshot không hoàn chỉnh khi phân trang comment hoặc changelog lỗi."""
+
+    def test_comment_pagination_failure_raises_runtime_error(self, monkeypatch):
+        def fake_urlopen(req, *args, **kwargs):
+            raise urllib.error.URLError("Network timeout during comment pagination")
+
+        monkeypatch.setattr(jira_client.urllib.request, "urlopen", fake_urlopen)
+
+        initial_comment_obj = {
+            "total": 50,
+            "comments": [{"id": "1", "author": {"displayName": "User1"}, "body": "c1"}]
+        }
+        with pytest.raises(RuntimeError) as exc_info:
+            jira_client.fetch_all_jira_issue_comments(_cfg()["jira"], "VS-101", initial_comment_obj)
+        assert "Phân trang comment thất bại" in str(exc_info.value)
+
+    def test_comment_pagination_premature_empty_batch_raises_runtime_error(self, monkeypatch):
+        class _Resp:
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self):
+                return json.dumps({"comments": [], "total": 50}).encode("utf-8")
+
+        monkeypatch.setattr(jira_client.urllib.request, "urlopen", lambda req, *args, **kwargs: _Resp())
+
+        initial_comment_obj = {
+            "total": 50,
+            "comments": [{"id": "1", "author": {"displayName": "User1"}, "body": "c1"}]
+        }
+        with pytest.raises(RuntimeError) as exc_info:
+            jira_client.fetch_all_jira_issue_comments(_cfg()["jira"], "VS-101", initial_comment_obj)
+        assert "trang rỗng trước khi tải hết" in str(exc_info.value)
+
+    def test_jira_search_issues_fails_closed_on_incomplete_comments(self, monkeypatch):
+        # When comment pagination raises, search_issues must return (None, None, False)
+        # to ensure the previous healthy cache is preserved.
+        monkeypatch.setattr(jira_client, "jira_project_keys", lambda cfg: ["VS"])
+
+        class _SearchResp:
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self):
+                return json.dumps({
+                    "issues": [{
+                        "key": "VS-101",
+                        "fields": {
+                            "project": {"key": "VS", "name": "Vision"},
+                            "summary": "Test issue",
+                            "status": {"name": "In Progress"},
+                            "comment": {"total": 100, "comments": [{"id": "c1", "body": "hello"}]}
+                        }
+                    }]
+                }).encode("utf-8")
+
+        monkeypatch.setattr(jira_client.urllib.request, "urlopen", lambda req, *args, **kwargs: _SearchResp())
+        monkeypatch.setattr(jira_client, "fetch_all_jira_issue_comments", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("Pagination failed")))
+
+        res = jira_client.jira_search_issues(_cfg(), return_complete_flag=True)
+        assert res == (None, None, False)
+
+    def test_jira_search_issues_fails_closed_on_incomplete_changelog(self, monkeypatch):
+        monkeypatch.setattr(jira_client, "jira_project_keys", lambda cfg: ["VS"])
+
+        class _SearchResp:
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self):
+                return json.dumps({
+                    "issues": [{
+                        "key": "VS-101",
+                        "fields": {
+                            "project": {"key": "VS", "name": "Vision"},
+                            "summary": "Test issue",
+                            "status": {"name": "In Progress"},
+                        },
+                        "changelog": {"total": 50, "histories": [{"id": "h1"}]}
+                    }]
+                }).encode("utf-8")
+
+        monkeypatch.setattr(jira_client.urllib.request, "urlopen", lambda req, *args, **kwargs: _SearchResp())
+        monkeypatch.setattr(jira_client, "fetch_all_jira_issue_changelog", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("Changelog pagination failed")))
+
+        res = jira_client.jira_search_issues(_cfg(), return_complete_flag=True)
+        assert res == (None, None, False)
+
+
+class TestReconciliationPreservesLocalComments:
+    """Kiểm thử upsert_jira_records chỉ xóa comment stale từ nguồn Jira, giữ nguyên comment local."""
+
+    def test_upsert_jira_records_preserves_local_comments(self, monkeypatch):
+        import sqlite3
+        conn = sqlite3.connect(":memory:")
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE jira_issues (
+                jira_key TEXT PRIMARY KEY, project_name TEXT, issue_type TEXT, is_subtask INTEGER,
+                parent_key TEXT, parent_summary TEXT, summary TEXT, description TEXT, status TEXT,
+                status_name TEXT, assignee_name TEXT, assignee_avatar TEXT, reporter_name TEXT,
+                dept_id TEXT, start_date TEXT, due_date TEXT, created_at TEXT, tags TEXT,
+                raw_json TEXT, synced_at TEXT
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE jira_comments (
+                comment_id TEXT PRIMARY KEY, jira_key TEXT, author_name TEXT, body TEXT,
+                created_at TEXT, source TEXT
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE jira_attachments (
+                attachment_id TEXT PRIMARY KEY, jira_key TEXT, filename TEXT, size INTEGER,
+                content_url TEXT, created_at TEXT
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE jira_changelog (
+                id TEXT PRIMARY KEY, issue_key TEXT, author_name TEXT, author_avatar TEXT,
+                action_type TEXT, action_detail TEXT, created_at TEXT
+            )
+        """)
+
+        # Insert a local comment and an old jira comment
+        cur.execute("INSERT INTO jira_comments VALUES ('local_1', 'VS-101', 'Admin', 'Ghi chú nội bộ', '2026-03-01', 'local')")
+        cur.execute("INSERT INTO jira_comments VALUES ('jira_old', 'VS-101', 'JiraUser', 'Cũ bị xóa trên Jira', '2026-03-01', 'jira')")
+        conn.commit()
+
+        monkeypatch.setattr("services.jira_db.transaction", lambda func: func(conn))
+        monkeypatch.setattr("services.jira_db.get_one", lambda q, p=None: {"cnt": 1})
+
+        from services.jira_db import upsert_jira_records
+
+        # New snapshot with only jira_new comment
+        new_record = {
+            "id": "jira-VS-101",
+            "jira": {"key": "VS-101", "summary": "VS 101"},
+            "comments": [
+                {"id": "jira_new", "author": "JiraUser", "body": "Mới", "created": "2026-03-02", "source": "jira"}
+            ]
+        }
+        upsert_jira_records([new_record], replace_existing=False)
+
+        cur.execute("SELECT comment_id, source FROM jira_comments WHERE jira_key = 'VS-101'")
+        remaining = {row[0]: row[1] for row in cur.fetchall()}
+
+        # jira_old was stale from Jira -> deleted
+        assert "jira_old" not in remaining
+        # local_1 was local -> PRESERVED!
+        assert "local_1" in remaining
+        assert remaining["local_1"] == "local"
+        # jira_new was inserted
+        assert "jira_new" in remaining
+
+
+class TestStrictConsistencyRouterHandlers:
+    """Kiểm thử tính nhất quán nghiêm ngặt trong router.py khi tương tác với Jira."""
+
+    def test_handle_post_issue_transition_rejects_on_jira_failure(self, monkeypatch):
+        from router import handle_post_issue_transition
+
+        class DummyHandler:
+            def __init__(self):
+                self.cfg = {"jira": {"enabled": True}}
+                self.sent_status = None
+                self.sent_json = None
+            def _get_session_or_401(self):
+                return {"id": 1, "username": "admin", "name": "Admin", "role": "admin"}
+            def _send_json(self, status, payload):
+                self.sent_status = status
+                self.sent_json = payload
+
+        handler = DummyHandler()
+        monkeypatch.setattr("router.get_record_by_id", lambda rec_id: {
+            "id": 1,
+            "status": "진행",
+            "jira": {"key": "VS-200"}
+        })
+        monkeypatch.setattr("services.auth.can_transition_status", lambda s, r, st: (True, None))
+
+        # Jira transition fails (e.g. Jira rejects state)
+        monkeypatch.setattr("services.jira_client.transition_jira_issue", lambda cfg, key, st: (False, "Transition invalid in workflow"))
+
+        status_updated = []
+        monkeypatch.setattr("router.update_record_status", lambda rec_id, st: status_updated.append((rec_id, st)))
+
+        raw_body = json.dumps({"issue_key": "REC-1", "status": "완료"}).encode("utf-8")
+        handle_post_issue_transition(handler, raw_body, "127.0.0.1")
+
+        # Must respond with HTTP 400 error
+        assert handler.sent_status == 400
+        assert handler.sent_json["ok"] is False
+        assert "Transition invalid in workflow" in handler.sent_json["error"]
+        # Local record must NOT have been updated!
+        assert len(status_updated) == 0
+
+    def test_handle_post_issue_comment_rejects_on_jira_failure(self, monkeypatch):
+        from router import handle_post_issue_comment
+
+        class DummyHandler:
+            def __init__(self):
+                self.cfg = {"jira": {"enabled": True}}
+                self.sent_status = None
+                self.sent_json = None
+            def _get_session_or_401(self):
+                return {"id": 1, "username": "admin", "name": "Admin", "role": "admin"}
+            def _send_json(self, status, payload):
+                self.sent_status = status
+                self.sent_json = payload
+
+        handler = DummyHandler()
+        monkeypatch.setattr("router.get_record_by_id", lambda rec_id: {
+            "id": 1,
+            "status": "진행",
+            "jira": {"key": "VS-200"}
+        })
+        monkeypatch.setattr("services.auth.can_view_record", lambda s, r: True)
+
+        # Jira add comment fails
+        monkeypatch.setattr("services.jira_client.add_jira_comment", lambda cfg, key, comment, author: (None, "Jira server unavailable"))
+
+        local_comments_added = []
+        monkeypatch.setattr("router.add_record_comment", lambda rec_id, author, c: local_comments_added.append((rec_id, author, c)))
+
+        raw_body = json.dumps({"issue_key": "REC-1", "comment": "Bình luận mới"}).encode("utf-8")
+        handle_post_issue_comment(handler, raw_body, "127.0.0.1")
+
+        # Must respond with HTTP 400 error
+        assert handler.sent_status == 400
+        assert handler.sent_json["ok"] is False
+        assert "Jira server unavailable" in handler.sent_json["error"]
+        # Local comment must NOT have been saved!
+        assert len(local_comments_added) == 0
+
+
+
 
 
 

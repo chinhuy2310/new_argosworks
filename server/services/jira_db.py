@@ -39,7 +39,7 @@ def upsert_jira_record(record):
     upsert_jira_records([record])
 
 
-def upsert_jira_records(records, replace_existing=False):
+def upsert_jira_records(records, replace_existing=False, allow_empty_wipe=False):
     """Upsert multiple parsed Jira record dicts in a single atomic transaction.
     Optionally reconcile deletions after a complete full sync when replace_existing=True.
     """
@@ -59,7 +59,7 @@ def upsert_jira_records(records, replace_existing=False):
         log_line("Refusing Jira full-sync reconciliation because a returned issue has no stable key.")
         return False
 
-    if replace_existing and not incoming_keys:
+    if replace_existing and not incoming_keys and not allow_empty_wipe:
         try:
             row = get_one("SELECT COUNT(*) as cnt FROM jira_issues")
             cnt = (row["cnt"] if row else 0) or 0
@@ -181,8 +181,8 @@ def upsert_jira_records(records, replace_existing=False):
                     (unique_cid, key, c_author, c_body, c_created, c_source)
                 )
 
-            # Reconcile deleted comments for this issue
-            cur.execute("SELECT comment_id FROM jira_comments WHERE UPPER(jira_key) = ?", (key.upper(),))
+            # Reconcile deleted comments for this issue (only Jira-sourced comments, preserve local)
+            cur.execute("SELECT comment_id FROM jira_comments WHERE UPPER(jira_key) = ? AND COALESCE(source, 'jira') = 'jira'", (key.upper(),))
             existing_cids = {
                 str(row[0] if isinstance(row, (tuple, list)) else row.get("comment_id"))
                 for row in cur.fetchall()
@@ -192,7 +192,7 @@ def upsert_jira_records(records, replace_existing=False):
                 for off in range(0, len(stale_cids), 500):
                     batch_c = stale_cids[off:off + 500]
                     placeholders = ", ".join("?" for _ in batch_c)
-                    cur.execute(f"DELETE FROM jira_comments WHERE comment_id IN ({placeholders})", tuple(batch_c))
+                    cur.execute(f"DELETE FROM jira_comments WHERE comment_id IN ({placeholders}) AND COALESCE(source, 'jira') = 'jira'", tuple(batch_c))
 
             # 3. UPSERT attachments for this issue & reconcile deletions
             attachments = r.get("attachments") or []

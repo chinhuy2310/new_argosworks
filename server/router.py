@@ -1616,6 +1616,22 @@ def handle_post_issue_comment(handler, raw_body, ip):
         if not can_view_record(session, local_rec):
             handler._send_json(403, {"ok": False, "error": "해당 업무 카드를 열람하거나 댓글을 작성할 권한이 없습니다."})
             return
+
+        # 연동된 Jira 이슈가 있는 경우 Jira 클라우드에 먼저 댓글 등록 및 검증
+        jira_enabled = bool(handler.cfg.get("jira", {}).get("enabled", False)) if handler.cfg else False
+        j_key = (local_rec.get("jira") or {}).get("key")
+        if jira_enabled and j_key:
+            try:
+                from services.jira_client import add_jira_comment, sync_jira_cache
+                j_data, j_err = add_jira_comment(handler.cfg, j_key, comment, session.get("name"))
+                if j_err or not j_data:
+                    handler._send_json(400, {"ok": False, "error": f"Jira 이슈({j_key}) 댓글 등록 실패: {j_err or '응답 없음'}"})
+                    return
+                threading.Thread(target=sync_jira_cache, args=(handler.cfg, False), daemon=True).start()
+            except Exception as je:
+                handler._send_json(500, {"ok": False, "error": f"Jira 댓글 동기화 오류: {je}"})
+                return
+
         add_record_comment(local_rec["id"], session.get("name") or "사용자", comment)
         try:
             from services.audit_logger import log_audit
@@ -1651,16 +1667,6 @@ def handle_post_issue_comment(handler, raw_body, ip):
         except Exception:
             pass
         access_log(ip, "issue_comment_local", 200, f"{issue_key} by {session.get('name')}")
-        # 연동된 Jira 이슈가 있는 경우 Jira 클라우드에도 댓글 동기화
-        jira_enabled = bool(handler.cfg.get("jira", {}).get("enabled", False)) if handler.cfg else False
-        j_key = (local_rec.get("jira") or {}).get("key")
-        if jira_enabled and j_key:
-            try:
-                from services.jira_client import add_jira_comment, sync_jira_cache
-                add_jira_comment(handler.cfg, j_key, comment, session.get("name"))
-                threading.Thread(target=sync_jira_cache, args=(handler.cfg, False), daemon=True).start()
-            except Exception as je:
-                log_line(f"연동된 Jira 이슈({j_key}) 댓글 동기화 예외:", je)
         try:
             from services.vector_store import trigger_async_vector_sync
             trigger_async_vector_sync(handler.cfg)
@@ -1749,6 +1755,22 @@ def handle_post_issue_transition(handler, raw_body, ip):
         if not can_trans:
             handler._send_json(403, {"ok": False, "error": trans_err or "해당 작업 카드의 상태를 변경할 권한이 없습니다."})
             return
+
+        # 연동된 Jira 이슈가 있는 경우 Jira 클라우드 상태를 먼저 전이하고 검증
+        jira_enabled = bool(handler.cfg.get("jira", {}).get("enabled", False)) if handler.cfg else False
+        j_key = (local_rec.get("jira") or {}).get("key")
+        if jira_enabled and j_key:
+            try:
+                from services.jira_client import transition_jira_issue, sync_jira_cache
+                j_ok, j_note = transition_jira_issue(handler.cfg, j_key, status)
+                if not j_ok:
+                    handler._send_json(400, {"ok": False, "error": f"Jira 이슈({j_key}) 상태 변경 실패: {j_note}"})
+                    return
+                threading.Thread(target=sync_jira_cache, args=(handler.cfg, False), daemon=True).start()
+            except Exception as je:
+                handler._send_json(500, {"ok": False, "error": f"Jira 상태 동기화 오류: {je}"})
+                return
+
         old_status = local_rec.get("status")
         update_record_status(local_rec["id"], status)
         if status != old_status:
@@ -1775,16 +1797,6 @@ def handle_post_issue_transition(handler, raw_body, ip):
         except Exception:
             pass
         access_log(ip, "issue_transition_local", 200, f"{issue_key} -> {status} by {session.get('name')}")
-        # 연동된 Jira 이슈가 있는 경우 Jira 클라우드 상태도 함께 전이
-        jira_enabled = bool(handler.cfg.get("jira", {}).get("enabled", False)) if handler.cfg else False
-        j_key = (local_rec.get("jira") or {}).get("key")
-        if jira_enabled and j_key:
-            try:
-                from services.jira_client import transition_jira_issue, sync_jira_cache
-                transition_jira_issue(handler.cfg, j_key, status)
-                threading.Thread(target=sync_jira_cache, args=(handler.cfg, False), daemon=True).start()
-            except Exception as je:
-                log_line(f"연동된 Jira 이슈({j_key}) 상태 동기화 예외:", je)
         try:
             from services.vector_store import trigger_async_vector_sync
             trigger_async_vector_sync(handler.cfg)
