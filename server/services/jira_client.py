@@ -906,6 +906,17 @@ def _sync_jira_cache_unlocked(cfg, force_full=False):
     last_sync = None if full_sync_due else get_last_sync_time()
     sync_started_at = datetime.now()
     project_keys = jira_project_keys(cfg)
+    if not project_keys:
+        # An empty project mapping is a configuration gap, not proof that all
+        # previously cached Jira issues were deleted. Never reconcile to zero here.
+        log_line("[Jira] No mapped Jira projects; preserving the existing snapshot and sync cursor.")
+        with _jira_cache_lock:
+            _jira_cache["error"] = "Jira 프로젝트 매핑이 없어 기존 동기화 데이터를 유지합니다."
+            if _jira_cache["records"] is None:
+                _jira_cache["records"] = load_all_jira_from_db()
+                _jira_cache["activities"] = load_all_jira_activities_from_db()
+            return dict(_jira_cache)
+
     # A successful /myself response does not prove Browse Projects permission.
     # Verify every mapped project before accepting any snapshot or reconciliation.
     for project_key in project_keys:
