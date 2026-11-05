@@ -7,7 +7,7 @@ import time
 import urllib.request
 import urllib.error
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import os
 from utils.logging import log_line
@@ -63,6 +63,7 @@ def _urlopen(req, timeout=15, cfg=None):
 JIRA_ONGOING_EXCLUDE_CATEGORIES = [c.strip() for c in os.environ.get("JIRA_ONGOING_EXCLUDE_CATEGORIES", "메인,메인프로젝트").split(",") if c.strip()]
 
 _jira_cache_lock = threading.Lock()
+_jira_sync_lock = threading.Lock()
 _jira_cache = {"records": None, "activities": [], "categories": {}, "synced_at": None, "error": None}
 
 
@@ -108,6 +109,127 @@ def _verify_jira_auth(j, timeout=10):
         return False, "HTTP %s: %s" % (e.code, body[:300])
     except Exception as e:
         return False, str(e)
+
+
+def _verify_jira_project_access(j, project_key, timeout=10):
+    """자격 증명으로 특정 Jira 프로젝트에 읽기(Browse Projects) 권한이 있는지 확인한다.
+    GET /rest/api/3/project/{project_key} 엔드포인트를 호출한다.
+    권한이 없거나 프로젝트가 없으면 Jira Cloud는 HTTP 404 또는 403을 반환한다.
+    반환: (ok: bool, error: str|None)
+    """
+    base_url = (j.get("base_url") or "").rstrip("/")
+    if not base_url or not project_key:
+        return False, "Thiếu base_url hoặc project_key"
+    url = base_url + "/rest/api/3/project/" + urllib.parse.quote(str(project_key).strip())
+    req = urllib.request.Request(url, method="GET", headers=_jira_auth_header(j))
+    try:
+        with _urlopen(req, timeout=timeout) as resp:
+            if resp.status == 200:
+                return True, None
+            return False, f"HTTP {resp.status}"
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8", "replace")[:200]
+        except Exception:
+            pass
+        return False, f"HTTP {e.code}: {body.strip()}"
+    except Exception as e:
+        return False, str(e)
+
+
+def verify_jira_projects_access(cfg_or_j, keys=None, timeout=10):
+    """설정된 모든 Jira 프로젝트에 대해 읽기(Browse Projects) 권한이 있는지 일괄 검증한다.
+    반환: (all_ok: bool, failed_projects: dict[str, str])
+    """
+    if isinstance(cfg_or_j, dict) and "jira" in cfg_or_j:
+        j = cfg_or_j.get("jira", {})
+        if keys is None:
+            keys = jira_project_keys(cfg_or_j)
+    else:
+        j = cfg_or_j or {}
+
+    if not keys or not (j.get("base_url") and j.get("email") and j.get("api_token")):
+        return True, {}
+
+    failed = {}
+    for pk in keys:
+        if not pk:
+            continue
+        ok, err = _verify_jira_project_access(j, pk, timeout=timeout)
+        if not ok:
+            failed[pk] = err
+    return len(failed) == 0, failed
+
+
+def fetch_all_jira_issue_comments(j, issue_key, initial_comment_obj=None, timeout=10):
+    """Lấy đầy đủ toàn bộ comment của một issue, tự động phân trang nếu total > len(comments)."""
+    comments = []
+    total = None
+    if initial_comment_obj and isinstance(initial_comment_obj, dict):
+        comments = list(initial_comment_obj.get("comments") or [])
+        total = initial_comment_obj.get("total")
+
+    if total is not None and len(comments) >= total:
+        return comments
+
+    base_url = (j.get("base_url") or "").rstrip("/")
+    if not base_url or not j.get("api_token") or not j.get("email") or not issue_key:
+        return comments
+
+    start_at = len(comments)
+    while total is None or start_at < total:
+        url = f"{base_url}/rest/api/3/issue/{urllib.parse.quote(str(issue_key).strip())}/comment?startAt={start_at}&maxResults=100"
+        req = urllib.request.Request(url, method="GET", headers=_jira_auth_header(j))
+        try:
+            with _urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            batch = data.get("comments") or []
+            if not batch:
+                break
+            comments.extend(batch)
+            total = data.get("total", len(comments))
+            start_at += len(batch)
+        except Exception as e:
+            log_line(f"[Jira] Không thể phân trang lấy tiếp comment cho issue {issue_key} (startAt={start_at}):", e)
+            break
+    return comments
+
+
+def fetch_all_jira_issue_changelog(j, issue_key, initial_cl_obj=None, timeout=10, max_histories=500):
+    """Lấy đầy đủ toàn bộ changelog histories của một issue, tự động phân trang nếu total > len(histories)."""
+    histories = []
+    total = None
+    if initial_cl_obj and isinstance(initial_cl_obj, dict):
+        histories = list(initial_cl_obj.get("histories") or [])
+        total = initial_cl_obj.get("total")
+
+    if total is not None and len(histories) >= total:
+        return histories
+
+    base_url = (j.get("base_url") or "").rstrip("/")
+    if not base_url or not j.get("api_token") or not j.get("email") or not issue_key:
+        return histories
+
+    start_at = len(histories)
+    while (total is None or start_at < total) and len(histories) < max_histories:
+        url = f"{base_url}/rest/api/3/issue/{urllib.parse.quote(str(issue_key).strip())}/changelog?startAt={start_at}&maxResults=100"
+        req = urllib.request.Request(url, method="GET", headers=_jira_auth_header(j))
+        try:
+            with _urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            batch = data.get("values") or data.get("histories") or []
+            if not batch:
+                break
+            histories.extend(batch)
+            total = data.get("total", len(histories))
+            start_at += len(batch)
+            if data.get("isLast", False):
+                break
+        except Exception as e:
+            log_line(f"[Jira] Không thể phân trang lấy tiếp changelog cho issue {issue_key} (startAt={start_at}):", e)
+            break
+    return histories
 
 
 # ---------------------------------------------------------------------------
@@ -468,11 +590,15 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None,
         except Exception as e:
             # Fallback to POST if GET fails
             try:
-                post_body = json.dumps({
+                post_payload = {
                     "jql": jql,
                     "maxResults": min(page_size, max_results - len(all_issues)),
-                    "fields": fields
-                }).encode("utf-8")
+                    "fields": fields,
+                    "expand": "changelog"
+                }
+                if next_token:
+                    post_payload["nextPageToken"] = next_token
+                post_body = json.dumps(post_payload).encode("utf-8")
                 req_post = urllib.request.Request(base_url + "/rest/api/3/search/jql", data=post_body, method="POST", headers=_jira_auth_header(j))
                 with _urlopen(req_post, timeout=15) as resp_post:
                     data = json.loads(resp_post.read().decode("utf-8"))
@@ -497,6 +623,15 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None,
         auth_ok, auth_err = _verify_jira_auth(j)
         if not auth_ok:
             log_line("Jira 인증 확인 실패 — 이전 캐시를 유지합니다:", auth_err)
+            return (None, None, False) if return_complete_flag else (None, None)
+
+        # P1 보안/정합성 방어: /myself 는 단지 계정 로그인 가능 여부만 증명할 뿐,
+        # project_map 에 설정된 각 프로젝트에 대한 'Browse Projects(읽기)' 권한을 증명하지 못한다.
+        # 프로젝트 권한이 박탈되어 0건이 반환된 경우 reconciliation 에 의해 기존 DB 캐시가
+        # 전면 삭제되는 대형 사고를 방지하기 위해, 설정된 각 프로젝트의 읽기 권한을 개별 검증한다.
+        projects_ok, failed_projects = verify_jira_projects_access(j, keys)
+        if not projects_ok:
+            log_line("Jira 프로젝트 읽기 권한 확인 실패(권한 없음 또는 프로젝트 접근 불가) — 이전 캐시를 유지합니다:", failed_projects)
             return (None, None, False) if return_complete_flag else (None, None)
 
     out = []
@@ -557,7 +692,10 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None,
 
         # 1. Extract comments from Jira API
         comments_list = []
-        raw_comments = (f.get("comment") or {}).get("comments") or []
+        raw_comment_obj = f.get("comment") or {}
+        raw_comments = raw_comment_obj.get("comments") or []
+        if raw_comment_obj.get("total", 0) > len(raw_comments):
+            raw_comments = fetch_all_jira_issue_comments(j, key, raw_comment_obj)
         for c in raw_comments:
             c_author = (c.get("author") or {}).get("displayName") or "사용자"
             c_body = _adf_to_text(c.get("body")) if isinstance(c.get("body"), dict) else str(c.get("body") or "")
@@ -654,7 +792,10 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None,
 
         # 2. Extract detailed changelog activities
         cl = issue.get("changelog") or {}
-        for h in (cl.get("histories") or []):
+        cl_histories = cl.get("histories") or []
+        if cl.get("total", 0) > len(cl_histories):
+            cl_histories = fetch_all_jira_issue_changelog(j, key, cl)
+        for h in cl_histories:
             h_id = h.get("id") or str(len(activities))
             author_name = (h.get("author") or {}).get("displayName") or "Jira 사용자"
             author_avatar = (h.get("author") or {}).get("avatarUrls", {}).get("48x48")
@@ -802,16 +943,28 @@ def jira_fetch_project_subtask_type(cfg, project_key):
 
 def jira_auto_sync_loop(cfg):
     """Jira 연동이 켜져 있는 동안, 별도 데몬 스레드에서 주기적으로 캐시를 다시 채운다.
-    한 번의 동기화 실패가 루프 자체를 죽이지 않도록 매 회차를 개별적으로 감싼다."""
+    한 번의 동기화 실패가 루프 자체를 죽이지 않도록 매 회차를 개별적으로 감싼다.
+    매 480회차(약 24시간, 180초 주기 기준)마다 안전한 full reconciliation(force_full=True)을
+    수행하여 Jira 상에서 삭제된 이슈를 로컬 DB에서 자동 정리한다."""
+    cycle = 0
     while True:
         time.sleep(JIRA_AUTO_SYNC_INTERVAL_SEC)
         try:
-            sync_jira_cache(cfg)
+            cycle += 1
+            force_full = (cycle % 480 == 0)
+            sync_jira_cache(cfg, force_full=force_full)
         except Exception as e:
             log_line("Jira 자동 동기화 중 오류(다음 주기에 재시도):", e)
 
 def sync_jira_cache(cfg, force_full=False):
-    """Jira를 실제로 조회해서 DB(SQLite)와 캐시를 갱신한다. Jira 연동이 비활성화되어 있으면 빈 캐시를 반환한다."""
+    """Jira를 실제로 조회해서 DB(SQLite)와 캐시를 갱신한다. Jira 연동이 비활성화되어 있으면 빈 캐시를 반환한다.
+    
+    P1 동시성/워터마크 방어:
+    1. _jira_sync_lock: 백그라운드 주기 동기화, 사용자 수동 동기화, 이슈 생성/변경 직후 동기화가
+       동시에 실행되어 최신 데이터를 이전 데이터로 덮어쓰는 Race Condition을 원천 차단한다.
+    2. Safe Watermark: 커서는 동기화 '종료 시점'이 아닌 동기화 '시작 시점(sync_start_iso)'을 기준으로
+       기록하며, 이전 동기화 커서에서 120초의 overlap window를 두어 페이지네이션 중 발생한 수정분도 누락 없이 수집한다.
+    """
     j = cfg.get("jira", {}) if cfg else {}
     if not j.get("enabled"):
         with _jira_cache_lock:
@@ -822,82 +975,121 @@ def sync_jira_cache(cfg, force_full=False):
             _jira_cache["synced_at"] = None
         return dict(_jira_cache)
 
-    from services.jira_db import (
-        get_last_sync_time, set_last_sync_time, upsert_jira_records, load_all_jira_from_db,
-        upsert_jira_activities, load_all_jira_activities_from_db
-    )
+    with _jira_sync_lock:
+        sync_start_dt = datetime.now()
+        sync_start_iso = sync_start_dt.isoformat()
 
-    last_sync = None if force_full else get_last_sync_time()
-    res = jira_search_issues(cfg, since_updated=last_sync, return_complete_flag=True)
-    is_complete = True
-    if isinstance(res, tuple):
-        if len(res) == 3:
-            records, activities, is_complete = res
-        elif len(res) == 2:
-            records, activities = res
+        from services.jira_db import (
+            get_last_sync_time, set_last_sync_time, upsert_jira_records, load_all_jira_from_db,
+            upsert_jira_activities, load_all_jira_activities_from_db
+        )
+
+        last_sync = None if force_full else get_last_sync_time()
+        safe_query_cursor = last_sync
+        if last_sync:
+            try:
+                # Watermark safety overlap: lùi lại 120 giây để bù đắp clock skew
+                # và các issue bị sửa đổi trong lúc phân trang của lần sync trước
+                clean_ts = last_sync.split("+")[0].strip()
+                last_dt = datetime.fromisoformat(clean_ts)
+                safe_dt = last_dt - timedelta(seconds=120)
+                safe_query_cursor = safe_dt.isoformat()
+            except Exception as e:
+                log_line("[Jira] Không thể parse last_sync để tính overlap window, dùng nguyên bản:", e)
+                safe_query_cursor = last_sync
+
+        res = jira_search_issues(cfg, since_updated=safe_query_cursor, return_complete_flag=True)
+        is_complete = True
+        if isinstance(res, tuple):
+            if len(res) == 3:
+                records, activities, is_complete = res
+            elif len(res) == 2:
+                records, activities = res
+                is_complete = False
+        else:
+            records, activities = res, []
             is_complete = False
-    else:
-        records, activities = res, []
-        is_complete = False
-    now = datetime.now().isoformat()
 
-    # DB에 UPSERT 저장
-    if records is not None:
-        full_sync = last_sync is None
-        can_reconcile = full_sync and is_complete
-        if not is_complete and full_sync:
-            log_line(f"[Jira] Full sync pagination limit reached ({len(records)} issues, has more pages); skipping reconciliation to prevent data loss.")
-        try:
-            if records or full_sync:
-                upsert_jira_records(records, replace_existing=can_reconcile)
-                try:
-                    from services.vector_store import trigger_async_vector_sync
-                    trigger_async_vector_sync(cfg)
-                except Exception:
-                    pass
-            if activities:
-                upsert_jira_activities(activities)
-            if is_complete:
-                set_last_sync_time(now)
-            else:
-                log_line("[Jira] 동기화 결과가 불완전하여(미완료 페이지 존재) last_sync_time 커서를 전진시키지 않습니다.")
-            all_records = load_all_jira_from_db()
-            all_activities = load_all_jira_activities_from_db()
-        except Exception as e:
-            log_line("Jira cache upsert failed; sync cursor not advanced:", e)
-            with _jira_cache_lock:
-                _jira_cache["error"] = f"Jira 동기화 DB 저장 오류: {e}"
+        # DB에 UPSERT 저장
+        if records is not None:
+            full_sync = last_sync is None
+            can_reconcile = full_sync and is_complete
+            if not is_complete and full_sync:
+                log_line(f"[Jira] Full sync pagination limit reached ({len(records)} issues, has more pages); skipping reconciliation to prevent data loss.")
+
+            # P1 Phòng thủ: Trước khi reconciliation (replace_existing=True), phải đảm bảo
+            # tài khoản có quyền đọc trên 100% các project đã cấu hình. Nếu có bất kỳ project nào
+            # bị mất quyền đọc hoặc lỗi, tuyệt đối hủy bỏ reconciliation (replace_existing=False) để bảo vệ cache.
+            if can_reconcile:
+                keys = jira_project_keys(cfg)
+                projects_ok, failed_projects = verify_jira_projects_access(j, keys)
+                if not projects_ok:
+                    can_reconcile = False
+                    log_line(f"[Jira] Cảnh báo: Dự án {list(failed_projects.keys())} không thể truy cập hoặc mất quyền đọc ({failed_projects}). Hủy bỏ reconciliation (replace_existing=False) để bảo vệ cache dữ liệu.")
+
+            try:
+                upsert_ok = True
+                if records or full_sync:
+                    upsert_ok = upsert_jira_records(records, replace_existing=can_reconcile)
+                    if not upsert_ok:
+                        log_line("[Jira] DB upsert thất bại (bị từ chối hoặc lỗi dữ liệu) — hủy tiến cursor last_sync_time.")
+                        with _jira_cache_lock:
+                            _jira_cache["error"] = "Jira 동기화 DB 저장 실패 (레코드 검증 또는 정합성 오류)"
+                        all_records = None
+                        all_activities = None
+                    else:
+                        try:
+                            from services.vector_store import trigger_async_vector_sync
+                            trigger_async_vector_sync(cfg)
+                        except Exception:
+                            pass
+                if upsert_ok:
+                    if activities:
+                        upsert_jira_activities(activities)
+                    if is_complete:
+                        # Watermark: tiến cursor bằng thời điểm BẮT ĐẦU lần đồng bộ (sync_start_iso),
+                        # đảm bảo mọi thay đổi phát sinh trong lúc đồng bộ đều sẽ được lấy ở lần kế tiếp.
+                        set_last_sync_time(sync_start_iso)
+                    else:
+                        log_line("[Jira] 동기화 결과가 불완전하여(미완료 페이지 존재) last_sync_time 커서를 전진시키지 않습니다.")
+                    all_records = load_all_jira_from_db()
+                    all_activities = load_all_jira_activities_from_db()
+            except Exception as e:
+                log_line("Jira cache upsert failed; sync cursor not advanced:", e)
+                with _jira_cache_lock:
+                    _jira_cache["error"] = f"Jira 동기화 DB 저장 오류: {e}"
+                all_records = None
+                all_activities = None
+        else:
             all_records = None
             all_activities = None
-    else:
-        all_records = None
-        all_activities = None
 
-    categories = {}
-    for dept_id, mapping in cfg.get("jira", {}).get("project_map", {}).items():
-        project_key = mapping.get("project_key")
-        if not project_key:
-            continue
-        cats = jira_fetch_project_categories(cfg, project_key)
-        categories[dept_id] = cats  # 실패 시 빈 리스트 — 아래에서 이전 값과 병합
+        categories = {}
+        for dept_id, mapping in cfg.get("jira", {}).get("project_map", {}).items():
+            project_key = mapping.get("project_key")
+            if not project_key:
+                continue
+            cats = jira_fetch_project_categories(cfg, project_key)
+            categories[dept_id] = cats  # 실패 시 빈 리스트 — 아래에서 이전 값과 병합
 
-    with _jira_cache_lock:
-        if all_records is None:
-            _jira_cache["error"] = "Jira 조회 실패로 이전 목록을 그대로 보여줍니다 (서버 콘솔 로그 참고)."
-            if _jira_cache["records"] is None:
-                # DB에서 기존 저장된 데이터 복원
-                db_recs = load_all_jira_from_db()
-                _jira_cache["records"] = db_recs or []
-                _jira_cache["activities"] = load_all_jira_activities_from_db() or []
-        else:
-            _jira_cache["records"] = all_records
-            _jira_cache["activities"] = all_activities if all_activities is not None else (activities or [])
-            _jira_cache["error"] = None
-        for dept_id, cats in categories.items():
-            if cats or dept_id not in _jira_cache["categories"]:
-                _jira_cache["categories"][dept_id] = cats
-        _jira_cache["synced_at"] = now
-        return dict(_jira_cache)
+        with _jira_cache_lock:
+            if all_records is None:
+                if not _jira_cache.get("error"):
+                    _jira_cache["error"] = "Jira 조회 실패로 이전 목록을 그대로 보여줍니다 (서버 콘솔 로그 참고)."
+                if _jira_cache["records"] is None:
+                    # DB에서 기존 저장된 데이터 복원
+                    db_recs = load_all_jira_from_db()
+                    _jira_cache["records"] = db_recs or []
+                    _jira_cache["activities"] = load_all_jira_activities_from_db() or []
+            else:
+                _jira_cache["records"] = all_records
+                _jira_cache["activities"] = all_activities if all_activities is not None else (activities or [])
+                _jira_cache["error"] = None
+                _jira_cache["synced_at"] = sync_start_iso
+            for dept_id, cats in categories.items():
+                if cats or dept_id not in _jira_cache["categories"]:
+                    _jira_cache["categories"][dept_id] = cats
+            return dict(_jira_cache)
 
 def get_cached_jira_records(cfg):
     """Jira가 비활성화된 경우 빈 레코드 반환. 캐시가 비어있으면 DB에서 로드."""
@@ -1164,6 +1356,54 @@ def create_jira_issue_link(cfg, inward_key, outward_key, link_type_name="Relates
         return False, str(e)
 
 
+def _apply_jira_status_to_cache_and_db(issue_key, new_status_name):
+    """Jira 상태 변경 성공 후 DB(jira_issues)와 RAM 캐시(_jira_cache)에 즉시 동기화한다."""
+    norm_status = "예정"
+    if "완료" in new_status_name or "done" in new_status_name.lower():
+        norm_status = "완료"
+    elif "검토" in new_status_name or "review" in new_status_name.lower():
+        norm_status = "검토"
+    elif "진행" in new_status_name or "progress" in new_status_name.lower():
+        norm_status = "진행"
+
+    jira_badge_status = "good" if norm_status == "완료" else "info"
+
+    # 1. DB (jira_issues) 실시간 업데이트
+    try:
+        from db import get_one, execute
+        row = get_one("SELECT raw_json FROM jira_issues WHERE UPPER(jira_key) = ?", (issue_key.upper(),))
+        if row and row.get("raw_json"):
+            d = json.loads(row["raw_json"])
+            d["status"] = norm_status
+            d["statusName"] = new_status_name
+            if d.get("jira"):
+                d["jira"]["statusName"] = new_status_name
+                d["jira"]["rawStatusName"] = new_status_name
+                d["jira"]["status"] = jira_badge_status
+            execute(
+                """UPDATE jira_issues 
+                   SET status = ?, status_name = ?, raw_json = ? 
+                   WHERE UPPER(jira_key) = ?""",
+                (norm_status, new_status_name, json.dumps(d, ensure_ascii=False), issue_key.upper())
+            )
+    except Exception as e:
+        log_line(f"[Jira] DB 상태 업데이트 실패 ({issue_key}):", e)
+
+    # 2. In-memory RAM 캐시 실시간 업데이트
+    with _jira_cache_lock:
+        if _jira_cache.get("records"):
+            for r in _jira_cache["records"]:
+                jk = ((r.get("jira") or {}).get("key") or r.get("key") or "").upper()
+                if jk == issue_key.upper():
+                    if r.get("jira"):
+                        r["jira"]["statusName"] = new_status_name
+                        r["jira"]["rawStatusName"] = new_status_name
+                        r["jira"]["status"] = jira_badge_status
+                    r["statusName"] = new_status_name
+                    r["status"] = norm_status
+                    break
+
+
 def transition_jira_issue(cfg, issue_key, target_status_name):
     """Jira 이슈의 상태를 대상 상태(예: '진행', '완료', '예정', '검토')로 전이시킨다.
     Jira 워크플로 특성상 다단계 전이(예: 예정 -> 진행 -> 검토 -> 완료)가 필요할 수 있으므로
@@ -1242,25 +1482,7 @@ def transition_jira_issue(cfg, issue_key, target_status_name):
             ok, err = post_transition(direct_match["id"])
             if ok:
                 new_status_name = direct_match.get("to", {}).get("name") or clean_target
-                with _jira_cache_lock:
-                    if _jira_cache.get("records"):
-                        for r in _jira_cache["records"]:
-                            jk = ((r.get("jira") or {}).get("key") or "").upper()
-                            if jk == issue_key.upper():
-                                if r.get("jira"):
-                                    r["jira"]["statusName"] = new_status_name
-                                    r["jira"]["rawStatusName"] = new_status_name
-                                    r["jira"]["status"] = "good" if ("완료" in new_status_name or "done" in new_status_name.lower()) else "info"
-                                r["statusName"] = new_status_name
-                                if "완료" in new_status_name or "done" in new_status_name.lower():
-                                    r["status"] = "완료"
-                                elif "검토" in new_status_name or "review" in new_status_name.lower():
-                                    r["status"] = "검토"
-                                elif "진행" in new_status_name:
-                                    r["status"] = "진행"
-                                else:
-                                    r["status"] = "예정"
-                                break
+                _apply_jira_status_to_cache_and_db(issue_key, new_status_name)
                 return True, f"상태가 '{new_status_name}'(으)로 변경되었습니다."
             return False, f"전이 실패: {err}"
 
@@ -1295,18 +1517,7 @@ def transition_jira_issue(cfg, issue_key, target_status_name):
                 if "진행" in to_name:
                     ok, err = post_transition(t["id"])
                     if ok:
-                        with _jira_cache_lock:
-                            if _jira_cache.get("records"):
-                                for r in _jira_cache["records"]:
-                                    jk = ((r.get("jira") or {}).get("key") or "").upper()
-                                    if jk == issue_key.upper():
-                                        if r.get("jira"):
-                                            r["jira"]["statusName"] = to_name
-                                            r["jira"]["rawStatusName"] = to_name
-                                            r["jira"]["status"] = "info"
-                                        r["statusName"] = to_name
-                                        r["status"] = "진행"
-                                        break
+                        _apply_jira_status_to_cache_and_db(issue_key, to_name)
                         return True, f"상태가 '{to_name}'(으)로 변경되었습니다."
 
     if is_review_target:
@@ -1317,8 +1528,9 @@ def transition_jira_issue(cfg, issue_key, target_status_name):
             if "진행" in to_n or "progress" in to_n.lower():
                 succ, err = post_transition(t["id"])
                 if succ:
-                    return True, "Jira 워크플로에 '검토' 상태가 없어 '진행'(In Progress)으로 설정되었습니다."
-        return True, "Jira 워크플로에 '검토' 상태가 없어 현재 상태가 유지됩니다."
+                    _apply_jira_status_to_cache_and_db(issue_key, to_n)
+                    return True, f"Jira 워크플로에 '검토' 상태가 없어 '{to_n}'(In Progress)으로 설정되었습니다."
+        return False, f"Jira 워크플로에 '{clean_target}' 상태가 없으며, 전이 가능한 대체 경로(진행)도 존재하지 않습니다."
 
     return False, f"'{clean_target}' 상태로 전이할 수 있는 워크플로 경로를 찾지 못했습니다."
 
@@ -1360,7 +1572,7 @@ def add_jira_comment(cfg, issue_key, comment_text, author_name=None):
 
         # 캐시 및 DB에 새 댓글 즉시 반영하여 캔버스 등에 실시간 표출
         try:
-            from datetime import datetime
+            from datetime import datetime, timedelta
             new_comment_obj = {
                 "id": str(data.get("id") or ""),
                 "author": author_name or (data.get("author") or {}).get("displayName") or "사용자",
@@ -1403,6 +1615,96 @@ def add_jira_comment(cfg, issue_key, comment_text, author_name=None):
         return None, str(e)
 
 
+def _apply_jira_attachment_to_cache_and_db(issue_key, attachment_items, default_filename=None, default_size=0):
+    """Jira 첨부파일 업로드 성공 후 jira_attachments 테이블, jira_issues(raw_json) 및 RAM 캐시(_jira_cache)에 즉시 반영한다."""
+    if not issue_key or not attachment_items:
+        return []
+
+    items = attachment_items if isinstance(attachment_items, list) else [attachment_items]
+    new_attachments = []
+
+    for att in items:
+        if not isinstance(att, dict):
+            continue
+        att_id = str(att.get("id") or "").strip()
+        att_name = att.get("filename") or default_filename or "file"
+        att_size = int(att.get("size") or default_size or 0)
+        att_url = f"/api/jira/attachments/{att_id}" if att_id else (att.get("content") or "")
+
+        new_att_obj = {
+            "id": att_id,
+            "name": att_name,
+            "size": att_size,
+            "url": att_url,
+            "isLocal": False,
+            "source": "jira"
+        }
+        new_attachments.append(new_att_obj)
+
+        # 1. DB (jira_attachments) 삽입/업데이트
+        if att_id:
+            try:
+                from db import execute
+                execute(
+                    """INSERT INTO jira_attachments (
+                        attachment_id, jira_key, filename, file_size, jira_url
+                    ) VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(attachment_id) DO UPDATE SET
+                        jira_key = excluded.jira_key,
+                        filename = excluded.filename,
+                        file_size = excluded.file_size,
+                        jira_url = excluded.jira_url""",
+                    (att_id, issue_key.upper(), att_name, att_size, att_url)
+                )
+            except Exception as dbe:
+                log_line(f"[Jira] jira_attachments DB 저장 예외 ({issue_key}, {att_id}):", dbe)
+
+    if not new_attachments:
+        return []
+
+    # 2. DB (jira_issues raw_json) 실시간 업데이트
+    try:
+        from db import get_one, execute
+        row = get_one("SELECT raw_json FROM jira_issues WHERE UPPER(jira_key) = ?", (issue_key.upper(),))
+        if row and row.get("raw_json"):
+            d = json.loads(row["raw_json"])
+            cur_attachments = list(d.get("attachments") or [])
+            existing_ids = {str(a.get("id")) for a in cur_attachments if isinstance(a, dict) and a.get("id")}
+            for na in new_attachments:
+                if not na["id"] or na["id"] not in existing_ids:
+                    cur_attachments.append(na)
+                    if na["id"]:
+                        existing_ids.add(na["id"])
+            d["attachments"] = cur_attachments
+            execute(
+                "UPDATE jira_issues SET raw_json = ? WHERE UPPER(jira_key) = ?",
+                (json.dumps(d, ensure_ascii=False), issue_key.upper())
+            )
+    except Exception as dbe:
+        log_line(f"[Jira] jira_issues raw_json 첨부파일 업데이트 예외 ({issue_key}):", dbe)
+
+    # 3. In-memory RAM 캐시 실시간 업데이트
+    try:
+        with _jira_cache_lock:
+            if _jira_cache and _jira_cache.get("records"):
+                for r in _jira_cache["records"]:
+                    jk = ((r.get("jira") or {}).get("key") or r.get("key") or "").upper()
+                    if jk == issue_key.upper():
+                        cur_att = list(r.get("attachments") or [])
+                        existing_ids = {str(a.get("id")) for a in cur_att if isinstance(a, dict) and a.get("id")}
+                        for na in new_attachments:
+                            if not na["id"] or na["id"] not in existing_ids:
+                                cur_att.append(na)
+                                if na["id"]:
+                                    existing_ids.add(na["id"])
+                        r["attachments"] = cur_att
+                        break
+    except Exception as ce:
+        log_line(f"[Jira] RAM 캐시 첨부파일 업데이트 예외 ({issue_key}):", ce)
+
+    return new_attachments
+
+
 def upload_jira_attachment(cfg, issue_key, filename, file_bytes, content_type=None):
     """Jira Cloud REST API를 통해 이슈에 첨부파일을 업로드한다.
     POST /rest/api/3/issue/{issue_key}/attachments
@@ -1437,6 +1739,18 @@ def upload_jira_attachment(cfg, issue_key, filename, file_bytes, content_type=No
     try:
         with _urlopen(req, timeout=35) as resp:
             data = json.loads(resp.read().decode("utf-8"))
+
+        # 캐시 및 DB(jira_attachments, jira_issues raw_json)에 즉시 반영
+        try:
+            _apply_jira_attachment_to_cache_and_db(
+                issue_key,
+                data,
+                default_filename=safe_fname,
+                default_size=len(file_bytes)
+            )
+        except Exception as ae:
+            log_line(f"[Jira] 첨부파일 캐시/DB 즉시 반영 실패 ({issue_key}):", ae)
+
         return data, None
     except urllib.error.HTTPError as e:
         err_msg = ""
@@ -1509,15 +1823,43 @@ def update_jira_issue_dates(cfg, issue_key, start_date=None, due_date=None):
                 # 204 No Content indicates success
                 pass
             
-            # Cache update in memory if present
+            # 1. Update DB (jira_issues)
+            try:
+                from db import get_one, execute
+                row = get_one("SELECT raw_json FROM jira_issues WHERE UPPER(jira_key) = ?", (clean_key,))
+                if row and row.get("raw_json"):
+                    d = json.loads(row["raw_json"])
+                    if due_date:
+                        d["dueDate"] = due_date
+                        if d.get("jira"):
+                            d["jira"]["duedate"] = due_date
+                            d["jira"]["dueDate"] = due_date
+                    if start_date:
+                        d["startDate"] = start_date
+                        if d.get("jira"):
+                            d["jira"]["startDate"] = start_date
+                    execute(
+                        """UPDATE jira_issues
+                           SET start_date = COALESCE(?, start_date),
+                               due_date = COALESCE(?, due_date),
+                               raw_json = ?
+                           WHERE UPPER(jira_key) = ?""",
+                        (start_date or None, due_date or None, json.dumps(d, ensure_ascii=False), clean_key)
+                    )
+            except Exception as dbe:
+                log_line(f"[Jira] DB 날짜 업데이트 실패 ({clean_key}):", dbe)
+
+            # 2. Update memory cache
             with _jira_cache_lock:
                 if _jira_cache.get("records"):
                     for r in _jira_cache["records"]:
                         jk = ((r.get("jira") or {}).get("key") or "").upper()
                         if jk == clean_key:
                             if due_date:
+                                r["dueDate"] = due_date
                                 r["duedate"] = due_date
                                 if r.get("jira"):
+                                    r["jira"]["dueDate"] = due_date
                                     r["jira"]["duedate"] = due_date
                             if start_date:
                                 r["startDate"] = start_date
@@ -1619,7 +1961,7 @@ def get_jira_issue_by_key(cfg, issue_key):
         if not matched:
             return None
 
-        # Jira 이슈인 경우 DB의 최신 댓글 목록을 즉시 반영
+        # Jira 이슈인 경우 DB의 최신 댓글 및 첨부파일 목록을 즉시 반영
         if matched.get("jira") and matched["jira"].get("key"):
             try:
                 from db import get_one
@@ -1628,6 +1970,14 @@ def get_jira_issue_by_key(cfg, issue_key):
                     db_item = json.loads(j_row["raw_json"])
                     if db_item.get("comments") is not None:
                         matched["comments"] = db_item["comments"]
+                    if not is_from_local_db and db_item.get("attachments") is not None:
+                        matched["attachments"] = db_item["attachments"]
+                    elif is_from_local_db and db_item.get("attachments"):
+                        local_names = {a if isinstance(a, str) else (a.get("name") or a.get("filename") or "") for a in (matched.get("attachments") or [])}
+                        for ja in db_item["attachments"]:
+                            janame = ja.get("name") or ja.get("filename") or ""
+                            if janame and janame not in local_names:
+                                matched.setdefault("attachments", []).append(ja)
             except Exception:
                 pass
 

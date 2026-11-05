@@ -215,7 +215,7 @@ def merged_records(cfg):
             # Enrich comments from Jira
             if j_match.get("comments"):
                 r_copy["jiraComments"] = j_match["comments"]
-        elif j_key:
+        elif j_key and not cache.get("error"):
             # Key no longer found in Jira Cloud (deleted from Jira) -> keep local safe
             r_copy["jira"] = None
             r_copy["unlinked_jira_key"] = j_key

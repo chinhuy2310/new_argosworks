@@ -162,7 +162,7 @@ function loadRecords(limit, offset){
   var isAppend = (typeof offset === "number" && offset > 0);
   var query = (typeof limit === "number")
     ? ("/api/records?limit=" + limit + "&offset=" + (offset || 0))
-    : "/api/records?mode=recent&limit=100";
+    : "/api/records?mode=all";
 
   return apiGet(query).then(function(res){
     if(res.ok){

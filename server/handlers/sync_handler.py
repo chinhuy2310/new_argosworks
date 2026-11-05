@@ -33,7 +33,18 @@ def handle_sync(handler, raw_body, ip):
         access_log(ip, "sync", 400, "jira=disabled")
         handler._send_json(400, {"ok": False, "error": "Jira 연동이 비활성화되어 있습니다."})
         return
-    cache = sync_jira_cache(handler.cfg)
+
+    force_full = False
+    if raw_body:
+        try:
+            from utils.text import parse_json_dict
+            b_data, _ = parse_json_dict(raw_body)
+            if b_data and (b_data.get("full") or b_data.get("force_full")):
+                force_full = True
+        except Exception:
+            pass
+
+    cache = sync_jira_cache(handler.cfg, force_full=force_full)
     count = len(cache["records"] or [])
     try:
         from services.vector_store import trigger_async_vector_sync

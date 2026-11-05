@@ -108,6 +108,17 @@ async function loadSettings() {
     if (setJiraEmail) setJiraEmail.value = s.JIRA_EMAIL || "";
     if (setJiraApiToken && s.JIRA_API_TOKEN) setJiraApiToken.value = s.JIRA_API_TOKEN;
     if (setJiraProjectKey) setJiraProjectKey.value = s.JIRA_PROJECT_KEY || "";
+    var setJiraUserAliases = document.getElementById("setJiraUserAliases");
+    if (setJiraUserAliases) {
+      var aliases = s.JIRA_USER_ALIASES;
+      if (aliases && typeof aliases === "object" && Object.keys(aliases).length > 0) {
+        setJiraUserAliases.value = JSON.stringify(aliases, null, 2);
+      } else if (typeof aliases === "string" && aliases.trim()) {
+        setJiraUserAliases.value = aliases;
+      } else {
+        setJiraUserAliases.value = "";
+      }
+    }
 
     window.CURRENT_JIRA_PROJECT_MAP = s.JIRA_PROJECT_MAP || {};
 
@@ -265,6 +276,29 @@ async function saveSettings(e) {
   var btnSave = document.getElementById("btnSaveSettings");
   if (btnSave) btnSave.disabled = true;
 
+  // Validation for Jira User Aliases
+  var setJiraUserAliases = document.getElementById("setJiraUserAliases");
+  var userAliasesPayload = {};
+  if (setJiraUserAliases && setJiraUserAliases.value.trim()) {
+    try {
+      var parsed = JSON.parse(setJiraUserAliases.value.trim());
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("JSON Object required");
+      }
+      userAliasesPayload = parsed;
+    } catch (e) {
+      if (msgEl) {
+        msgEl.className = "settings-msg error show";
+        msgEl.textContent = "❌ Jira 사용자 별칭(User Aliases)은 올바른 JSON 객체 형식이어야 합니다. 예: {\"홍길동\": \"gildong.hong@company.com\"}";
+      }
+      showToast("Jira 사용자 별칭 JSON 형식을 확인해주세요.");
+      if (btnSave) btnSave.disabled = false;
+      setJiraUserAliases.focus();
+      setJiraUserAliases.classList.add("input-error");
+      return;
+    }
+  }
+
   if (msgEl) {
     msgEl.className = "settings-msg loading show";
     msgEl.textContent = "설정을 저장하고 런타임에 동기화하는 중...";
@@ -296,6 +330,7 @@ async function saveSettings(e) {
     JIRA_API_TOKEN: document.getElementById("setJiraApiToken").value.trim(),
     JIRA_PROJECT_KEY: document.getElementById("setJiraProjectKey").value.trim(),
     JIRA_PROJECT_MAP: window.CURRENT_JIRA_PROJECT_MAP || {},
+    JIRA_USER_ALIASES: userAliasesPayload,
 
     SLACK_WEBHOOK_URL: (document.getElementById("setSlackWebhookUrl") ? document.getElementById("setSlackWebhookUrl").value.trim() : ""),
     TEAMS_WEBHOOK_URL: (document.getElementById("setTeamsWebhookUrl") ? document.getElementById("setTeamsWebhookUrl").value.trim() : ""),
@@ -1037,6 +1072,13 @@ document.addEventListener("DOMContentLoaded", function () {
     setJiraEnabled.addEventListener("change", function () {
       var box = document.getElementById("jiraConfigBody");
       if (box) box.style.display = setJiraEnabled.checked ? "block" : "none";
+    });
+  }
+
+  var setJiraUserAliases = document.getElementById("setJiraUserAliases");
+  if (setJiraUserAliases) {
+    setJiraUserAliases.addEventListener("input", function () {
+      setJiraUserAliases.classList.remove("input-error");
     });
   }
 

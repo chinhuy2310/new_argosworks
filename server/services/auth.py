@@ -620,17 +620,21 @@ def can_modify_record(user_or_session, record):
     u_id = user_or_session.get("id") or user_or_session.get("user_id")
     u_name = user_or_session.get("name", "").strip().lower()
     u_username = user_or_session.get("username", "").strip().lower()
+    u_email = (user_or_session.get("email") or "").strip().lower()
     u_dept = (user_or_session.get("org") or user_or_session.get("dept_id") or "").strip().lower()
 
     rec_dept = (record.get("dept_id") or record.get("org") or "").strip().lower()
     rec_assignee_id = record.get("assignee_id")
     rec_assignee = (record.get("assignee_name") or record.get("assignee") or "").strip().lower()
+    rec_assignee_email = (record.get("assignee_email") or record.get("assigneeEmail") or "").strip().lower()
 
     if role == "manager" and u_dept and rec_dept and u_dept == rec_dept:
         return True
     if u_id and rec_assignee_id:
         if str(u_id) == str(rec_assignee_id):
             return True
+    elif u_email and rec_assignee_email and u_email == rec_assignee_email:
+        return True
     elif u_name and u_name == rec_assignee:
         is_private = bool(record.get("is_private"))
         if u_dept == rec_dept or not rec_dept:
