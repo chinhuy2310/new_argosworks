@@ -177,10 +177,6 @@ class TestChatAgentToolRouting(unittest.TestCase):
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
     def test_document_sources_are_appended_before_quick_actions(self):
         import json
         from services.chat_agent import _append_document_sources
@@ -207,3 +203,6 @@ if __name__ == "__main__":
             "vi",
         )
         self.assertEqual(already_cited.count("DOC-GFC-1"), 1)
+
+if __name__ == "__main__":
+    unittest.main()
