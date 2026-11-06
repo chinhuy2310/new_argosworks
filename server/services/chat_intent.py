@@ -7,40 +7,42 @@ import re
 
 
 _ACTION_PATTERNS = (
-    # Vietnamese
+    # Vietnamese - hỗ trợ đa dạng khẩu ngữ và từ đồng nghĩa tự nhiên
     re.compile(
         r"\b(?:tạo|thêm|cập nhật|sửa|xóa|đăng ký|ghi nhận|lên lịch|đặt lịch|"
-        r"đổi trạng thái|thay đổi trạng thái|bình luận|comment)\b"
-        r".{0,80}\b(?:task|công việc|thẻ|ticket|issue|trạng thái)\b",
+        r"đổi trạng thái|thay đổi trạng thái|bình luận|comment|ghi chú|lưu|mở|giao|lập|nhắc|log|note|đặt|chuyển|hoàn thành)\b"
+        r".{0,80}\b(?:task|công việc|thẻ|ticket|issue|trạng thái|tiến độ|hạn chót|deadline|kế hoạch|giao việc)\b",
         re.IGNORECASE | re.DOTALL,
     ),
     re.compile(
-        r"\b(?:task|công việc|thẻ|ticket|issue)\b"
-        r".{0,80}\b(?:mới|riêng|được tạo|đăng ký|cập nhật|thay đổi|xóa)\b",
+        r"\b(?:task|công việc|thẻ|ticket|issue|kế hoạch)\b"
+        r".{0,80}\b(?:mới|riêng|được tạo|đăng ký|cập nhật|thay đổi|xóa|ghi chú|lưu|mở|giao việc)\b",
         re.IGNORECASE | re.DOTALL,
     ),
-    # English
+    # English - expanded action verbs and object nouns
     re.compile(
         r"\b(?:please\s+)?(?:create|make|add|update|change|delete|remove|"
-        r"schedule|post|leave)\s+(?:(?:a|the|new)\s+)?"
-        r"(?:task|issue|ticket|comment|status|due\s+date)\b",
+        r"schedule|post|leave|log|record|track|file|open|assign|draft|set up|note|close)\s+(?:(?:a|the|new)\s+)?"
+        r"(?:task|issue|ticket|comment|status|due\s+date|todo|to-do|action|item|card|record)\b",
         re.IGNORECASE,
     ),
     re.compile(
         r"\b(?:i|we)\s+(?:want|need)\s+(?:you\s+to\s+)?"
-        r"(?:create|make|add|update|change|delete|remove|schedule|post|leave)\s+"
-        r"(?:(?:a|the|new)\s+)?(?:task|issue|ticket|comment|status|due\s+date)\b",
+        r"(?:create|make|add|update|change|delete|remove|schedule|post|leave|log|record|track|file|open|assign|draft|set up|note|close)\s+"
+        r"(?:(?:a|the|new)\s+)?(?:task|issue|ticket|comment|status|due\s+date|todo|to-do|action|item|card|record)\b",
         re.IGNORECASE,
     ),
-    # Korean imperative forms
+    # Korean - 자연스러운 존댓말, 요청형, 업무 용어 확장
     re.compile(
-        r"(?:업무|작업|카드|태스크|티켓|이슈|댓글|상태)"
-        r".{0,40}(?:등록해|만들어|생성해|추가해|수정해|변경해|삭제해|남겨|달아|잡아)",
+        r"(?:업무|작업|카드|태스크|티켓|이슈|댓글|상태|일정|할일)"
+        r".{0,40}(?:등록|만들|생성|추가|수정|변경|삭제|남겨|달아|잡아|작성|기록|올려|바꿔|업데이트)"
+        r"(?:해|해주세요|해줘|하세요|바랍니다|부탁|요청)?",
         re.DOTALL,
     ),
     re.compile(
-        r"(?:등록해|만들어|생성해|추가해|수정해|변경해|삭제해|남겨|달아|잡아)"
-        r".{0,40}(?:업무|작업|카드|태스크|티켓|이슈|댓글|상태)",
+        r"(?:등록|만들|생성|추가|수정|변경|삭제|남겨|달아|잡아|작성|기록|올려|바꿔|업데이트)"
+        r"(?:해|해주세요|해줘|하세요|바랍니다|부탁|요청)?"
+        r".{0,40}(?:업무|작업|카드|태스크|티켓|이슈|댓글|상태|일정|할일)",
         re.DOTALL,
     ),
 )

@@ -805,7 +805,7 @@ class TestFailClosedPaginationAndSnapshotIntegrity:
             jira_client.fetch_all_jira_issue_comments(_cfg()["jira"], "VS-101", initial_comment_obj)
         assert "Phân trang comment thất bại" in str(exc_info.value)
 
-    def test_comment_pagination_premature_empty_batch_raises_runtime_error(self, monkeypatch):
+    def test_comment_pagination_premature_empty_batch_gracefully_returns_partial(self, monkeypatch):
         class _Resp:
             def __enter__(self): return self
             def __exit__(self, *args): pass
@@ -818,13 +818,12 @@ class TestFailClosedPaginationAndSnapshotIntegrity:
             "total": 50,
             "comments": [{"id": "1", "author": {"displayName": "User1"}, "body": "c1"}]
         }
-        with pytest.raises(RuntimeError) as exc_info:
-            jira_client.fetch_all_jira_issue_comments(_cfg()["jira"], "VS-101", initial_comment_obj)
-        assert "trang rỗng trước khi tải hết" in str(exc_info.value)
+        res = jira_client.fetch_all_jira_issue_comments(_cfg()["jira"], "VS-101", initial_comment_obj)
+        assert len(res) == 1
+        assert res[0]["id"] == "1"
 
-    def test_jira_search_issues_fails_closed_on_incomplete_comments(self, monkeypatch):
-        # When comment pagination raises, search_issues must return (None, None, False)
-        # to ensure the previous healthy cache is preserved.
+    def test_jira_search_issues_gracefully_degrades_on_incomplete_comments(self, monkeypatch):
+        # Graceful degradation: individual comment pagination failure preserves issue with initial comments
         monkeypatch.setattr(jira_client, "jira_project_keys", lambda cfg: ["VS"])
 
         class _SearchResp:
@@ -846,10 +845,12 @@ class TestFailClosedPaginationAndSnapshotIntegrity:
         monkeypatch.setattr(jira_client.urllib.request, "urlopen", lambda req, *args, **kwargs: _SearchResp())
         monkeypatch.setattr(jira_client, "fetch_all_jira_issue_comments", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("Pagination failed")))
 
-        res = jira_client.jira_search_issues(_cfg(), return_complete_flag=True)
-        assert res == (None, None, False)
+        records, activities, is_complete = jira_client.jira_search_issues(_cfg(), return_complete_flag=True)
+        assert len(records) == 1
+        assert records[0]["id"] in ("VS-101", "jira-VS-101")
+        assert len(records[0]["comments"]) == 1
 
-    def test_jira_search_issues_fails_closed_on_incomplete_changelog(self, monkeypatch):
+    def test_jira_search_issues_gracefully_degrades_on_incomplete_changelog(self, monkeypatch):
         monkeypatch.setattr(jira_client, "jira_project_keys", lambda cfg: ["VS"])
 
         class _SearchResp:
@@ -871,8 +872,9 @@ class TestFailClosedPaginationAndSnapshotIntegrity:
         monkeypatch.setattr(jira_client.urllib.request, "urlopen", lambda req, *args, **kwargs: _SearchResp())
         monkeypatch.setattr(jira_client, "fetch_all_jira_issue_changelog", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("Changelog pagination failed")))
 
-        res = jira_client.jira_search_issues(_cfg(), return_complete_flag=True)
-        assert res == (None, None, False)
+        records, activities, is_complete = jira_client.jira_search_issues(_cfg(), return_complete_flag=True)
+        assert len(records) == 1
+        assert records[0]["id"] in ("VS-101", "jira-VS-101") 
 
 
 class TestReconciliationPreservesLocalComments:

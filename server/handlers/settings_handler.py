@@ -382,6 +382,16 @@ def handle_post_settings(handler, raw_body, ip):
         if resolved_fb_key:
             fb_cfg["api_key"] = resolved_fb_key
 
+    # Sync Anthropic cfg
+    if "ANTHROPIC_ENABLED" in updates:
+        cfg.setdefault("anthropic", {})["enabled"] = str(updates["ANTHROPIC_ENABLED"]).lower() in ("true", "1", "yes")
+    if "ANTHROPIC_MODEL" in updates:
+        cfg.setdefault("anthropic", {})["model"] = updates["ANTHROPIC_MODEL"]
+    if "ANTHROPIC_API_KEY" in updates:
+        resolved_ant_key = _resolve_submitted_secret("ANTHROPIC_API_KEY", updates["ANTHROPIC_API_KEY"], cfg.get("anthropic", {}).get("api_key", ""))
+        if resolved_ant_key:
+            cfg.setdefault("anthropic", {})["api_key"] = resolved_ant_key
+
     # Sync Voyage cfg
     if "VOYAGE_ENABLED" in updates:
         cfg.setdefault("voyage", {})["enabled"] = str(updates["VOYAGE_ENABLED"]).lower() in ("true", "1", "yes")

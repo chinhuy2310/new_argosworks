@@ -6,7 +6,8 @@ pillow==13.0.0
 psycopg2-binary==2.9.9
 cffi==2.1.1
 pycparser==3.11
-numpy==2.5.4
+# Optional Acceleration (auto-detected if installed; pure-Python fallback used if absent)
+# numpy==2.5.4
 
 # Production WSGI HTTP Server Engines
 waitress==3.0.2
