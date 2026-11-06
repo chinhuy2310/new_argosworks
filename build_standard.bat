@@ -34,8 +34,8 @@ if defined ISCC_PATH (
         echo [THÀNH CÔNG] File cài đặt Setup đã được tạo trong thư mục dist\
     )
 ) else (
-    echo [INFO] Chưa tìm thấy Inno Setup 6. Gói ứng dụng chuẩn (.zip và thư mục) đã có sẵn trong dist\
-    echo (Nếu muốn tạo file Setup.exe nguyên khối, bạn có thể cài: winget install JRSoftware.InnoSetup)
+    echo [INFO] Chưa tìm thấy Inno Setup 6. Gói ứng dụng chuẩn [.zip và thư mục] đã có sẵn trong dist\
+    echo [INFO] Neu muon tao file Setup.exe nguyen khoi, co the cai: winget install JRSoftware.InnoSetup
 )
 
 echo.

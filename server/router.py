@@ -341,16 +341,19 @@ def handle_get_ask(handler, parsed, ip):
         search_method = "voyage_vector"
         merged = {}
 
+        def _norm_search_id(item):
+            rid = str(item.get("id") or item.get("doc_id") or (item.get("jira") or {}).get("key") or item.get("title") or "")
+            if rid.startswith(("jira:", "jira-")):
+                return "jira-" + re.sub(r"^jira[:-]", "", rid)
+            if rid.startswith(("product:", "product-", "pim-", "pim:")):
+                return "product-" + re.sub(r"^(product|pim)[:-]", "", rid)
+            if rid.startswith(("record:", "record-")):
+                return re.sub(r"^record[:-]", "", rid)
+            return rid
+
         # 1. AI 벡터 검색 결과 (의미/문맥 기반 기본 뼈대, sim * 2.5 가중치 부여)
         for r in v_candidates:
-            rid = str(r.get("id") or r.get("doc_id") or r.get("title"))
-            if rid.startswith("jira:"):
-                rid = "jira-" + rid[5:]
-            elif rid.startswith("product:"):
-                rid = "product-" + rid[8:]
-            elif rid.startswith("record:"):
-                rid = rid[7:]
-
+            rid = _norm_search_id(r)
             sim = r.get("similarity", 0)
             score = sim * 2.5
             assignee = str(r.get("assignee") or r.get("ownerName") or "")
@@ -360,11 +363,7 @@ def handle_get_ask(handler, parsed, ip):
 
         # 2. 키워드 검색 결과 (보조 가중치, 상위 랭크별 0.05 ~ 0.4점)
         for idx, r in enumerate(k_candidates):
-            rid = str(r.get("id") or (r.get("jira") or {}).get("key") or r.get("title"))
-            if rid.startswith("jira:"):
-                rid = "jira-" + rid[5:]
-            elif rid.startswith("product:"):
-                rid = "product-" + rid[8:]
+            rid = _norm_search_id(r)
 
             k_score = max(0.05, (10 - idx) * 0.04)
             assignee = str(r.get("assignee") or r.get("ownerName") or "")
