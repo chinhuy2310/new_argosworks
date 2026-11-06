@@ -79,16 +79,54 @@ def handle_get_report_download(handler, parsed, ip):
 
     filename = qs.get("file", [""])[0]
 
-    if not filename:
-        handler._send_json(400, {"ok": False, "error": "파일명이 필요합니다."})
-        return
+    # Reconstruct filename if parsed.query was split by unencoded '&' (e.g. 'R&D_...')
+    candidates = []
+    if filename:
+        candidates.append(filename)
+    if "file=" in (parsed.query or ""):
+        raw_part = parsed.query.split("file=", 1)[1]
+        candidates.append(raw_part)
+        candidates.append(urllib.parse.unquote(raw_part))
 
-    # Prevent directory traversal
-    safe_name = os.path.basename(filename)
     reports_dir = os.path.join(DATA_DIR, "reports")
-    file_path = os.path.join(reports_dir, safe_name)
+    file_path = None
+    safe_name = None
 
-    if not os.path.isfile(file_path):
+    for cand in candidates:
+        if not cand:
+            continue
+        base = os.path.basename(cand).strip()
+        p = os.path.join(reports_dir, base)
+        if os.path.isfile(p):
+            file_path = p
+            safe_name = base
+            break
+        unq = os.path.basename(urllib.parse.unquote(base)).strip()
+        p_unq = os.path.join(reports_dir, unq)
+        if os.path.isfile(p_unq):
+            file_path = p_unq
+            safe_name = unq
+            break
+
+    # If still not found, check Unicode NFC normalization against existing files in reports_dir
+    if not file_path and os.path.isdir(reports_dir):
+        import unicodedata
+        try:
+            existing_files = os.listdir(reports_dir)
+            norm_map = {unicodedata.normalize("NFC", f): f for f in existing_files}
+            for cand in candidates:
+                cand_norm = unicodedata.normalize("NFC", os.path.basename(urllib.parse.unquote(cand)).strip())
+                if cand_norm in norm_map:
+                    matched_file = norm_map[cand_norm]
+                    matched_path = os.path.join(reports_dir, matched_file)
+                    if os.path.isfile(matched_path):
+                        file_path = matched_path
+                        safe_name = matched_file
+                        break
+        except Exception:
+            pass
+
+    if not file_path or not os.path.isfile(file_path):
         handler._send_json(404, {"ok": False, "error": "보고서 파일을 찾을 수 없습니다."})
         return
 
