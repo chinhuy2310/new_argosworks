@@ -412,7 +412,7 @@ def handle_get_ask(handler, parsed, ip):
                     if target_id not in merged:
                         merged[target_id] = {"item": r, "score": 0.75}
 
-        sorted_items = sorted(merged.values(), key=lambda x: (x["item"].get("similarity") or 0, x["score"]), reverse=True)
+        sorted_items = sorted(merged.values(), key=lambda x: (x["score"], x["item"].get("similarity") or 0), reverse=True)
 
         # 특정 인물(matched_name) 질의 시 해당 인물과 관련된 항목(score >= 2.0) 우선
         if matched_name:
