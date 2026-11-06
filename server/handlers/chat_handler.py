@@ -382,9 +382,9 @@ def handle_chat_stream(handler, raw_body, ip):
     if not chat_intent.get("requires_action"):
         system_prompt += (
             "\n\n## Action safety\n"
-            "The current user request is not an explicit business-action request. "
-            "Do not emit an :::action-proposal block or imply that a task should be created. "
-            "Answer the question or perform only the requested read/search operation."
+            "The user query is primarily informational or read/search focused. "
+            "Provide helpful, direct answers. Only emit an :::action-proposal block "
+            "when the user explicitly requests creating, updating, or performing a business action."
         )
     
     history_chars = sum(len(str(h.get("content") or "")) for h in history)

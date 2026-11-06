@@ -190,7 +190,7 @@ def fetch_all_jira_issue_comments(j, issue_key, initial_comment_obj=None, timeou
             batch = data.get("comments") or []
             if not batch:
                 if total is not None and len(comments) < total:
-                    raise RuntimeError(f"Jira trả về trang rỗng trước khi tải hết comment của {issue_key}: {len(comments)}/{total}")
+                    log_line(f"[Jira] Thông báo: Jira báo total={total} comment nhưng trả về {len(comments)} comment (có thể do quyền hạn hoặc comment bị xóa): {issue_key}")
                 break
             comments.extend(batch)
             total = data.get("total", len(comments))
@@ -200,7 +200,7 @@ def fetch_all_jira_issue_comments(j, issue_key, initial_comment_obj=None, timeou
             raise RuntimeError(f"Phân trang comment thất bại cho {issue_key}: {e}") from e
 
     if total is not None and len(comments) < total:
-        raise RuntimeError(f"Snapshot comment không hoàn chỉnh cho {issue_key}: {len(comments)}/{total}")
+        log_line(f"[Jira] Cảnh báo: Snapshot comment nhận được ({len(comments)}/{total}) cho {issue_key}, tiếp tục xử lý với các comment đã tải.")
 
     return comments
 
@@ -232,7 +232,7 @@ def fetch_all_jira_issue_changelog(j, issue_key, initial_cl_obj=None, timeout=10
             batch = data.get("values") or data.get("histories") or []
             if not batch:
                 if total is not None and len(histories) < min(total, max_histories):
-                    raise RuntimeError(f"Jira trả về trang rỗng trước khi tải hết changelog của {issue_key}: {len(histories)}/{total}")
+                    log_line(f"[Jira] Thông báo: Jira báo total={total} changelog nhưng chỉ tải được {len(histories)} histories: {issue_key}")
                 break
             histories.extend(batch)
             total = data.get("total", len(histories))
@@ -244,7 +244,7 @@ def fetch_all_jira_issue_changelog(j, issue_key, initial_cl_obj=None, timeout=10
             raise RuntimeError(f"Phân trang changelog thất bại cho {issue_key}: {e}") from e
 
     if total is not None and len(histories) < min(total, max_histories):
-        raise RuntimeError(f"Snapshot changelog không hoàn chỉnh cho {issue_key}: {len(histories)}/{total}")
+        log_line(f"[Jira] Cảnh báo: Snapshot changelog nhận được ({len(histories)}/{total}) cho {issue_key}, tiếp tục với dữ liệu hiện có.")
 
     return histories
 
@@ -715,8 +715,7 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None,
             try:
                 raw_comments = fetch_all_jira_issue_comments(j, key, raw_comment_obj)
             except Exception as e:
-                log_line(f"[Jira] Không thể lấy đủ comment của issue {key} — từ chối snapshot để giữ cache an toàn:", e)
-                return (None, None, False) if return_complete_flag else (None, None)
+                log_line(f"[Jira] Không thể lấy thêm comment bổ sung của issue {key}, sử dụng danh sách comment ban đầu ({len(raw_comments)}):", e)
         for c in raw_comments:
             c_author = (c.get("author") or {}).get("displayName") or "사용자"
             c_body = _adf_to_text(c.get("body")) if isinstance(c.get("body"), dict) else str(c.get("body") or "")
@@ -818,8 +817,7 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None,
             try:
                 cl_histories = fetch_all_jira_issue_changelog(j, key, cl)
             except Exception as e:
-                log_line(f"[Jira] Không thể lấy đủ changelog của issue {key} — từ chối snapshot để giữ cache an toàn:", e)
-                return (None, None, False) if return_complete_flag else (None, None)
+                log_line(f"[Jira] Không thể lấy thêm changelog bổ sung của issue {key}, sử dụng changelog ban đầu ({len(cl_histories)}):", e)
         for h in cl_histories:
             h_id = h.get("id") or str(len(activities))
             author_name = (h.get("author") or {}).get("displayName") or "Jira 사용자"
