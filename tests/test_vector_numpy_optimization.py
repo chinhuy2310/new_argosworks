@@ -3,8 +3,9 @@
 
 import json
 import sqlite3
-import numpy as np
 import pytest
+
+np = pytest.importorskip("numpy")
 
 from services import vector_store
 
