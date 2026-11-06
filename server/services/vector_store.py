@@ -186,6 +186,60 @@ def get_embedding_provider_info(cfg):
     }
 
 
+def get_embedding_identity(cfg):
+    """
+    임베딩 공간(Embedding Space)의 유일한 식별자(Fingerprint) 반환.
+    동일한 모델명이라도 Provider나 Base URL(Ollama/Custom)이 다르면 다른 공간으로 취급함.
+    형식:
+      - Cloud (voyage, openai, gemini): 'provider:model' (예: 'openai:text-embedding-3-small')
+      - Local/Custom (ollama, custom): 'provider:model@url_hash' (예: 'custom:nomic-embed-text@8f1a2b')
+    """
+    p_info = get_embedding_provider_info(cfg)
+    prov = (p_info.get("provider") or "voyage").lower().strip()
+    model = (p_info.get("model") or "voyage-3-lite").strip()
+    base_url = (p_info.get("base_url") or "").strip().rstrip("/")
+
+    if prov in ("custom", "ollama") and base_url:
+        norm_url = base_url.lower()
+        url_hash = hashlib.sha256(norm_url.encode("utf-8")).hexdigest()[:8]
+        return f"{prov}:{model}@{url_hash}"
+
+    return f"{prov}:{model}"
+
+
+def is_matching_embedding_identity(saved_identity, current_identity, provider, model):
+    """
+    저장된 임베딩 식별자와 현재 식별자가 일치하는지 검사.
+    하위 호환성: 레거시(콜론 없음, 예: 'voyage-3-lite')이고 provider가 'voyage'인 경우 호환 인정.
+    """
+    if not saved_identity:
+        return False
+    if saved_identity == current_identity:
+        return True
+    if ":" not in saved_identity and provider == "voyage" and saved_identity == model:
+        return True
+    return False
+
+
+def get_search_embedding_identities(cfg):
+    """
+    검색 시 허용되는 embedding_model 값 목록 반환.
+    현재 identity와 레거시 호환 값(콜론 없는 순수 model 이름)을 포함.
+    """
+    current_ident = get_embedding_identity(cfg)
+    p_info = get_embedding_provider_info(cfg)
+    prov = (p_info.get("provider") or "voyage").lower().strip()
+    model = (p_info.get("model") or "voyage-3-lite").strip()
+
+    allowed = [current_ident]
+    if prov == "voyage":
+        if model not in allowed:
+            allowed.append(model)
+        if "voyage-3-lite" not in allowed:
+            allowed.append("voyage-3-lite")
+    return allowed
+
+
 def _execute_embedding_http(provider_info, key, texts, input_type="document", timeout=30):
     """
     단일 API Key로 지정된 제공자의 HTTP 임베딩 API를 1회 호출하고 임베딩 벡터 목록 반환.
@@ -693,12 +747,16 @@ def check_vector_sync_status(cfg):
         return {"ok": False, "reason": "voyage_not_configured"}
 
     init_vector_db()
-    current_model = cfg.get("voyage", {}).get("model") or "voyage-3-lite"
+    current_ident = get_embedding_identity(cfg)
+    p_info = get_embedding_provider_info(cfg)
+    prov = (p_info.get("provider") or "voyage").lower().strip()
+    model_name = (p_info.get("model") or "voyage-3-lite").strip()
+
     docs = _collect_all_documents(cfg)
     if not docs:
         return {
             "ok": True,
-            "current_model": current_model,
+            "current_model": current_ident,
             "total": 0,
             "synced": 0,
             "missing": 0,
@@ -725,7 +783,7 @@ def check_vector_sync_status(cfg):
             doc_id = d["doc_id"]
             if doc_id in existing:
                 rec = existing[doc_id]
-                if rec["model"] != current_model:
+                if not is_matching_embedding_identity(rec["model"], current_ident, prov, model_name):
                     diff_model += 1
                     missing += 1
                 elif rec["hash"] != chash:
@@ -737,7 +795,7 @@ def check_vector_sync_status(cfg):
 
         return {
             "ok": True,
-            "current_model": current_model,
+            "current_model": current_ident,
             "total": len(docs),
             "synced": synced,
             "missing": missing,
@@ -763,7 +821,10 @@ def sync_all_vectors(cfg, force=False):
     try:
         t0 = time.time()
         init_vector_db()
-        current_model = cfg.get("voyage", {}).get("model") or "voyage-3-lite"
+        current_ident = get_embedding_identity(cfg)
+        p_info = get_embedding_provider_info(cfg)
+        prov = (p_info.get("provider") or "voyage").lower().strip()
+        model_name = (p_info.get("model") or "voyage-3-lite").strip()
 
         try:
             docs, failed_sources = _collect_all_documents(cfg, strict=True, return_failed_sources=True)
@@ -771,7 +832,7 @@ def sync_all_vectors(cfg, force=False):
             log_line(f"[Vector Store] Strict 동기화 중단 (문서 삭제 방지): {sync_err}")
             return {"ok": False, "error": str(sync_err)}
         if not docs and not failed_sources:
-            return {"ok": True, "indexed": 0, "skipped": 0, "total": 0, "current_model": current_model}
+            return {"ok": True, "indexed": 0, "skipped": 0, "total": 0, "current_model": current_ident}
 
         conn = get_db_connection()
         try:
@@ -790,7 +851,8 @@ def sync_all_vectors(cfg, force=False):
                 chash = hashlib.sha256(d["content"].encode("utf-8")).hexdigest()
                 d["content_hash"] = chash
                 doc_id = d["doc_id"]
-                if not force and doc_id in existing and existing[doc_id]["hash"] == chash and existing[doc_id]["model"] == current_model:
+                is_model_match = doc_id in existing and is_matching_embedding_identity(existing[doc_id]["model"], current_ident, prov, model_name)
+                if not force and is_model_match and existing[doc_id]["hash"] == chash:
                     skipped += 1
                 else:
                     to_embed.append(d)
@@ -806,7 +868,7 @@ def sync_all_vectors(cfg, force=False):
                     inter_batch_delay = max(1.0, 22.0 / num_keys)
                 else:
                     inter_batch_delay = 0.5
-                log_line(f"[Vector Store] 색인 시작: {p_info['provider'].upper()} ({current_model}) 총 {len(to_embed)}건, 등록된 API Key {num_keys}개, 배치 크기 {BATCH_SIZE}, 간격 {inter_batch_delay:.1f}초")
+                log_line(f"[Vector Store] 색인 시작: {p_info['provider'].upper()} ({current_ident}) 총 {len(to_embed)}건, 등록된 API Key {num_keys}개, 배치 크기 {BATCH_SIZE}, 간격 {inter_batch_delay:.1f}초")
 
                 for i in range(0, len(to_embed), BATCH_SIZE):
                     if i > 0 and inter_batch_delay > 0:
@@ -861,7 +923,7 @@ def sync_all_vectors(cfg, force=False):
                                 dim,
                                 json.dumps(item["metadata"], ensure_ascii=False),
                                 now_str,
-                                current_model
+                                current_ident
                             ))
                         conn.commit()
                     indexed += len(batch)
@@ -883,7 +945,7 @@ def sync_all_vectors(cfg, force=False):
 
             duration = round(time.time() - t0, 2)
             if failed_doc_ids:
-                log_line(f"[Vector Store] 동기화 부분 실패: 전체 {len(docs)}건 중 {len(failed_doc_ids)}건 임베딩 실패 ({duration}초, 모델: {current_model})")
+                log_line(f"[Vector Store] 동기화 부분 실패: 전체 {len(docs)}건 중 {len(failed_doc_ids)}건 임베딩 실패 ({duration}초, 모델: {current_ident})")
                 return {
                     "ok": False,
                     "partial": True,
@@ -894,17 +956,17 @@ def sync_all_vectors(cfg, force=False):
                     "failed_doc_ids": failed_doc_ids,
                     "total": len(docs),
                     "duration_sec": duration,
-                    "current_model": current_model
+                    "current_model": current_ident
                 }
 
-            log_line(f"[Vector Store] 동기화 완료: 신규 {indexed}건, 스킵 {skipped}건, 총 {len(docs)}건 ({duration}초, 모델: {current_model})")
+            log_line(f"[Vector Store] 동기화 완료: 신규 {indexed}건, 스킵 {skipped}건, 총 {len(docs)}건 ({duration}초, 모델: {current_ident})")
             return {
                 "ok": True,
                 "indexed": indexed,
                 "skipped": skipped,
                 "total": len(docs),
                 "duration_sec": duration,
-                "current_model": current_model
+                "current_model": current_ident
             }
         finally:
             conn.close()
@@ -1123,13 +1185,19 @@ def search_vector_store(cfg, query_text, limit=6, min_similarity=0.42, session=N
     conn = get_db_connection()
     q_dim = len(query_vec)
 
-    current_model = cfg.get("voyage", {}).get("model") or "voyage-3-lite"
+    allowed_models = get_search_embedding_identities(cfg)
+    p_info = get_embedding_provider_info(cfg)
+    prov = (p_info.get("provider") or "voyage").lower().strip()
+    placeholders = ",".join("?" for _ in allowed_models)
+    null_clause = "OR embedding_model IS NULL" if prov == "voyage" else ""
+
     try:
-        rows = conn.execute("""
+        sql = f"""
             SELECT doc_id, doc_type, title, content, vector_blob, dim, metadata_json
             FROM document_embeddings
-            WHERE dim = ? AND (embedding_model = ? OR embedding_model IS NULL);
-        """, (q_dim, current_model)).fetchall()
+            WHERE dim = ? AND (embedding_model IN ({placeholders}) {null_clause});
+        """
+        rows = conn.execute(sql, [q_dim] + allowed_models).fetchall()
 
         if not rows:
             # 저장된 다른 차원의 벡터가 있는지 검사하여 모델 변경 경고
