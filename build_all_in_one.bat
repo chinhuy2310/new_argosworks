@@ -58,15 +58,15 @@ if not defined ISCC_PATH (
 )
 
 if defined ISCC_PATH (
-    echo Đang tạo file cài đặt Windows Setup.exe (All-In-One) qua Inno Setup...
+    echo Đang tạo file cài đặt Windows Setup.exe [All-In-One] qua Inno Setup...
     "%ISCC_PATH%" /DBuildType=ai installer\argosworks_setup.iss
     if not errorlevel 1 (
         echo.
         echo [THÀNH CÔNG] File cài đặt Setup All-In-One đã được tạo trong thư mục dist\
     )
 ) else (
-    echo [INFO] Chưa tìm thấy Inno Setup 6. Gói All-In-One (.zip và thư mục) đã có sẵn trong dist\
-    echo (Nếu muốn tạo file Setup.exe nguyên khối, bạn có thể cài: winget install JRSoftware.InnoSetup)
+    echo [INFO] Chưa tìm thấy Inno Setup 6. Gói All-In-One [.zip và thư mục] đã có sẵn trong dist\
+    echo [INFO] Neu muon tao file Setup.exe nguyen khoi, co the cai: winget install JRSoftware.InnoSetup
 )
 
 echo.

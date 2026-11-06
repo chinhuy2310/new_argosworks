@@ -93,6 +93,7 @@ def get_voyage_api_keys(cfg):
     Voyage/Embedding API 키 반환 (단일 키 리스트)
     """
     voyage_cfg = cfg.get("voyage") or {}
+    provider = (voyage_cfg.get("provider") or os.environ.get("VOYAGE_PROVIDER") or "voyage").lower().strip()
     raw = (
         voyage_cfg.get("api_key")
         or voyage_cfg.get("api_keys")
@@ -100,11 +101,27 @@ def get_voyage_api_keys(cfg):
         or os.environ.get("VOYAGE_API_KEYS")
         or ""
     )
+    keys = []
     if isinstance(raw, list):
-        return [k.strip() for k in raw if isinstance(k, str) and k.strip()]
+        keys = [k.strip() for k in raw if isinstance(k, str) and k.strip()]
     elif isinstance(raw, str):
-        return [k.strip() for k in re.split(r"[,;\n\r]+", raw) if k.strip()]
-    return []
+        keys = [k.strip() for k in re.split(r"[,;\n\r]+", raw) if k.strip()]
+
+    # Provider mismatch protection:
+    # If provider is gemini but keys are clearly Voyage keys (pa-...) or empty, fallback to ai.api_key
+    if provider == "gemini":
+        has_gemini_key = any(k.startswith("AQ.") or not k.startswith("pa-") for k in keys)
+        if not keys or not has_gemini_key:
+            ai_key_raw = (cfg.get("ai") or {}).get("api_key") or os.environ.get("GEMINI_API_KEY") or ""
+            if ai_key_raw:
+                if isinstance(ai_key_raw, list):
+                    keys = [k.strip() for k in ai_key_raw if isinstance(k, str) and k.strip()]
+                else:
+                    keys = [k.strip() for k in re.split(r"[,;\n\r]+", str(ai_key_raw)) if k.strip()]
+    elif provider == "voyage":
+        # If provider is voyage but keys are gemini (AQ....), filter them out
+        keys = [k for k in keys if not k.startswith("AQ.")]
+    return keys
 
 
 def is_voyage_configured(cfg):
