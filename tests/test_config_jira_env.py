@@ -91,3 +91,10 @@ class TestJiraProjectMapEnv:
     def test_invalid_json_is_ignored(self, isolated_config, broken):
         isolated_config.setenv("JIRA_PROJECT_MAP", broken)
         assert server_config.load_config()["jira"]["project_map"] == {}
+
+    def test_single_quoted_python_dict_fallback(self, isolated_config):
+        isolated_config.setenv(
+            "JIRA_PROJECT_MAP", "{'lab': {'project_key': 'VS', 'issue_type': ''}, 'ts': {'project_key': 'TS'}}"
+        )
+        jira = server_config.load_config()["jira"]
+        assert jira["project_map"] == {'lab': {'project_key': 'VS', 'issue_type': ''}, 'ts': {'project_key': 'TS'}}

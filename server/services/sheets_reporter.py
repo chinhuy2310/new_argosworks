@@ -121,11 +121,20 @@ def _classify_jira_records_contextually(cfg, jira_records):
                         if 0 <= idx_val < len(jira_records):
                             rec = jira_records[idx_val]
                             rid = id(rec)
-                            results[rid] = (
-                                item.get("category", "연구"),
-                                item.get("task", "연구"),
-                                item.get("type", "일간")
-                            )
+                            cat = item.get("category", "연구")
+                            task = item.get("task", "연구")
+                            r_type = item.get("type", "일간")
+
+                            # B2B Hierarchy Preservation:
+                            # If ticket has an authoritative parent project/contract/epic (e.g. MAS, KC, IP, TEL),
+                            # keep parentSummary as the task_name (업무명) instead of letting a generic
+                            # subtask title or hardware model name overwrite it.
+                            parent_s = str(rec.get("parentSummary") or rec.get("project") or "").strip()
+                            rec_title = str(rec.get("title") or "").strip()
+                            if parent_s and (not task or task == rec_title or task == "일반업무" or rec.get("isSubtask")):
+                                task = parent_s
+
+                            results[rid] = (cat, task, r_type)
                     ai_success = True
     except Exception as e:
         log_line(f"[Report] AI 문맥 분류 중 예외 발생, 맥락 규칙으로 대체: {e}")
@@ -361,6 +370,93 @@ def _resolve_and_filter_sheet_rows(sheet_rows, start_date, end_date):
     return filtered
 
 
+def _deduplicate_and_merge_report_rows(rows):
+    """B2B Weekly Report Row Deduplication & Aggregation:
+    1. Deduplicates multiple tickets/records for the same task in the weekly period
+       (same assignee, same project/task name, and same subtask title).
+    2. Merges progressive daily updates (comments, status, progress) into a unified weekly record.
+    3. Preserves distinct subtasks under different parent projects (e.g. MAS vs KC vs IP).
+    """
+    if not rows:
+        return []
+
+    merged = []
+    seen_indices = {}
+
+    for r in rows:
+        r_copy = dict(r)
+        assignee = _clean_assignees(r_copy.get('담당자', '') or '')
+        assignee_names = _person_names(assignee)
+        assignee_key = assignee_names[0] if assignee_names else assignee.strip()
+        task_name = (r_copy.get('업무명', '') or '').strip()
+        subtask_title = (r_copy.get('세부 업무명', '') or '').strip()
+        jira_key = (r_copy.get('_jira_key', '') or '').strip().upper()
+
+        group_key = (assignee_key, task_name.lower(), subtask_title.lower())
+
+        if group_key in seen_indices:
+            idx = seen_indices[group_key]
+            target = merged[idx]
+
+            # 1. Update date to latest date in the period
+            curr_date = str(target.get('일자', '') or '')
+            new_date = str(r_copy.get('일자', '') or '')
+            if new_date and (not curr_date or new_date > curr_date):
+                target['일자'] = new_date
+
+            # 2. Update progress to highest progress
+            try:
+                curr_prog = int(target.get('진척(%)', 0))
+            except Exception:
+                curr_prog = 0
+            try:
+                new_prog = int(r_copy.get('진척(%)', 0))
+            except Exception:
+                new_prog = 0
+            target['진척(%)'] = str(max(curr_prog, new_prog))
+
+            # 3. Status: '완료' takes precedence, otherwise preserve latest
+            curr_status = target.get('상태', '')
+            new_status = r_copy.get('상태', '')
+            if curr_status in ['완료', 'done'] or new_status in ['완료', 'done']:
+                target['상태'] = '완료'
+            elif new_status and not curr_status:
+                target['상태'] = new_status
+
+            # 4. Merge details and comments cleanly without duplicating text lines
+            target_desc = (target.get('상세내용', '') or '').strip()
+            new_desc = (r_copy.get('상세내용', '') or '').strip()
+
+            if new_desc and new_desc != target_desc:
+                if not target_desc:
+                    target['상세내용'] = new_desc
+                elif target_desc == subtask_title and new_desc != subtask_title:
+                    target['상세내용'] = new_desc
+                elif new_desc != subtask_title:
+                    existing_lines = [ln.strip() for ln in target_desc.split('\n') if ln.strip()]
+                    to_add = [ln for ln in new_desc.split('\n') if ln.strip() and ln.strip() not in existing_lines]
+                    if to_add:
+                        target['상세내용'] = target_desc + "\n" + "\n".join(to_add)
+
+            # 5. Metadata fields
+            if not target.get('마감일') and r_copy.get('마감일'):
+                target['마감일'] = r_copy['마감일']
+            if not target.get('사유(지연시)') and r_copy.get('사유(지연시)'):
+                target['사유(지연시)'] = r_copy['사유(지연시)']
+            if not target.get('다음 계획') and r_copy.get('다음 계획'):
+                target['다음 계획'] = r_copy['다음 계획']
+
+            # 6. Combined Jira key references
+            if jira_key and jira_key not in (target.get('_jira_key', '') or ''):
+                curr_jk = target.get('_jira_key', '')
+                target['_jira_key'] = f"{curr_jk}, {jira_key}" if curr_jk else jira_key
+
+        else:
+            seen_indices[group_key] = len(merged)
+            merged.append(r_copy)
+
+    return merged
+
 def generate_weekly_report(cfg, assignee='all', period='this_week', start_date=None, end_date=None, lang='ko'):
     today = datetime.now()
     if period == 'this_week':
@@ -406,6 +502,9 @@ def generate_weekly_report(cfg, assignee='all', period='this_week', start_date=N
     for i, j_row in enumerate(jira_rows):
         if i not in used_jira:
             final_rows.append(j_row)
+    
+    # B2B Deduplication & Aggregation
+    final_rows = _deduplicate_and_merge_report_rows(final_rows)
     
     # 담당자 필터 (직함 유무와 관계없이 이름으로 비교)
     if assignee and assignee != 'all':
