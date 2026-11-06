@@ -187,6 +187,10 @@ def merged_records(cfg):
         r_copy = dict(r)
         r_copy["isLocal"] = True
         j_key = ((r_copy.get("jira") or {}).get("key") or "").strip().upper()
+        if not j_key:
+            code_cand = (r_copy.get("cardCode") or "").strip().upper().lstrip("#")
+            if code_cand in jira_by_key:
+                j_key = code_cand
 
         if j_key and j_key in jira_by_key:
             claimed_jira_keys.add(j_key)

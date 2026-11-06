@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """config.py — 경로·상수·설정 로드 (JARVIS 백엔드 서버)"""
 
+import ast
 import json
 import os
 import re
@@ -250,12 +251,35 @@ def load_config():
         parsed_map = None
         try:
             parsed_map = json.loads(raw_project_map)
-        except Exception as e:
-            log_line("JIRA_PROJECT_MAP 값이 올바른 JSON이 아니어서 무시했습니다:", e)
+        except Exception as json_err:
+            try:
+                evaluated = ast.literal_eval(raw_project_map)
+                if isinstance(evaluated, dict):
+                    parsed_map = evaluated
+                else:
+                    log_line("JIRA_PROJECT_MAP 값이 JSON 객체가 아니어서 무시했습니다.")
+            except Exception:
+                log_line("JIRA_PROJECT_MAP 값이 올바른 JSON이 아니어서 무시했습니다:", json_err)
         if isinstance(parsed_map, dict):
             jira_cfg['project_map'] = parsed_map
         elif parsed_map is not None:
             log_line("JIRA_PROJECT_MAP 값이 JSON 객체가 아니어서 무시했습니다.")
+
+    # JIRA_USER_ALIASES: JSON object or Python dict
+    raw_user_aliases = (os.environ.get('JIRA_USER_ALIASES') or '').strip()
+    if raw_user_aliases:
+        parsed_aliases = None
+        try:
+            parsed_aliases = json.loads(raw_user_aliases)
+        except Exception:
+            try:
+                evaluated = ast.literal_eval(raw_user_aliases)
+                if isinstance(evaluated, dict):
+                    parsed_aliases = evaluated
+            except Exception:
+                pass
+        if isinstance(parsed_aliases, dict):
+            jira_cfg['user_aliases'] = parsed_aliases
 
     # AI Configuration (Universal AI)
     ai_cfg = cfg.setdefault('ai', {

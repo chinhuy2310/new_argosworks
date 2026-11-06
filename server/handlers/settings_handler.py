@@ -3,6 +3,7 @@
 """settings_handler.py — API 및 시스템 연동(AI, Voyage AI, Jira) 설정 관리 핸들러"""
 
 import os
+import ast
 import json
 import time
 import urllib.request
@@ -77,6 +78,26 @@ def _resolve_submitted_secret(key_name, submitted_val, current_real_val):
     return val_str
 
 
+def _serialize_env_value(val_obj):
+    if isinstance(val_obj, (dict, list)):
+        return json.dumps(val_obj, ensure_ascii=False)
+    if isinstance(val_obj, str):
+        trimmed = val_obj.strip()
+        if (trimmed.startswith("{") and trimmed.endswith("}")) or (trimmed.startswith("[") and trimmed.endswith("]")):
+            try:
+                json.loads(trimmed)
+                return trimmed
+            except Exception:
+                try:
+                    evaluated = ast.literal_eval(trimmed)
+                    if isinstance(evaluated, (dict, list)):
+                        return json.dumps(evaluated, ensure_ascii=False)
+                except Exception:
+                    pass
+        return trimmed
+    return str(val_obj).strip()
+
+
 def _write_env_updates(updates):
     """Write updates to .env file preserving existing formatting/comments"""
     existing_lines = []
@@ -100,7 +121,7 @@ def _write_env_updates(updates):
         k, _, _ = trimmed.partition("=")
         key = k.strip()
         if key in updates:
-            raw_val = str(updates[key]).strip()
+            raw_val = _serialize_env_value(updates[key])
             # Resolve secrets if key is sensitive and contains masked placeholder
             if key in SENSITIVE_KEYS:
                 current_real = env_dict.get(key, os.environ.get(key, ""))
@@ -123,7 +144,7 @@ def _write_env_updates(updates):
     # Append any brand new keys
     for k, v in updates.items():
         if k not in updated_keys:
-            raw_val = str(v).strip()
+            raw_val = _serialize_env_value(v)
             if k in SENSITIVE_KEYS:
                 current_real = env_dict.get(k, os.environ.get(k, ""))
                 val = _resolve_submitted_secret(k, raw_val, current_real)
@@ -394,7 +415,12 @@ def handle_post_settings(handler, raw_body, ip):
             try:
                 raw_map = json.loads(raw_map)
             except Exception:
-                pass
+                try:
+                    evaluated = ast.literal_eval(raw_map)
+                    if isinstance(evaluated, dict):
+                        raw_map = evaluated
+                except Exception:
+                    pass
         if isinstance(raw_map, dict):
             cfg.setdefault("jira", {})["project_map"] = raw_map
 
@@ -412,7 +438,14 @@ def handle_post_settings(handler, raw_body, ip):
 
             except Exception:
 
-                raw_aliases = {}
+                try:
+                    evaluated = ast.literal_eval(raw_aliases) if raw_aliases.strip() else {}
+                    if isinstance(evaluated, dict):
+                        raw_aliases = evaluated
+                    else:
+                        raw_aliases = {}
+                except Exception:
+                    raw_aliases = {}
 
         if isinstance(raw_aliases, dict):
 

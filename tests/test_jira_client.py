@@ -435,6 +435,7 @@ class TestConcurrentSyncAndSafeWatermark:
         and sets last_sync_time to the sync START time, not completion time.
         """
         import time
+        from datetime import datetime
         from unittest.mock import MagicMock
         from services import jira_db
 
@@ -451,8 +452,9 @@ class TestConcurrentSyncAndSafeWatermark:
 
         monkeypatch.setattr(jira_client, "jira_search_issues", mock_search)
         monkeypatch.setattr(jira_client, "jira_fetch_project_categories", lambda cfg, pk: [])
+        monkeypatch.setattr(jira_client, "verify_jira_projects_access", lambda *a, **kw: (True, {}))
         monkeypatch.setattr(jira_db, "get_last_sync_time", lambda: "2026-11-05T12:00:00")
-        monkeypatch.setattr(jira_db, "get_last_full_sync_time", lambda: "2026-11-05T11:00:00")
+        monkeypatch.setattr(jira_db, "get_last_full_sync_time", lambda: datetime.now().isoformat())
         monkeypatch.setattr(jira_db, "set_last_sync_time", mock_set_cursor)
 
         cfg = _cfg()
