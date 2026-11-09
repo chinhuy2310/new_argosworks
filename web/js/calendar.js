@@ -263,9 +263,13 @@ function syncScheduleSidebarWithMainMenu(isSchedSidebarOpen){
 }
 window.syncScheduleSidebarWithMainMenu = syncScheduleSidebarWithMainMenu;
 
-var isSidebarCollapsed = localStorage.getItem("jarvis_cal_sidebar_collapsed") === "true";
-if(schedMembersSidebar && isSidebarCollapsed){
-  schedMembersSidebar.classList.add("is-collapsed");
+var isSidebarCollapsed = (window.innerWidth <= 992) || (localStorage.getItem("jarvis_cal_sidebar_collapsed") === "true");
+if(schedMembersSidebar){
+  if(isSidebarCollapsed){
+    schedMembersSidebar.classList.add("is-collapsed");
+  } else {
+    schedMembersSidebar.classList.remove("is-collapsed");
+  }
 }
 if(btnToggleMembersSidebar){
   btnToggleMembersSidebar.addEventListener("click", function(){
@@ -294,8 +298,8 @@ document.addEventListener("click", function(e){
   }
 });
 
-// ── Right Task Panel Preference & Event Handlers (Default: Open) ──
-var isTaskPanelCollapsed = localStorage.getItem("jarvis_cal_tasks_collapsed_v3") === "true";
+// ── Right Task Panel Preference & Event Handlers (Default: Collapsed on Mobile, Open on Desktop) ──
+var isTaskPanelCollapsed = (window.innerWidth <= 992) || (localStorage.getItem("jarvis_cal_tasks_collapsed_v3") === "true");
 if(schedTaskDrawer){
   if(isTaskPanelCollapsed){
     schedTaskDrawer.classList.add("is-collapsed");
@@ -542,7 +546,7 @@ function renderLocalTaskDrawer(){
         '</div>'
       ) : '') +
       '<div class="stc-footer">' +
-        '<span class="stc-user">' + (submitter ? '👤 ' + submitter : '') + '</span>' +
+        '<span class="stc-user">' + (submitter ? '' + submitter : '') + '</span>' +
         '<button type="button" class="stc-assign-btn" data-task-id="' + code + '" data-task-title="' + title + '" data-task-date="' + escapeHtml(planDateText) + '" title="' + (planDateText ? (isEn ? 'Place or edit with planned date' : '기존 계획일정으로 달력에 배치 또는 수정') : (isEn ? 'Assign date' : '날짜 직접 지정')) + '">' + (isEn ? 'Assign' : '배정') + '</button>' +
       '</div>' +
     '</div>';
@@ -1441,12 +1445,12 @@ function startEditEventForm(ev){
       var link = (ev.jira && ev.jira.url)
         ? ' <a href="' + escapeHtml(ev.jira.url) + '" target="_blank" rel="noopener">' + escapeHtml(ev.jira.key || "") + ' 열기</a>'
         : "";
-      schedFormError.innerHTML = "🔗 Jira에서 자동으로 연동된 일정입니다. 수정·삭제는 Jira에서 해주세요." + link;
+      schedFormError.innerHTML = "Jira에서 자동으로 연동된 일정입니다. 수정·삭제는 Jira에서 해주세요." + link;
     } else if(isLocal){
       var cardCode = ev.cardCode || ev.id;
-      schedFormError.innerHTML = '💼 로컬 업무 카드 <span style="font-weight:700;color:var(--tab-schedule);cursor:pointer;" onclick="window.showIssueInCanvas && window.showIssueInCanvas(\'' + escapeHtml(cardCode) + '\')">[' + escapeHtml(cardCode) + ']</span>와 연결된 일정입니다.';
+      schedFormError.innerHTML = '로컬 업무 카드 <span style="font-weight:700;color:var(--tab-schedule);cursor:pointer;" onclick="window.showIssueInCanvas && window.showIssueInCanvas(\'' + escapeHtml(cardCode) + '\')">[' + escapeHtml(cardCode) + ']</span>와 연결된 일정입니다.';
     } else if(isOtherUser){
-      schedFormError.textContent = "👤 " + (ev.ownerName || "동료") + " 님의 일정입니다. 등록자만 수정·삭제할 수 있습니다.";
+      schedFormError.textContent = "" + (ev.ownerName || "동료") + " 님의 일정입니다. 등록자만 수정·삭제할 수 있습니다.";
     } else {
       schedFormError.textContent = "";
     }
@@ -2208,7 +2212,7 @@ function renderAgendaView(){
 
   if(!matchingEvents.length){
     schedAgendaList.innerHTML = '<div class="empty-state" style="padding:48px 16px;text-align:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;">' +
-      '<div style="font-size:32px;margin-bottom:8px;">📅</div>' +
+      '<div style="font-size:32px;margin-bottom:8px;"></div>' +
       '<div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px;">등록된 일정이 없습니다.</div>' +
       '<div style="font-size:12.5px;color:var(--ink-faint);">우측 상단의 "+ 일정 추가" 버튼을 눌러 새 일정을 등록해보세요.</div>' +
     '</div>';
@@ -2255,7 +2259,7 @@ function renderAgendaView(){
 
       var partsText = "";
       if(ev.participants && ev.participants.length > 1){
-        partsText = ' <span style="font-size:11px;color:var(--tab-schedule);opacity:0.9;">👥 ' +
+        partsText = ' <span style="font-size:11px;color:var(--tab-schedule);opacity:0.9;">' +
           ev.participants.map(function(p){ return escapeHtml(p.name); }).join(", ") + '</span>';
       }
 
@@ -2275,7 +2279,7 @@ function renderAgendaView(){
       html += '</div>';
 
       html += '<div class="agenda-item-meta" style="font-size:11.5px;color:var(--ink-faint);flex-shrink:0;">' +
-        (isJira ? '🔗 Jira' : range) +
+        (isJira ? 'Jira' : range) +
       '</div>';
       html += '</div>';
     });
@@ -2295,7 +2299,7 @@ function renderSchedDayList(){
   } else {
     evs.forEach(function(ev){
       var range = ev.startDate === ev.endDate ? ev.startDate : (ev.startDate + " ~ " + ev.endDate);
-      var jiraNote = ev.source === "jira" ? '<br><span class="sd-range">🔗 Jira 자동 연동' + (ev.jira && ev.jira.key ? " · " + escapeHtml(ev.jira.key) : "") + '</span>' : "";
+      var jiraNote = ev.source === "jira" ? '<br><span class="sd-range">Jira 자동 연동' + (ev.jira && ev.jira.key ? " · " + escapeHtml(ev.jira.key) : "") + '</span>' : "";
       var ownerTag = ev.ownerName ? ('<span style="font-size:11px;font-weight:600;color:var(--ink-soft);background:var(--code-bg);padding:1px 6px;border-radius:4px;margin-right:6px;">' + escapeHtml(ev.ownerName) + '</span>') : "";
       var isMe = ev.ownerKey === myUserKey;
 
@@ -2304,7 +2308,7 @@ function renderSchedDayList(){
         var others = ev.participants.filter(function(p){ return p.key !== ev.ownerKey; });
         if(others.length > 0){
           var names = others.map(function(p){ return escapeHtml(p.name); }).join(", ");
-          participantsBadge = '<br><span class="sd-range" style="color:var(--tab-schedule);">👥 동반: ' + names + '</span>';
+          participantsBadge = '<br><span class="sd-range" style="color:var(--tab-schedule);">동반: ' + names + '</span>';
         }
       }
 
@@ -2357,7 +2361,7 @@ function openDayEventsModal(dateStr){
 
       var partsText = "";
       if(ev.participants && ev.participants.length > 1){
-        partsText = ' <span style="font-size:11px;color:var(--tab-schedule);opacity:0.9;">👥 ' +
+        partsText = ' <span style="font-size:11px;color:var(--tab-schedule);opacity:0.9;">' +
           ev.participants.map(function(p){ return escapeHtml(p.name); }).join(", ") + '</span>';
       }
 
@@ -2380,7 +2384,7 @@ function openDayEventsModal(dateStr){
       html += '</div>';
 
       html += '<div class="agenda-item-meta" style="font-size:11.5px;color:var(--ink-faint);flex-shrink:0;">' +
-        (isJira ? '🔗 Jira' : range) +
+        (isJira ? 'Jira' : range) +
       '</div>';
       html += '</div>';
     });
@@ -2446,7 +2450,7 @@ function assignTaskToDate(taskId, targetDate, endDate){
     var jiraActive = window.__JIRA_STATUS__ ? window.__JIRA_STATUS__.enabled : false;
     var jiraNotice = (jiraActive && res.data.jiraKey) ? (" (Jira: " + res.data.jiraKey + " 백그라운드 동기화)") : "";
     if(typeof showToast === "function"){
-      showToast("💼 업무 카드 [" + code + "] 일정이 " + rangeNotice + "로 배정되었습니다." + jiraNotice);
+      showToast("업무 카드 [" + code + "] 일정이 " + rangeNotice + "로 배정되었습니다." + jiraNotice);
     }
     notifyScheduleChanged();
     loadSchedule();
@@ -2532,7 +2536,7 @@ function deleteCustomScheduleEvent(id){
       return;
     }
     var title = (ev && ev.title) ? (" [" + ev.title + "]") : "";
-    if(typeof showToast === "function") showToast("🗑️ 일정" + title + "이(가) 삭제되었습니다.");
+    if(typeof showToast === "function") showToast("️ 일정" + title + "이(가) 삭제되었습니다.");
     loadSchedule();
   }).catch(function(){
     if(typeof showToast === "function") showToast("서버 통신 중 오류가 발생했습니다.");
@@ -2554,7 +2558,7 @@ function showScheduleTask(taskId){
     }
     var code = res.data.cardCode || taskId;
     if(typeof showToast === "function"){
-      showToast("📅 업무 카드 [" + code + "] 일정이 달력에 활성화되었습니다.");
+      showToast("업무 카드 [" + code + "] 일정이 달력에 활성화되었습니다.");
     }
     notifyScheduleChanged();
     loadSchedule();

@@ -2,7 +2,10 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#12161a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>ARGOS WORKS</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
@@ -10,17 +13,17 @@
 <script src="js/tom-select.complete.min.js"></script>
 
 <link rel="stylesheet" href="css/variables.css?v=4.2">
-<link rel="stylesheet" href="css/layout.css?v=6.1">
-<link rel="stylesheet" href="css/dashboard.css?v=7.6">
-<link rel="stylesheet" href="css/form.css?v=4.7">
-<link rel="stylesheet" href="css/calendar.css?v=9.7">
-<link rel="stylesheet" href="css/pim.css?v=4.5">
-<link rel="stylesheet" href="css/home.css?v=5.6">
+<link rel="stylesheet" href="css/layout.css?v=6.4">
+<link rel="stylesheet" href="css/dashboard.css?v=7.7">
+<link rel="stylesheet" href="css/form.css?v=4.9">
+<link rel="stylesheet" href="css/calendar.css?v=10.1">
+<link rel="stylesheet" href="css/pim.css?v=5.0">
+<link rel="stylesheet" href="css/home.css?v=5.8">
 <link rel="stylesheet" href="css/settings.css?v=4.6">
 <link rel="stylesheet" href="css/history.css?v=1.2">
-<link rel="stylesheet" href="css/components.css?v=4.3">
-<link rel="stylesheet" href="css/chat.css?v=2.2">
-<link rel="stylesheet" href="css/canvas.css?v=3.2">
+<link rel="stylesheet" href="css/components.css?v=4.4">
+<link rel="stylesheet" href="css/chat.css?v=2.3">
+<link rel="stylesheet" href="css/canvas.css?v=3.3">
 <script>
   window.updatePrioritySelectColor = function(selectEl){
     if(!selectEl) return;
@@ -74,6 +77,19 @@
 <!-- DaouOffice-style Vertical Left Sidebar (LNB) -->
 <aside class="daou-sidebar" id="daouSidebar">
   <!-- Vertical Nav Items -->
+  <!-- Mobile Sidebar Drawer Header -->
+  <div class="sidebar-mobile-header" id="sidebarMobileHeader">
+    <div class="sidebar-mobile-brand">
+      <svg width="22" height="22" viewBox="0 0 200 200" aria-hidden="true">
+        <path d="M100 38 L146 144" fill="none" stroke="#4e9fc8" stroke-width="24" stroke-linecap="round"/>
+        <path d="M100 38 L54 144" fill="none" stroke="#9ad4e8" stroke-width="24" stroke-linecap="round"/>
+        <rect x="75" y="120" width="50" height="15" rx="7.5" fill="#b6dcef"/>
+      </svg>
+      <span>ARGOS WORKS</span>
+    </div>
+    <button type="button" class="sidebar-mobile-close-btn" id="sidebarMobileCloseBtn" aria-label="메뉴 닫기" title="닫기">✕</button>
+  </div>
+
   <div class="sidebar-nav">
     <div class="sidebar-section-title" data-i18n="nav.main_section">메인 업무</div>
     <nav class="tabs" role="tablist" aria-label="일반 화면 전환">
@@ -829,8 +845,7 @@
               <span class="sched-weekend-label" data-i18n="sched.toggle_weekend">주말</span>
             </label>
 
-            <button type="button" class="btn-toggle-task-panel active" id="btnToggleTaskDrawer" title="미배정 업무 보관함 열기/접기">
-              <span class="btn-ttp-icon">📋</span>
+            <button type="button" class="btn-toggle-task-panel" id="btnToggleTaskDrawer" title="미배정 업무 보관함 열기/접기">
               <span class="btn-ttp-label" data-i18n="sched.btn_drawer">보관함</span>
               <span class="btn-ttp-count">(<span id="schedTaskCount">0</span>)</span>
             </button>
@@ -880,10 +895,9 @@
       </main>
 
       <!-- ============ RIGHT SIDEBAR: DRAGGABLE TASK PANEL (우측 업무 카드 보관함) ============ -->
-      <aside class="schedule-task-panel" id="schedTaskDrawer">
+      <aside class="schedule-task-panel is-collapsed" id="schedTaskDrawer">
         <div class="std-panel-header">
           <div class="std-title-wrap">
-            <span class="std-icon">📋</span>
             <span class="std-title" data-i18n="sched.drawer_title">업무 보관함</span>
             <span class="std-count-badge" id="schedTaskBadgeCount">0건</span>
           </div>
@@ -893,7 +907,7 @@
           <input type="text" id="schedTaskSearch" data-i18n-ph="sched.drawer_search_ph" placeholder="카드 코드 또는 제목 검색…" autocomplete="off">
         </div>
         <div class="std-hint-banner">
-          <span data-i18n="sched.drawer_tip">💡 카드를 마우스로 끌거나, [배정] 버튼으로 즉시 원하는 날짜에 배치하세요!</span>
+          <span data-i18n="sched.drawer_tip">카드를 마우스로 끌거나, [배정] 버튼으로 원하는 날짜에 배치하세요.</span>
         </div>
         <div class="schedule-task-cards-list" id="schedTaskCardsList">
           <div class="empty-state" style="padding:14px;font-size:12px;">불러오는 중…</div>
@@ -906,7 +920,6 @@
       <div class="sched-modal-card" id="schedEventModalCard" role="dialog" aria-modal="true" aria-labelledby="schedModalTitle">
         <div class="sched-modal-header">
           <div class="sched-modal-title-wrap">
-            <span class="sched-modal-icon">📅</span>
             <h3 class="sched-modal-title" id="schedModalTitle" data-i18n="sched.modal_title_create">새 일정 추가</h3>
           </div>
           <button type="button" class="sched-modal-close" id="schedModalCloseBtn" title="닫기 (Esc)">✕</button>
@@ -1114,168 +1127,177 @@
       <div class="pim-modal-card pim-form-modal-card">
         <div class="pim-modal-header">
           <div class="pim-modal-title-wrap">
+            <span class="pim-modal-badge" id="pimFormTypeBadge">PIM</span>
             <h2 class="pim-modal-model" id="pimFormTitle">신규 제품 등록</h2>
           </div>
           <button type="button" class="pim-modal-close" id="pimFormCloseBtn" aria-label="닫기">✕</button>
         </div>
         <form id="pimForm" class="pim-form-modal-form">
-          <div class="pim-modal-body pim-form-modal-body" style="display: flex; flex-direction: column; gap: 18px;">
+          <div class="pim-modal-body pim-form-modal-body" style="display: flex; flex-direction: column; gap: 16px;">
             <input type="hidden" id="pimId">
             <input type="hidden" id="pimRevision" value="0">
 
-            <!-- SECTION 1: 기본 식별 정보 (Core Identification) -->
-            <div class="pim-form-section" style="background: var(--bg-hover, rgba(0,0,0,0.02)); border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; padding: 14px 16px;">
-              <div style="font-size: 13.5px; font-weight: 700; color: var(--ink); margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
-                <span>📌</span> 1. 기본 식별 정보
-              </div>
-              <div class="field-row" style="margin-bottom: 12px;">
-                <div class="field" style="margin: 0;">
-                  <label for="pimModelInput" style="font-weight: 600;">제품 코드 / 모델명 <span class="req" style="color:#ef4444;">*</span></label>
-                  <input type="text" id="pimModelInput" placeholder="예: CAM-5000 / SW-AI-V1" required>
-                </div>
-                <div class="field" style="margin: 0;">
-                  <label for="pimDisplayNameInput" style="font-weight: 600;">제품명 <span class="req" style="color:#ef4444;">*</span></label>
-                  <input type="text" id="pimDisplayNameInput" placeholder="예: 5MP AI Dome Camera" required>
-                </div>
-              </div>
-              <div class="field-row">
-                <div class="field" style="margin: 0;">
-                  <label for="pimCategorySelect" style="font-weight: 600;">제품 카테고리</label>
-                  <select id="pimCategorySelect"></select>
-                </div>
-                <div class="field" style="margin: 0;">
-                  <label for="pimFamilyInput">브랜드 / 제품군 <span class="optional">(선택)</span></label>
-                  <input type="text" id="pimFamilyInput" placeholder="예: ARGOS / Vision Series">
-                </div>
-              </div>
-
-              <!-- 제품 대표 이미지 -->
-              <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border-color, #e2e8f0);">
-                <label style="font-weight: 600; font-size: 13px; display: block; margin-bottom: 6px;">
-                  🖼️ 제품 대표 이미지 <span class="optional">(선택)</span>
-                </label>
-                <div style="display: flex; gap: 14px; align-items: center;">
-                  <div id="pimImagePreviewBox" style="width: 72px; height: 72px; border-radius: 8px; border: 1px dashed var(--border-color, #cbd5e1); background: var(--card-bg, #fff); display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; flex-shrink: 0;">
-                    <img id="pimImagePreview" src="" alt="미리보기" style="width: 100%; height: 100%; object-fit: cover; display: none;">
-                    <span id="pimImagePlaceholder" style="font-size: 24px; color: var(--ink-faint, #94a3b8);">📷</span>
+            <!-- Phần trên: Bố cục 2 cột cân đối cho thông tin cơ bản & hình ảnh/bán hàng -->
+            <div class="pim-form-grid">
+              <!-- Cột trái: Thông tin cơ bản & Giới thiệu -->
+              <div class="pim-form-col-main">
+                <!-- 기본 식별 정보 -->
+                <div class="pim-form-section">
+                  <div class="pim-form-section-title">
+                    <span class="title-text">기본 식별 정보</span>
                   </div>
-                  <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
-                    <input type="file" id="pimImageInput" accept="image/*" style="display: none;">
-                    <div style="display: flex; gap: 8px;">
-                      <button type="button" class="btn-secondary" id="pimSelectImageBtn" style="padding: 5px 12px; font-size: 12px;">사진 선택 / 변경</button>
-                      <button type="button" class="btn-secondary" id="pimRemoveImageBtn" style="padding: 5px 10px; font-size: 12px; display: none; color: #ef4444;">사진 제거</button>
+                  <div class="field-row" style="margin-bottom: 12px;">
+                    <div class="field" style="margin: 0;">
+                      <label for="pimModelInput" style="font-weight: 600;">제품 코드 / 모델명 <span class="req" style="color:#ef4444;">*</span></label>
+                      <input type="text" id="pimModelInput" placeholder="예: CAM-5000 / SW-AI-V1" required>
                     </div>
-                    <span style="font-size: 11px; color: var(--ink-faint, #64748b);">JPG, PNG, WebP 지원 · 제품 카드와 상세보기에 메인 사진으로 표시됩니다.</span>
+                    <div class="field" style="margin: 0;">
+                      <label for="pimDisplayNameInput" style="font-weight: 600;">제품명 <span class="req" style="color:#ef4444;">*</span></label>
+                      <input type="text" id="pimDisplayNameInput" placeholder="예: 5MP AI Dome Camera" required>
+                    </div>
+                  </div>
+                  <div class="field-row">
+                    <div class="field" style="margin: 0;">
+                      <label for="pimCategorySelect" style="font-weight: 600;">제품 카테고리</label>
+                      <select id="pimCategorySelect"></select>
+                    </div>
+                    <div class="field" style="margin: 0;">
+                      <label for="pimFamilyInput">브랜드 / 제품군 <span class="optional">(선택)</span></label>
+                      <input type="text" id="pimFamilyInput" placeholder="예: ARGOS / Vision Series">
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 설명 및 소개 -->
+                <div class="pim-form-section">
+                  <div class="pim-form-section-title">
+                    <span class="title-text">설명 및 소개</span>
+                  </div>
+                  <div class="field" style="margin-bottom: 12px;">
+                    <label for="pimSummaryInput">핵심 요약 <span class="optional">(선택, 주요 특징 및 사양 요약)</span></label>
+                    <textarea id="pimSummaryInput" placeholder="고객 및 사내 직원이 쉽게 이해할 수 있는 제품 특징 및 요약 (줄바꿈 지원)" style="min-height: 90px; height: 100px; line-height: 1.5; resize: vertical;"></textarea>
+                  </div>
+                  <div class="field" style="margin: 0;">
+                    <label for="pimMemoInput">상세 메모 / 내부 참고사항 <span class="optional">(선택)</span></label>
+                    <textarea id="pimMemoInput" placeholder="담당자만 보는 기술 배경, 출시 히스토리, 참고사항" style="min-height: 70px; height: 80px; line-height: 1.5; resize: vertical;"></textarea>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <!-- SECTION 2: 영업 및 상태 -->
-            <div class="pim-form-section" style="background: var(--bg-hover, rgba(0,0,0,0.02)); border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; padding: 14px 16px;">
-              <div style="font-size: 13.5px; font-weight: 700; color: var(--ink); margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
-                <span>💼</span> 2. 영업 및 상태
-              </div>
-              <div class="field-row" style="gap: 10px;">
-                <div class="field" style="margin: 0; flex: 0 0 120px; max-width: 130px;">
-                  <label for="pimLifecycleSelect">판매 상태</label>
-                  <select id="pimLifecycleSelect" style="padding: 8px 8px; font-size: 13px;">
-                    <option value="판매 중">판매 중</option>
-                    <option value="단종 예정">단종 예정</option>
-                    <option value="단종">단종</option>
-                  </select>
+              <!-- Cột phải: Ảnh đại diện, Bán hàng & Giá, 조달, Đính kèm -->
+              <div class="pim-form-col-side">
+                <!-- 제품 대표 이미지 -->
+                <div class="pim-form-section">
+                  <div class="pim-form-section-title">
+                    <span class="title-text">제품 대표 이미지</span>
+                    <span class="optional" style="font-size: 11px; font-weight: normal;">(선택)</span>
+                  </div>
+                  <div style="display: flex; gap: 14px; align-items: center;">
+                    <div id="pimImagePreviewBox" style="width: 76px; height: 76px; border-radius: 8px; border: 1.5px dashed var(--line-strong); background: var(--code-bg); display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; flex-shrink: 0;">
+                      <img id="pimImagePreview" src="" alt="미리보기" style="width: 100%; height: 100%; object-fit: cover; display: none;">
+                      <span id="pimImagePlaceholder" style="font-size: 26px; color: var(--ink-faint); user-select: none;">📷</span>
+                    </div>
+                    <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+                      <input type="file" id="pimImageInput" accept="image/*" style="display: none;">
+                      <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <button type="button" class="btn-secondary" id="pimSelectImageBtn" style="padding: 5px 11px; font-size: 11.5px;">사진 선택</button>
+                        <button type="button" class="btn-secondary" id="pimRemoveImageBtn" style="padding: 5px 9px; font-size: 11.5px; display: none; color: #ef4444; border-color: rgba(239,68,68,0.25);">제거</button>
+                      </div>
+                      <span style="font-size: 10.5px; color: var(--ink-faint); line-height: 1.35;">JPG, PNG, WebP 지원 · 메인 사진 표시</span>
+                    </div>
+                  </div>
                 </div>
-                <div class="field" style="margin: 0; flex: 1; min-width: 0;">
-                  <label for="pimPriceInput">기준 가격 <span class="optional">(선택)</span></label>
-                  <div style="display: flex; gap: 6px; align-items: center; width: 100%;">
-                    <input type="number" id="pimPriceInput" min="0" step="1" placeholder="0" style="flex: 1; min-width: 0; width: 0; box-sizing: border-box;">
-                    <select id="pimCurrencySelect" style="min-width: 74px; width: auto; max-width: 95px; flex-shrink: 0; padding: 8px 6px; font-size: 13px; box-sizing: border-box;" title="통화 단위">
-                      <option value="KRW">KRW</option>
-                      <option value="USD">USD</option>
-                      <option value="OTHER">직접 입력...</option>
+
+                <!-- 영업 및 상태 -->
+                <div class="pim-form-section">
+                  <div class="pim-form-section-title">
+                    <span class="title-text">영업 및 상태</span>
+                  </div>
+                  <div class="field" style="margin-bottom: 10px;">
+                    <label for="pimLifecycleSelect" style="font-weight: 600;">판매 상태</label>
+                    <select id="pimLifecycleSelect" style="padding: 8px 10px; font-size: 13px;">
+                      <option value="판매 중">판매 중</option>
+                      <option value="단종 예정">단종 예정</option>
+                      <option value="단종">단종</option>
                     </select>
                   </div>
-                  <div id="pimCurrencyCustomWrap" style="display: none; margin-top: 6px; width: 100%;">
-                    <input type="text" id="pimCurrencyCustomInput" placeholder="통화 코드 (예: VND, EUR)" maxlength="10" style="width: 100%; box-sizing: border-box; text-transform: uppercase; font-size: 12px; padding: 6px 10px;" autocomplete="off">
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- SECTION 3: 설명 및 소개 -->
-            <div class="pim-form-section" style="background: var(--bg-hover, rgba(0,0,0,0.02)); border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; padding: 14px 16px;">
-              <div style="font-size: 13.5px; font-weight: 700; color: var(--ink); margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
-                <span>📝</span> 3. 설명 및 소개
-              </div>
-              <div class="field" style="margin-bottom: 12px;">
-                <label for="pimSummaryInput">핵심 요약 <span class="optional">(선택, 1-2줄 요약)</span></label>
-                <textarea id="pimSummaryInput" placeholder="고객 및 사내 직원이 쉽게 이해할 수 있는 제품 한 줄 요약" style="min-height: 50px;"></textarea>
-              </div>
-              <div class="field" style="margin: 0;">
-                <label for="pimMemoInput">상세 메모 / 내부 참고사항 <span class="optional">(선택)</span></label>
-                <textarea id="pimMemoInput" placeholder="담당자만 보는 기술 배경, 출시 히스토리, 참고사항" style="min-height: 50px;"></textarea>
-              </div>
-            </div>
-
-            <!-- SECTION 4: 상세 기술 사양 -->
-            <div class="pim-form-section" style="background: var(--bg-hover, rgba(0,0,0,0.02)); border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; padding: 14px 16px;">
-              <div style="font-size: 13.5px; font-weight: 700; color: var(--ink); margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
-                <div style="display: flex; align-items: center; gap: 6px;">
-                  <span>⚙️</span> 4. 상세 기술 사양
-                </div>
-                <button type="button" class="btn-secondary" id="pimAddCustomSpecBtn" style="padding: 3px 8px; font-size: 11px; font-weight: 600;">＋ 규격 항목 추가</button>
-              </div>
-              <p style="margin: 0 0 10px 0; font-size: 11px; color: var(--ink-faint, #64748b);">카테고리별 표준 사양을 입력하거나, 상단의 [+ 규격 항목 추가] 버튼으로 자유롭게 항목을 추가할 수 있습니다.</p>
-              <div id="pimSpecFields"></div>
-              <div id="pimCustomSpecsList" style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;"></div>
-            </div>
-
-            <!-- SECTION 5: 첨부파일 및 문서 -->
-            <div class="pim-form-section" style="background: var(--bg-hover, rgba(0,0,0,0.02)); border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; padding: 14px 16px;">
-              <div style="font-size: 13.5px; font-weight: 700; color: var(--ink); margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
-                <span>📎</span> 5. 관련 첨부파일 및 문서
-              </div>
-              <div class="field" style="margin: 0;">
-                <label for="pimAttachInput" style="font-size: 12px; color: var(--ink-faint, #64748b); margin-bottom: 6px; display: block;">카탈로그, 제품 설명서(PDF), 매뉴얼, 공인 시험성적서, 도면, ZIP 파일 등</label>
-                <input type="file" id="pimAttachInput" multiple style="margin-top: 4px;">
-                <div class="pim-attach-list" id="pimAttachList" style="margin-top: 8px;"></div>
-              </div>
-            </div>
-
-            <!-- OPTIONAL: 조달 등록 전용 필드 (G2B Procurement - Collapsible Details) -->
-            <details style="background: var(--bg-hover, rgba(0,0,0,0.01)); border: 1px dashed var(--border-color, #cbd5e1); border-radius: 8px; padding: 10px 14px; font-size: 12px;">
-              <summary style="cursor: pointer; font-weight: 600; color: var(--ink-faint, #64748b);">
-                🏛️ 공공 조달 등록 정보 (G2B 조달청 등록 제품인 경우에만 클릭하여 입력)
-              </summary>
-              <div style="margin-top: 12px;">
-                <div class="checkbox-field" style="margin-bottom: 12px;">
-                  <input type="checkbox" id="pimProcureCheck">
-                  <label for="pimProcureCheck" style="margin: 0; font-weight: 600;">조달 등록 제품으로 관리</label>
-                </div>
-                <div id="pimProcureFields" hidden>
-                  <div class="field" style="margin-bottom: 10px;">
-                    <label for="pimRegNameInput">조달 등록 식별명</label>
-                    <input type="text" id="pimRegNameInput" placeholder="예: VSM-C2008-09">
-                  </div>
-                  <div class="field-row" style="margin-bottom: 10px;">
-                    <div class="field" style="margin: 0;">
-                      <label for="pimIdNoInput">물품식별번호 (8자리)</label>
-                      <input type="text" id="pimIdNoInput" placeholder="예: 24122535" maxlength="8">
+                  <div class="field" style="margin: 0;">
+                    <label for="pimPriceInput" style="font-weight: 600;">기준 가격 <span class="optional">(선택)</span></label>
+                    <div style="display: flex; gap: 6px; align-items: center; width: 100%;">
+                      <input type="number" id="pimPriceInput" min="0" step="1" placeholder="0" style="flex: 1; min-width: 0; width: 0; box-sizing: border-box;">
+                      <select id="pimCurrencySelect" style="min-width: 76px; width: auto; max-width: 95px; flex-shrink: 0; padding: 8px 6px; font-size: 13px; box-sizing: border-box;" title="통화 단위">
+                        <option value="KRW">KRW</option>
+                        <option value="USD">USD</option>
+                        <option value="OTHER">직접 입력...</option>
+                      </select>
                     </div>
-                    <div class="field" style="margin: 0;">
-                      <label for="pimConfigInput">공급 구성</label>
-                      <input type="text" id="pimConfigInput" placeholder="예: 본체 + 케이블">
+                    <div id="pimCurrencyCustomWrap" style="display: none; margin-top: 6px; width: 100%;">
+                      <input type="text" id="pimCurrencyCustomInput" placeholder="통화 코드 (예: VND, EUR)" maxlength="10" style="width: 100%; box-sizing: border-box; text-transform: uppercase; font-size: 12px; padding: 6px 10px;" autocomplete="off">
                     </div>
                   </div>
                 </div>
+
+                <!-- 공공 조달 등록 정보 (G2B) -->
+                <details class="pim-form-details">
+                  <summary style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+                    <span>🏛️ 공공 조달 정보 (G2B)</span>
+                    <span style="font-size: 11px; font-weight: normal; color: var(--ink-faint);">선택 사항 ▾</span>
+                  </summary>
+                  <div style="margin-top: 12px;">
+                    <div class="checkbox-field" style="margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                      <input type="checkbox" id="pimProcureCheck">
+                      <label for="pimProcureCheck" style="margin: 0; font-weight: 600; cursor: pointer;">조달 등록 제품으로 관리</label>
+                    </div>
+                    <div id="pimProcureFields" hidden>
+                      <div class="field" style="margin-bottom: 10px;">
+                        <label for="pimRegNameInput">조달 등록 식별명</label>
+                        <input type="text" id="pimRegNameInput" placeholder="예: VSM-C2008-09">
+                      </div>
+                      <div class="field-row" style="margin-bottom: 10px; gap: 8px;">
+                        <div class="field" style="margin: 0; flex: 1;">
+                          <label for="pimIdNoInput">물품식별번호</label>
+                          <input type="text" id="pimIdNoInput" placeholder="예: 24122535" maxlength="8">
+                        </div>
+                        <div class="field" style="margin: 0; flex: 1;">
+                          <label for="pimConfigInput">공급 구성</label>
+                          <input type="text" id="pimConfigInput" placeholder="예: 본체 + 케이블">
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </details>
+
+                <!-- 첨부파일 및 문서 -->
+                <div class="pim-form-section">
+                  <div class="pim-form-section-title">
+                    <span class="title-text">관련 첨부파일 및 문서</span>
+                  </div>
+                  <div class="field" style="margin: 0;">
+                    <label for="pimAttachInput" style="font-size: 11.5px; color: var(--ink-faint); margin-bottom: 6px; display: block;">카탈로그, 설명서(PDF), 매뉴얼, 성적서, 도면 등</label>
+                    <input type="file" id="pimAttachInput" multiple style="width: 100%; font-size: 12px;">
+                    <div class="pim-attach-list" id="pimAttachList" style="margin-top: 8px;"></div>
+                  </div>
+                </div>
               </div>
-            </details>
+            </div>
+
+            <!-- Phần dưới: 상세 기술 사양 (그룹별) - CHIẾM TRỌN 100% CHIỀU RỘNG RỘNG RÃI -->
+            <div class="pim-form-section" style="width: 100%; box-sizing: border-box;">
+              <div class="pim-form-section-title">
+                <span class="title-text" style="font-size: 14px;">상세 기술 사양 (그룹별 규격)</span>
+                <button type="button" class="btn-secondary" id="pimAddSpecGroupBtn" style="padding: 5px 12px; font-size: 12px; font-weight: 600;">＋ 새 사양 그룹 추가</button>
+              </div>
+              <p style="margin: 0 0 12px 0; font-size: 11.5px; color: var(--ink-faint);">카메라, 렌즈, 비디오 등 기능 그룹별로 규격 항목과 상세 사양을 자유롭고 넓게 입력할 수 있습니다.</p>
+              <div id="pimSpecFields" style="display:none;"></div>
+              <div id="pimSpecGroupsContainer" style="display: flex; flex-direction: column; gap: 10px;"></div>
+              <button type="button" class="btn-secondary" id="pimAddSpecGroupBottomBtn" style="width: 100%; border: 1.5px dashed var(--line-strong); background: var(--code-bg); padding: 10px 14px; font-size: 12.5px; font-weight: 600; border-radius: 6px; cursor: pointer; margin-top: 10px;">＋ 새 사양 그룹 추가 (카메라, 렌즈, 비디오, 네트워크 등)</button>
+            </div>
 
             <p class="form-error" id="pimFormError"></p>
           </div>
           <div class="pim-modal-footer">
             <button type="button" class="btn-secondary" id="pimFormDismissBtn">취소</button>
-            <button type="submit" class="btn-primary" id="pimSaveBtn">등록</button>
+            <button type="submit" class="btn-primary" id="pimSaveBtn">저장</button>
           </div>
         </form>
       </div>
@@ -2408,6 +2430,51 @@
 </div><!-- /.page -->
 </main><!-- /.main-viewport -->
 
+<!-- Mobile Bottom Navigation Bar (Visible on mobile/small screens <= 768px) -->
+<nav class="mobile-bottom-nav" id="mobileBottomNav" aria-label="모바일 하단 탐색">
+  <button type="button" class="mobile-nav-btn active" data-tab="home" id="mNavHome" aria-label="홈">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+      <polyline points="9 22 9 12 15 12 15 22"></polyline>
+    </svg>
+    <span class="m-nav-label" data-i18n="nav.home">홈</span>
+  </button>
+  <button type="button" class="mobile-nav-btn" data-tab="dash" id="mNavDash" aria-label="대시보드">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="3" y="3" width="7" height="9"></rect>
+      <rect x="14" y="3" width="7" height="5"></rect>
+      <rect x="14" y="12" width="7" height="9"></rect>
+      <rect x="3" y="16" width="7" height="5"></rect>
+    </svg>
+    <span class="m-nav-label" data-i18n="nav.dash">대시보드</span>
+  </button>
+  <button type="button" class="mobile-nav-btn" data-tab="form" id="mNavForm" aria-label="업무 등록">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+      <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+      <path d="M9 14l2 2 4-4"></path>
+    </svg>
+    <span class="m-nav-label" data-i18n="nav.jira">업무 등록</span>
+  </button>
+  <button type="button" class="mobile-nav-btn" data-tab="schedule" id="mNavSchedule" aria-label="사내 일정">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+      <line x1="16" y1="2" x2="16" y2="6"></line>
+      <line x1="8" y1="2" x2="8" y2="6"></line>
+      <line x1="3" y1="10" x2="21" y2="10"></line>
+    </svg>
+    <span class="m-nav-label" data-i18n="nav.schedule">일정</span>
+  </button>
+  <button type="button" class="mobile-nav-btn" data-action="toggle-sidebar" id="mNavMenu" aria-label="전체 메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+    <span class="m-nav-label" data-i18n="nav.toggle_menu">메뉴</span>
+  </button>
+</nav>
+
 <!-- Floating Scroll To Top Button -->
 <button id="btn-floating-scroll-top"
         class="btn-floating-scroll-top"
@@ -2520,9 +2587,9 @@
       <!-- Dynamic Content -->
     </div>
     <div class="pim-modal-footer">
-      <a href="#" target="_blank" class="btn-primary" id="pimModalPdfBtn" hidden>📄 카달로그 PDF 다운로드</a>
-      <a href="#" target="_blank" class="btn-secondary" id="pimModalWebLink" hidden>🌐 공식 원본 페이지 ↗</a>
-      <button type="button" class="btn-primary" id="pimModalEditBtn">✏️ 제품 수정</button>
+      <a href="#" target="_blank" class="btn-primary" id="pimModalPdfBtn" hidden>카달로그 PDF 다운로드</a>
+      <a href="#" target="_blank" class="btn-secondary" id="pimModalWebLink" hidden>공식 원본 페이지 ↗</a>
+      <button type="button" class="btn-primary" id="pimModalEditBtn">제품 수정</button>
       <button type="button" class="btn-secondary" id="pimModalDismissBtn">닫기</button>
     </div>
   </div>
@@ -2945,22 +3012,22 @@
 
 <div id="toast" role="status"></div>
 
-<script src="js/utils.js?v=4.4"></script>
+<script src="js/utils.js?v=4.6"></script>
 <script src="js/i18n.js?v=2.0"></script>
 <script src="js/api.js?v=5.1"></script>
 <script src="js/auth.js?v=5.1"></script>
 <script src="js/dashboard.js?v=8.5"></script>
 <script src="js/jira-form.js?v=6.4"></script>
-<script src="js/calendar.js?v=10.7"></script>
-<script src="js/home.js?v=5.7"></script>
-<script src="js/pim.js?v=5.4"></script>
+<script src="js/calendar.js?v=10.9"></script>
+<script src="js/home.js?v=5.9"></script>
+<script src="js/pim.js?v=5.7"></script>
 <script src="js/history.js?v=1.6"></script>
 <script src="js/settings.js?v=5.6"></script>
 <script src="js/settings-analytics.js?v=1.2"></script>
 <script src="js/chat.js?v=3.3"></script>
 <script src="js/canvas.js?v=7.0"></script>
-<script src="js/notifications.js?v=2.6"></script>
-<script src="js/app.js?v=7.2"></script>
+<script src="js/notifications.js?v=2.7"></script>
+<script src="js/app.js?v=7.3"></script>
 
 </body>
 </html>

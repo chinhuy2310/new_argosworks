@@ -2,7 +2,8 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#050a14">
   <title>ARGOS WORKS | Access Portal</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <style>
@@ -525,6 +526,23 @@
       letter-spacing: 2px;
       color: #475569;
       text-transform: uppercase;
+    }
+
+    /* === MOBILE RESPONSIVENESS (<= 480px) === */
+    @media (max-width: 480px) {
+      .stage-container {
+        padding: 12px;
+      }
+      .auth-card-wrapper {
+        padding: 24px 18px 26px;
+        border-radius: 20px;
+      }
+      .brand-title {
+        font-size: 20px;
+      }
+      .portal-logo-wrap {
+        margin-bottom: 12px;
+      }
     }
   </style>
 </head>

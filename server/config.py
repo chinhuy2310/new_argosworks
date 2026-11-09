@@ -378,12 +378,12 @@ def load_config():
 
     # Workspace Branding Configuration
     ws_cfg = cfg.setdefault('workspace', {
-        'name': 'JARVIS',
+        'name': 'ARGOS WORKS',
         'title': '업무 인수인계 및 AI 협업 기록 시스템',
-        'welcome_greeting': 'JARVIS에 오신 것을 환영합니다',
+        'welcome_greeting': 'ARGOS WORKS에 오신 것을 환영합니다',
         'welcome_subtitle': '연구 및 프로젝트 인수인계, 사내 업무 기록 및 실시간 AI 협업 시스템입니다.',
         'logo_url': '',
-        'footer_text': 'JARVIS System © 2026'
+        'footer_text': 'ARGOS WORKS © 2026'
     })
     if os.environ.get('WORKSPACE_NAME'):
         ws_cfg['name'] = os.environ['WORKSPACE_NAME'].strip()

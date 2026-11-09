@@ -414,7 +414,7 @@ AGENT_TOOLS = [
 
             "name": "generate_work_report",
 
-            "description": "사내 업무 카드를 바탕으로 주간/기간별 업무 보고서를 회사 양식(12열) Excel 파일로 생성한다. 전체 R&D팀 또는 특정 담당자의 업무를 일자순으로 정리한다.",
+            "description": "사내 업무 카드를 바탕으로 주간/기간별 업무 보고서를 회사 양식(12열) Excel 파일로 생성한다. 전체 부서 또는 특정 부서(R&D, 영업, 생산 등), 특정 담당자의 업무를 일자순으로 정리한다.",
 
             "parameters": {
 
@@ -422,7 +422,11 @@ AGENT_TOOLS = [
 
                 "properties": {
 
-                    "assignee": {"type": "string", "description": "담당자 이름 또는 'all' (전체, 기본값)"},
+                    "dept": {"type": "string", "description": "부서명 또는 부서 ID (예: 'R&D', '연구소', '영업', '생산', 'all'). 생략 시 전체 부서."},
+
+                    "assignee": {"type": "string", "description": "담당자 이름 또는 'all' (전체, 기본값). 주 담당자 및 참여자(participants) 포함 검색."},
+
+                    "custom_columns": {"type": "array", "items": {"type": "string"}, "description": "사용자가 요청한 맞춤형 보고서 열 목록 (예: ['Mã việc', 'Người làm', 'Điểm nghẽn', 'Kế hoạch']). 생략 시 표준 양식 사용."},
 
                     "period": {"type": "string", "description": "기간: 'this_week'(이번주, 기본값), 'last_week'(지난주), 'custom'(직접 지정)"},
 
@@ -2904,11 +2908,15 @@ def _tool_generate_work_report(args, current_user, cfg):
 
     assignee_input = args.get("assignee", "all")
 
+    dept_input = args.get("dept") or args.get("department") or args.get("org")
+
     period = args.get("period", "this_week")
 
     start_date = args.get("start_date")
 
     end_date = args.get("end_date")
+
+    lang = args.get("lang") or (current_user.get("lang") if current_user else "ko") or "ko"
 
 
 
@@ -2922,17 +2930,25 @@ def _tool_generate_work_report(args, current_user, cfg):
 
 
 
+    custom_columns = args.get("custom_columns") or args.get("columns")
+
     result = generate_weekly_report(
 
         cfg,
 
         assignee=assignee_input,
 
+        dept=dept_input,
+
         period=period,
 
         start_date=start_date,
 
         end_date=end_date,
+
+        lang=lang,
+
+        custom_columns=custom_columns,
 
     )
 
@@ -2950,15 +2966,33 @@ def _tool_generate_work_report(args, current_user, cfg):
 
         total_cnt = result.get("row_count", 0)
 
+        dept_name = result.get("department")
+
+        dept_info = f" [{dept_name}]" if dept_name else ""
+
+        if lang == "vi":
+
+            msg = f"Đã tạo thành công báo cáo công việc tuần{dept_info}. (Tổng cộng {total_cnt} việc: Google Sheets {sheet_cnt} việc + Jira/Local {jira_cnt} việc)"
+
+        elif lang == "en":
+
+            msg = f"Weekly work report{dept_info} has been generated successfully. (Total {total_cnt} items: Google Sheets {sheet_cnt} + Jira/Local {jira_cnt})"
+
+        else:
+
+            msg = f"주간 업무 보고서{dept_info}가 성공적으로 생성되었습니다. (총 {total_cnt}건: Google Sheets {sheet_cnt}건 + Jira {jira_cnt}건 통합)"
+
         return {
 
             "status": "success",
 
-            "message": f"주간 업무 보고서가 성공적으로 생성되었습니다. (총 {total_cnt}건: Google Sheets {sheet_cnt}건 + Jira {jira_cnt}건 통합)",
+            "message": msg,
 
             "filename": result.get("filename", ""),
 
             "download_url": result.get("download_url", ""),
+
+            "department": dept_name,
 
             "row_count": total_cnt,
 

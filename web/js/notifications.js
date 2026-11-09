@@ -812,12 +812,20 @@
       });
 
       evtSource.onerror = function(){
-        evtSource.close();
+        try { evtSource.close(); } catch(e){}
         // Exponential backoff: a full SSE pool must not cause a reconnect storm.
         var delay = sseRetryDelay;
         sseRetryDelay = Math.min(60000, sseRetryDelay * 2);
         setTimeout(connectNotificationSSE, delay);
       };
+
+      // Gracefully close stream on tab close / page refresh so the server slot is released immediately
+      window.addEventListener("pagehide", function(){
+        try { evtSource.close(); } catch(e){}
+      });
+      window.addEventListener("beforeunload", function(){
+        try { evtSource.close(); } catch(e){}
+      });
     }
 
     connectNotificationSSE();

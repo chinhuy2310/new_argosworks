@@ -370,3 +370,121 @@ def handle_product_category_delete(handler, raw_body, ip):
     
     access_log(ip, "product_category_delete", 200, cat_id)
     handler._send_json(200, {"ok": True, "categories": read_product_categories()})
+
+
+def handle_get_vision119_products(handler, parsed, ip):
+    session = handler._get_session_or_401()
+    if not session:
+        return
+    from urllib.parse import parse_qs
+    qs = parse_qs(parsed.query)
+    cate_id = (qs.get("cateId", ["all"])[0]).strip()
+    q = (qs.get("q", [""])[0]).strip().lower()
+
+    from config import DATA_DIR
+    json_path = os.path.join(DATA_DIR, "vision119_products.json")
+    products = []
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                products = json.load(f)
+        except Exception:
+            pass
+
+    if not products:
+        all_prods = read_products(include_external=True)
+        products = [p for p in all_prods if p.get("source") == "vision119"]
+
+    filtered = []
+    for p in products:
+        p_cate = str(p.get("cateId", ""))
+        if cate_id != "all" and p_cate != cate_id:
+            continue
+        if q:
+            m = (p.get("model") or "").lower()
+            d = (p.get("displayName") or "").lower()
+            s = (p.get("summary") or "").lower()
+            c = (p.get("category") or "").lower()
+            if q not in m and q not in d and q not in s and q not in c:
+                continue
+
+        attachments = p.get("attachments") or []
+        photo_att = next((a for a in attachments if re.search(r"\.(png|jpg|jpeg|webp)$", a.get("name", ""), re.I)), None)
+        thumb = f"/api/products/attachment?id={p['id']}&file={photo_att['name']}" if photo_att else (p.get("imageUrl") or "")
+
+        filtered.append({
+            "id": p.get("id"),
+            "bbsId": p.get("bbsId") or (p.get("id", "").replace("P-V119-", "")),
+            "cateId": p.get("cateId") or "1",
+            "model": p.get("model") or "",
+            "displayName": p.get("displayName") or "",
+            "category": p.get("category") or "",
+            "summary": p.get("summary") or "",
+            "thumb": thumb,
+            "sourceUrl": p.get("sourceUrl") or "https://vision119.com"
+        })
+
+    access_log(ip, "vision119_products_list", 200, f"cateId={cate_id} q={q} count={len(filtered)}")
+    handler._send_json(200, {"ok": True, "products": filtered, "total": len(filtered)})
+
+
+def handle_get_vision119_detail(handler, parsed, ip):
+    session = handler._get_session_or_401()
+    if not session:
+        return
+    from urllib.parse import parse_qs
+    qs = parse_qs(parsed.query)
+    bbs_id = (qs.get("bbsId", [""])[0]).strip()
+    cate_id = (qs.get("cateId", [""])[0]).strip()
+
+    if not bbs_id:
+        handler._send_json(400, {"ok": False, "error": "bbsId가 필요합니다."})
+        return
+
+    from config import DATA_DIR
+    json_path = os.path.join(DATA_DIR, "vision119_products.json")
+    products = []
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                products = json.load(f)
+        except Exception:
+            pass
+
+    target = next((p for p in products if str(p.get("bbsId")) == bbs_id or p.get("id") == f"P-V119-{bbs_id}"), None)
+    if not target:
+        all_prods = read_products(include_external=True)
+        target = next((p for p in all_prods if p.get("id") == f"P-V119-{bbs_id}" or str(p.get("bbsId")) == bbs_id), None)
+
+    if not target:
+        handler._send_json(404, {"ok": False, "error": "제품 상세 정보를 찾을 수 없습니다."})
+        return
+
+    attachments = target.get("attachments") or []
+    photo_att = next((a for a in attachments if re.search(r"\.(png|jpg|jpeg|webp)$", a.get("name", ""), re.I)), None)
+    pdf_att = next((a for a in attachments if re.search(r"\.pdf$", a.get("name", ""), re.I)), None)
+
+    img_url = f"/api/products/attachment?id={target['id']}&file={photo_att['name']}" if photo_att else (target.get("imageUrl") or "")
+    cat_pdf = f"/api/products/attachment?id={target['id']}&file={pdf_att['name']}" if pdf_att else (target.get("catalogUrl") or "")
+
+    proc = target.get("procurement") or {}
+    proc_no = proc.get("identificationNo") if isinstance(proc, dict) else None
+
+    bullets = [b.strip() for b in (target.get("summary") or "").split("\n") if b.strip()]
+
+    detail = {
+        "id": target.get("id"),
+        "model": target.get("model", ""),
+        "category": target.get("category", ""),
+        "procurementNo": proc_no,
+        "sourceUrl": target.get("sourceUrl") or f"https://vision119.com/ko/sub/04.product/sub04_01.php?cateId={cate_id or 1}&method=view&bbsId={bbs_id}",
+        "catalogPdf": cat_pdf,
+        "image": img_url,
+        "eng": target.get("displayName") or "",
+        "bullets": bullets,
+        "specs": target.get("specs") or {},
+        "specMatrix": target.get("specMatrix")
+    }
+
+    access_log(ip, "vision119_product_detail", 200, f"bbsId={bbs_id}")
+    handler._send_json(200, {"ok": True, "detail": detail})

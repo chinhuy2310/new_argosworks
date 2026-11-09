@@ -11,7 +11,7 @@
   margin-top: calc(-1 * var(--topbar-height, 52px));
   margin-left: calc(-1 * var(--sidebar-width, 220px));
   width: calc(100% + var(--sidebar-width, 220px));
-  padding: calc(var(--topbar-height, 52px) + 12px) clamp(16px, 3vw, 36px) 24px calc(var(--sidebar-width, 220px) + clamp(16px, 3vw, 36px));
+  padding: calc(var(--topbar-height, 52px) + 24px) clamp(16px, 3vw, 36px) 24px calc(var(--sidebar-width, 220px) + clamp(16px, 3vw, 36px));
   box-sizing: border-box;
   border-radius: 0;
   border: none;
@@ -970,21 +970,74 @@
   #viewHome {
     margin-left: 0 !important;
     width: 100% !important;
-    padding-left: clamp(16px, 3vw, 36px) !important;
-    padding-right: clamp(16px, 3vw, 36px) !important;
+    padding-top: calc(var(--topbar-height, 52px) + 20px) !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  .home-google-container {
+    max-width: 100% !important;
+    padding: 0 4px;
+  }
+  .home-logo-text {
+    font-size: clamp(24px, 6.8vw, 34px) !important;
+  }
+  .home-google-sub {
+    font-size: 13px !important;
+  }
+  .google-search-bar {
+    max-width: 100% !important;
+    height: 42px !important;
+    padding: 0 8px 0 14px !important;
+  }
+  .home-quick-actions {
+    gap: 6px !important;
+  }
+  .home-quick-btn {
+    padding: 5px 9px !important;
+    font-size: 12px !important;
   }
   .home-brand-footer {
     left: 50% !important;
     font-size: 11px;
     gap: 5px;
     padding: 5px 12px;
-    bottom: 10px;
+    bottom: calc(62px + env(safe-area-inset-bottom, 0px)) !important;
     max-width: 92%;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .home-brand-desc {
     display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .home-portal-section {
+    margin-top: 10px !important;
+    max-width: 100% !important;
+  }
+  .home-portal-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 6px !important;
+  }
+  .portal-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+  .portal-stat-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+  .portal-stat-item {
+    padding: 8px 6px !important;
+  }
+  .portal-stat-num {
+    font-size: 18px !important;
+  }
+  .portal-widget-card {
+    padding: 12px 14px !important;
   }
 }
 

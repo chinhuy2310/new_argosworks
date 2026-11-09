@@ -139,6 +139,28 @@
 .field textarea{ resize: vertical; min-height: 120px; line-height: 1.5; }
 .field-row{ display: flex; gap: 14px; align-items: flex-start; }
 .field-row > *{ flex: 1; min-width: 0; }
+
+@media (max-width: 768px) {
+  .field-row {
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+  .field-row > * {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  .dropzone {
+    padding: 16px 12px !important;
+  }
+  .field input[type="text"],
+  .field input[type="date"],
+  .field input[type="number"],
+  .field select,
+  .custom-date-overlay {
+    min-height: 40px !important;
+    font-size: 14px !important;
+  }
+}
 .checkbox-field{ display: flex; align-items: center; gap: 8px; margin-top: 4px; margin-bottom: 12px; }
 .checkbox-field input{ width: 16px; height: 16px; cursor: pointer; }
 .submitter-note{ font-size: 12px; color: var(--ink-faint); margin-top: -10px; margin-bottom: 16px; }

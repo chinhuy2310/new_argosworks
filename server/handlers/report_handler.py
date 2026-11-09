@@ -27,11 +27,12 @@ def handle_get_weekly_report(handler, parsed, ip):
     from urllib.parse import parse_qs
     qs = parse_qs(parsed.query)
     assignee = qs.get("assignee", ["all"])[0]
+    dept = qs.get("dept", [None])[0] or qs.get("org", [None])[0]
     period = qs.get("period", ["this_week"])[0]
     start_date = qs.get("start", [None])[0]
     end_date = qs.get("end", [None])[0]
     lang = qs.get("lang", ["ko"])[0].lower().strip()
-    if lang not in ("ko", "en"):
+    if lang not in ("ko", "en", "vi"):
         lang = "ko"
 
     try:
@@ -39,6 +40,7 @@ def handle_get_weekly_report(handler, parsed, ip):
         result = generate_weekly_report(
             handler.cfg,
             assignee=assignee,
+            dept=dept,
             period=period,
             start_date=start_date,
             end_date=end_date,
@@ -46,7 +48,7 @@ def handle_get_weekly_report(handler, parsed, ip):
         )
         if result.get("ok"):
             access_log(ip, "report_generate", 200,
-                       f"assignee={assignee} period={period} rows={result.get('row_count', 0)}")
+                       f"assignee={assignee} dept={dept} period={period} rows={result.get('row_count', 0)}")
         else:
             access_log(ip, "report_generate", 400, result.get("error", "unknown"))
 
@@ -226,7 +228,7 @@ def handle_get_sample_template_download(handler, parsed, ip):
     from services.sheets_reporter import generate_sample_template_bytes
     try:
         data = generate_sample_template_bytes(handler.cfg)
-        safe_name = "JARVIS_주간보고서_샘플템플릿.xlsx"
+        safe_name = "ARGOS_주간보고서_샘플템플릿.xlsx"
         encoded_name = urllib.parse.quote(safe_name)
         handler.send_response(200)
         handler.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

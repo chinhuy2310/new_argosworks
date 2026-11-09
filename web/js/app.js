@@ -105,6 +105,9 @@ function showTab(which, updateHash){
   } catch(e) {
     try { window.scrollTo(0, targetScroll); } catch(e2){}
   }
+  if(typeof window.updateAppScrollState === "function"){
+    window.updateAppScrollState();
+  }
 
   if(el.tabHome) { el.tabHome.classList.toggle("active", which === "home"); el.tabHome.setAttribute("aria-selected", String(which === "home")); }
   if(el.tabDash) { el.tabDash.classList.toggle("active", which === "dash"); el.tabDash.setAttribute("aria-selected", String(which === "dash")); }
@@ -114,6 +117,13 @@ function showTab(which, updateHash){
   if(el.tabChat) { el.tabChat.classList.toggle("active", which === "chat"); el.tabChat.setAttribute("aria-selected", String(which === "chat")); }
   if(el.tabHistory) { el.tabHistory.classList.toggle("active", which === "history"); el.tabHistory.setAttribute("aria-selected", String(which === "history")); }
   if(el.tabSettings) { el.tabSettings.classList.toggle("active", which === "settings"); el.tabSettings.setAttribute("aria-selected", String(which === "settings")); }
+  // Sync mobile bottom nav buttons
+  try {
+    var mNavBtns = document.querySelectorAll(".mobile-nav-btn[data-tab]");
+    for(var mi = 0; mi < mNavBtns.length; mi++){
+      mNavBtns[mi].classList.toggle("active", mNavBtns[mi].getAttribute("data-tab") === which);
+    }
+  } catch(e){}
 
   var titleEl = document.getElementById("topbarPageTitle");
   if(titleEl){
@@ -272,26 +282,46 @@ if(typeof loadDepartments === "function"){
  */
 function initScrollToTop(){
   var btn = document.getElementById("btn-floating-scroll-top");
-  if(!btn) return;
 
-  function updateButtonVisibility(){
+  function updateScrollState(){
     var scrollY = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
-    if(scrollY > 260){
-      btn.classList.add("visible");
-    } else {
-      btn.classList.remove("visible");
+    var vHome = document.getElementById("viewHome");
+    if(vHome && vHome.scrollTop > scrollY) {
+      scrollY = vHome.scrollTop;
+    }
+
+    // Toggle .is-scrolled on body to give topbar frosted background and prevent content overlap
+    document.body.classList.toggle("is-scrolled", scrollY > 6);
+
+    if(btn){
+      if(scrollY > 260){
+        btn.classList.add("visible");
+      } else {
+        btn.classList.remove("visible");
+      }
     }
   }
 
-  window.addEventListener("scroll", updateButtonVisibility, { passive: true });
-  window.addEventListener("resize", updateButtonVisibility);
+  window.addEventListener("scroll", updateScrollState, { passive: true });
+  window.addEventListener("resize", updateScrollState);
 
-  btn.addEventListener("click", function(e){
-    e.preventDefault();
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  });
+  // Also monitor scroll on #viewHome in case it has independent overflow
+  var vHome = document.getElementById("viewHome");
+  if(vHome){
+    vHome.addEventListener("scroll", updateScrollState, { passive: true });
+  }
 
-  updateButtonVisibility();
+  if(btn){
+    btn.addEventListener("click", function(e){
+      e.preventDefault();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      var vHomeEl = document.getElementById("viewHome");
+      if(vHomeEl) vHomeEl.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
+
+  window.updateAppScrollState = updateScrollState;
+  updateScrollState();
 }
 
 initScrollToTop();
@@ -324,11 +354,35 @@ function initDaouSidebarAndTheme(){
     if(window.innerWidth <= 768 && document.body.classList.contains("sidebar-mobile-open")){
       var sidebar = document.getElementById("daouSidebar");
       var toggleBtn = document.getElementById("sidebarToggleBtn");
-      if(sidebar && !sidebar.contains(e.target) && (!toggleBtn || !toggleBtn.contains(e.target))){
+      var mNavMenuBtn = document.getElementById("mNavMenu");
+      if(sidebar && !sidebar.contains(e.target) && (!toggleBtn || !toggleBtn.contains(e.target)) && (!mNavMenuBtn || !mNavMenuBtn.contains(e.target))){
         document.body.classList.remove("sidebar-mobile-open");
       }
     }
   });
+
+  // Mobile sidebar close button
+  var mobileCloseBtn = document.getElementById("sidebarMobileCloseBtn");
+  if(mobileCloseBtn){
+    mobileCloseBtn.addEventListener("click", function(){
+      document.body.classList.remove("sidebar-mobile-open");
+    });
+  }
+
+  // Mobile Bottom Navigation Bar events
+  var mBottomNav = document.getElementById("mobileBottomNav");
+  if(mBottomNav){
+    mBottomNav.addEventListener("click", function(e){
+      var btn = e.target.closest(".mobile-nav-btn");
+      if(!btn) return;
+      var tab = btn.getAttribute("data-tab");
+      if(tab){
+        showTab(tab);
+      } else if(btn.getAttribute("data-action") === "toggle-sidebar"){
+        document.body.classList.toggle("sidebar-mobile-open");
+      }
+    });
+  }
 
 
   var themeToggle = document.getElementById("themeToggleBtn");

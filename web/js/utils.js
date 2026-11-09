@@ -192,3 +192,122 @@ window.updatePrioritySelectColor = function(selectEl){
   selectEl.style.color = colors[val] || (isDark ? "#facc15" : "#ca8a04");
   selectEl.style.fontWeight = "600";
 };
+
+/**
+ * Render structured, beautiful product specifications without raw ' > ' or raw '|' pipes.
+ * Groups hierarchical specs into cards with icons and pill badges.
+ */
+
+/**
+ * Render clean, professional HTML tables for product specifications,
+ * matching official manufacturer/web catalog tables.
+ * Zero emojis, no raw ' > ' signs, clean group rows with colspan="2".
+ */
+function renderStructuredSpecsHtml(specs, specMatrix) {
+  // 1. Multi-column variant matrix table (e.g. models lineup)
+  if (specMatrix && specMatrix.headers && specMatrix.rows && specMatrix.rows.length > 0) {
+    var ths = specMatrix.headers.map(function(h) {
+      return '<th>' + escapeHtml(h) + '</th>';
+    }).join("");
+    var trs = specMatrix.rows.map(function(r) {
+      var tds = specMatrix.headers.map(function(h) {
+        var val = r[h] || "-";
+        return '<td style="text-align:center;">' + escapeHtml(val) + '</td>';
+      }).join("");
+      return '<tr>' + tds + '</tr>';
+    }).join("");
+
+    return '<div class="pim-modal-specs-table-wrap">' +
+      '<h4 class="pim-specs-table-title">제품 세부 규격 (총 ' + specMatrix.rows.length + '개 모델)</h4>' +
+      '<div class="pim-specs-table-responsive">' +
+        '<table class="pim-specs-table">' +
+          '<thead><tr>' + ths + '</tr></thead>' +
+          '<tbody>' + trs + '</tbody>' +
+        '</table>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // 2. Standard 2-column specifications table (Key - Value) with clean group headers
+  if (specs && typeof specs === "object" && Object.keys(specs).length > 0) {
+    var groups = {};
+    var groupOrder = [];
+
+    Object.keys(specs).forEach(function(rawKey) {
+      var val = specs[rawKey];
+      if (val == null || String(val).trim() === "") return;
+
+      var groupName = "";
+      var fieldLabel = rawKey;
+
+      if (rawKey.indexOf(" > ") !== -1) {
+        var parts = rawKey.split(" > ");
+        groupName = parts[0].trim();
+        fieldLabel = parts.slice(1).join(" > ").trim();
+      }
+
+      if (!groups[groupName]) {
+        groups[groupName] = [];
+        groupOrder.push(groupName);
+      }
+      groups[groupName].push({
+        label: fieldLabel,
+        value: String(val).trim()
+      });
+    });
+
+    if (groupOrder.length === 0) {
+      return '<div class="pim-modal-specs-table-wrap">' +
+        '<h4 class="pim-specs-table-title">제품 세부 규격</h4>' +
+        '<p class="pim-spec-empty-msg">등록된 세부 규격 사양이 없습니다.</p>' +
+      '</div>';
+    }
+
+    var html = '<div class="pim-modal-specs-table-wrap">' +
+      '<h4 class="pim-specs-table-title">제품 세부 규격 사양</h4>' +
+      '<div class="pim-specs-table-responsive">' +
+        '<table class="pim-specs-table">' +
+          '<tbody>';
+
+    groupOrder.forEach(function(gName) {
+      var items = groups[gName];
+
+      // If group has a name (e.g. "전원 사양", "외형 치수"), output a clean section row spanning both columns
+      if (gName) {
+        html += '<tr class="pim-spec-group-row">' +
+          '<th colspan="2">' + escapeHtml(gName) + '</th>' +
+        '</tr>';
+      }
+
+      items.forEach(function(it) {
+        var valText = it.value;
+        var formattedVal = escapeHtml(valText);
+
+        // If value has pipe-separated pairs like "출력: 30W | 규격: 100mm", format cleanly with line breaks
+        if (valText.indexOf(" | ") !== -1 || valText.indexOf("|") !== -1) {
+          var bits = valText.split("|").map(function(b) { return b.trim(); }).filter(Boolean);
+          if (bits.length > 1) {
+            formattedVal = bits.map(function(b) {
+              return escapeHtml(b);
+            }).join("<br>");
+          }
+        }
+
+        html += '<tr>' +
+          '<th class="pim-spec-key">' + escapeHtml(it.label) + '</th>' +
+          '<td class="pim-spec-val">' + formattedVal + '</td>' +
+        '</tr>';
+      });
+    });
+
+    html += '</tbody></table></div></div>';
+    return html;
+  }
+
+  // 3. Fallback when no specs
+  return '<div class="pim-modal-specs-table-wrap">' +
+    '<h4 class="pim-specs-table-title">제품 세부 규격</h4>' +
+    '<p class="pim-spec-empty-msg">제공된 세부 규격 사양표가 없습니다. 카탈로그 PDF를 다운로드하여 확인하세요.</p>' +
+  '</div>';
+}
+window.renderStructuredSpecsHtml = renderStructuredSpecsHtml;

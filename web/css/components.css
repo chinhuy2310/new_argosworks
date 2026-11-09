@@ -18,6 +18,14 @@
 [hidden]{ display: none !important; }
 
 /* === FLOATING SCROLL TO TOP BUTTON === */
+@media (max-width: 768px) {
+  .btn-floating-scroll-top {
+    bottom: calc(68px + env(safe-area-inset-bottom, 0px)) !important;
+    right: 14px !important;
+    width: 38px !important;
+    height: 38px !important;
+  }
+}
 .btn-floating-scroll-top {
   position: fixed;
   bottom: 28px;

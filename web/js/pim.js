@@ -108,18 +108,122 @@ function loadPimCategories(){
     .catch(function(){});
 }
 
-function addCustomSpecRow(key, val){
-  if(!pimCustomSpecsList) return;
-  var row = document.createElement("div");
-  row.className = "pim-custom-spec-row";
-  row.style.cssText = "display: flex; gap: 8px; align-items: center; margin-bottom: 6px;";
-  row.innerHTML = '<input type="text" class="pim-custom-spec-key" placeholder="항목명 (예: 규격, 인터페이스, 방수등급)" value="' + escapeHtml(key || "") + '" style="width: 38%; font-size: 12.5px;">' +
-    '<input type="text" class="pim-custom-spec-val" placeholder="내용/값 (예: 1920x1080, USB 3.0, IP67)" value="' + escapeHtml(val || "") + '" style="flex: 1; font-size: 12.5px;">' +
-    '<button type="button" class="btn-secondary pim-custom-spec-del" style="padding: 4px 8px; font-size: 12px; color: #ef4444; border-color: rgba(239,68,68,0.25);" title="항목 삭제">✕</button>';
-  row.querySelector(".pim-custom-spec-del").addEventListener("click", function(){
-    row.remove();
+function addSpecGroupCard(groupName, items){
+  var container = document.getElementById("pimSpecGroupsContainer");
+  if(!container) return null;
+
+  var card = document.createElement("div");
+  card.className = "pim-spec-group-card";
+  card.style.cssText = "background:var(--surface); border:1px solid var(--line); border-radius:8px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.03); margin-bottom:8px;";
+
+  var initialName = groupName || "";
+  var initialCount = (items && items.length) ? items.length : 0;
+
+  card.innerHTML = 
+    '<div class="pim-spec-group-header" style="background:var(--code-bg); border-bottom:1px solid var(--line); padding:8px 12px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">' +
+      '<div style="display:flex; align-items:center; gap:8px; flex:1; min-width:180px;">' +
+        '<span style="font-size:14px; user-select:none;">📁</span>' +
+        '<input type="text" class="pim-spec-group-name" placeholder="그룹명 (예: 기본 사양, 카메라, 렌즈)" value="' + escapeHtml(initialName) + '" style="font-weight:700; font-size:13px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:4px; padding:4px 8px; max-width:210px;">' +
+        '<span class="pim-spec-group-count" style="font-size:11px; color:var(--ink-faint); font-weight:600; white-space:nowrap;">(' + initialCount + '개)</span>' +
+      '</div>' +
+      '<div style="display:flex; align-items:center; gap:6px;">' +
+        '<button type="button" class="btn-secondary pim-spec-add-row-btn" style="padding:3px 8px; font-size:11.5px; font-weight:600;">＋ 항목 추가</button>' +
+        '<button type="button" class="btn-secondary pim-spec-del-group-btn" style="padding:3px 8px; font-size:11.5px; color:#ef4444; border-color:rgba(239,68,68,0.25);" title="이 그룹 전체 삭제">✕ 그룹 삭제</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="pim-spec-group-items" style="padding:10px 12px; display:flex; flex-direction:column; gap:6px;"></div>';
+
+  var itemsContainer = card.querySelector(".pim-spec-group-items");
+  var countBadge = card.querySelector(".pim-spec-group-count");
+
+  function updateCount(){
+    var count = itemsContainer.querySelectorAll(".pim-spec-item-row").length;
+    countBadge.textContent = "(" + count + "개)";
+  }
+
+  function addItemRow(key, val){
+    var row = document.createElement("div");
+    row.className = "pim-spec-item-row";
+    row.style.cssText = "display:flex; gap:8px; align-items:center;";
+    row.innerHTML = 
+      '<input type="text" class="pim-spec-item-key" placeholder="항목명 (예: 촬상소자, 최저조도)" value="' + escapeHtml(key || "") + '" style="width:25%; min-width:140px; max-width:240px; font-size:12.5px; font-weight:600; color:var(--ink);">' +
+      '<input type="text" class="pim-spec-item-val" placeholder="내용/값 (예: 1/1.8\" CMOS, 0.01 Lux)" value="' + escapeHtml(val || "") + '" style="flex:1; font-size:12.5px;">' +
+      '<button type="button" class="btn-secondary pim-spec-del-row-btn" style="padding:4px 8px; font-size:12px; color:#ef4444; border-color:rgba(239,68,68,0.25); flex-shrink:0;" title="항목 삭제">✕</button>';
+
+    row.querySelector(".pim-spec-del-row-btn").addEventListener("click", function(){
+      row.remove();
+      updateCount();
+    });
+
+    itemsContainer.appendChild(row);
+    updateCount();
+    return row;
+  }
+
+  card.querySelector(".pim-spec-add-row-btn").addEventListener("click", function(){
+    var r = addItemRow("", "");
+    var kInput = r.querySelector(".pim-spec-item-key");
+    if(kInput) kInput.focus();
   });
-  pimCustomSpecsList.appendChild(row);
+
+  card.querySelector(".pim-spec-del-group-btn").addEventListener("click", function(){
+    card.remove();
+  });
+
+  // Populate initial items
+  if(items && items.length > 0){
+    items.forEach(function(it){
+      addItemRow(it.key, it.val);
+    });
+  } else {
+    addItemRow("", "");
+  }
+
+  container.appendChild(card);
+  return card;
+}
+
+function addCustomSpecRow(key, val){
+  var container = document.getElementById("pimSpecGroupsContainer");
+  if(!container) return;
+  var parts = String(key || "").split(" > ");
+  var gName = parts.length > 1 ? parts[0].trim() : "기타 사양";
+  var itemKey = parts.length > 1 ? parts.slice(1).join(" > ").trim() : key;
+
+  var existingCard = Array.from(container.querySelectorAll(".pim-spec-group-card")).find(function(c){
+    return (c.querySelector(".pim-spec-group-name").value || "").trim() === gName;
+  });
+
+  if(existingCard){
+    addSpecGroupCardItem(existingCard, itemKey, val);
+  } else {
+    addSpecGroupCard(gName, [{ key: itemKey, val: val }]);
+  }
+}
+
+function addSpecGroupCardItem(card, key, val){
+  var itemsContainer = card.querySelector(".pim-spec-group-items");
+  var countBadge = card.querySelector(".pim-spec-group-count");
+  if(!itemsContainer) return null;
+
+  var row = document.createElement("div");
+  row.className = "pim-spec-item-row";
+  row.style.cssText = "display:flex; gap:8px; align-items:center;";
+  row.innerHTML = 
+    '<input type="text" class="pim-spec-item-key" placeholder="항목명 (예: 촬상소자, 최저조도)" value="' + escapeHtml(key || "") + '" style="width:25%; min-width:140px; max-width:240px; font-size:12.5px; font-weight:600; color:var(--ink);">' +
+    '<input type="text" class="pim-spec-item-val" placeholder="내용/값 (예: 1/1.8\" CMOS, 0.01 Lux)" value="' + escapeHtml(val || "") + '" style="flex:1; font-size:12.5px;">' +
+    '<button type="button" class="btn-secondary pim-spec-del-row-btn" style="padding:4px 8px; font-size:12px; color:#ef4444; border-color:rgba(239,68,68,0.25); flex-shrink:0;" title="항목 삭제">✕</button>';
+
+  row.querySelector(".pim-spec-del-row-btn").addEventListener("click", function(){
+    row.remove();
+    var count = itemsContainer.querySelectorAll(".pim-spec-item-row").length;
+    if(countBadge) countBadge.textContent = "(" + count + "개)";
+  });
+
+  itemsContainer.appendChild(row);
+  var count = itemsContainer.querySelectorAll(".pim-spec-item-row").length;
+  if(countBadge) countBadge.textContent = "(" + count + "개)";
+  return row;
 }
 
 var SPEC_LABEL_MAP = {
@@ -153,60 +257,69 @@ function getSpecDisplayLabel(key, category){
 }
 
 function renderPimSpecFields(category, values){
-  if(!pimSpecFields) return;
-  var template = pimSpecTemplates[category] || [];
+  var container = document.getElementById("pimSpecGroupsContainer");
+  if(!container) return;
+  container.innerHTML = "";
   values = values || {};
-  if(pimCustomSpecsList) pimCustomSpecsList.innerHTML = "";
 
-  var handledKeys = {};
-  var html = "";
-  if(template.length){
-    var lastGroup = null;
-    template.forEach(function(rawF){
-      var f = (rawF && typeof rawF === "object") ? rawF : { group: "규격", label: String(rawF || ""), key: String(rawF || ""), maxlen: 200 };
-      if(f.group !== lastGroup){
-        html += '<p class="pim-spec-group-title">' + escapeHtml(f.group || "규격") + '</p>';
-        lastGroup = f.group;
-      }
-      var val = (values && (values[f.key] != null ? values[f.key] : values[f.label])) || "";
-      handledKeys[f.key] = true;
-      if(f.label) handledKeys[f.label] = true;
-      var safeKey = escapeHtml(f.key);
-      html += '<div class="field" style="margin-bottom: 8px;">' +
-        '<label for="pimSpec_' + safeKey + '">' + escapeHtml(f.label) + ' <span class="optional">(선택)</span></label>' +
-        '<input type="text" id="pimSpec_' + safeKey + '" data-spec-key="' + safeKey + '" maxlength="' + (f.maxlen || 200) + '" value="' + escapeHtml(val) + '">' +
-        '</div>';
+  var groups = {};
+  var groupOrder = [];
+
+  // 1. Group all values by prefix before " > "
+  Object.keys(values).forEach(function(rawKey){
+    var val = values[rawKey];
+    if(val == null || String(val).trim() === "") return;
+
+    var gName = "기타 사양";
+    var itemKey = rawKey;
+
+    if(rawKey.indexOf(" > ") !== -1){
+      var parts = rawKey.split(" > ");
+      gName = parts[0].trim();
+      itemKey = parts.slice(1).join(" > ").trim();
+    }
+
+    if(!groups[gName]){
+      groups[gName] = [];
+      groupOrder.push(gName);
+    }
+    groups[gName].push({ key: itemKey, val: String(val) });
+  });
+
+  // 2. Render each group card
+  if(groupOrder.length > 0){
+    groupOrder.forEach(function(gName){
+      addSpecGroupCard(gName, groups[gName]);
     });
   } else {
-    html = '<p class="pim-spec-empty" style="font-size: 12px; color: var(--ink-faint); margin: 0 0 8px 0;">이 카테고리에는 사전 정의된 양식이 없습니다. [+ 규격 항목 추가] 버튼으로 자유롭게 항목을 추가해주세요.</p>';
+    // Default initial groups if empty / new product
+    addSpecGroupCard("기본 사양", [{ key: "모델", val: "" }]);
+    addSpecGroupCard("카메라", [{ key: "촬상소자", val: "" }, { key: "최저조도", val: "" }, { key: "WDR", val: "" }]);
   }
-  pimSpecFields.innerHTML = html;
-
-  // Add any custom specs from values that are not in the predefined template
-  Object.keys(values).forEach(function(k){
-    if(!handledKeys[k] && values[k]){
-      addCustomSpecRow(k, values[k]);
-    }
-  });
 }
 
 function collectPimSpecs(){
   var specs = {};
-  if(pimSpecFields){
-    pimSpecFields.querySelectorAll("[data-spec-key]").forEach(function(input){
-      var v = input.value.trim();
-      if(v) specs[input.getAttribute("data-spec-key")] = v;
-    });
-  }
-  if(pimCustomSpecsList){
-    pimCustomSpecsList.querySelectorAll(".pim-custom-spec-row").forEach(function(row){
-      var k = (row.querySelector(".pim-custom-spec-key").value || "").trim();
-      var v = (row.querySelector(".pim-custom-spec-val").value || "").trim();
+  var container = document.getElementById("pimSpecGroupsContainer");
+  if(!container) return specs;
+
+  var cards = container.querySelectorAll(".pim-spec-group-card");
+  cards.forEach(function(card){
+    var gName = (card.querySelector(".pim-spec-group-name").value || "").trim();
+    var rows = card.querySelectorAll(".pim-spec-item-row");
+    rows.forEach(function(row){
+      var k = (row.querySelector(".pim-spec-item-key").value || "").trim();
+      var v = (row.querySelector(".pim-spec-item-val").value || "").trim();
       if(k && v){
-        specs[k] = v;
+        if(gName && gName !== "기타 사양"){
+          specs[gName + " > " + k] = v;
+        } else {
+          specs[k] = v;
+        }
       }
     });
-  }
+  });
+
   return specs;
 }
 
@@ -344,7 +457,7 @@ function renderPimList(){
         '<div class="pim-card-summary" data-action="view" style="min-height:36px; -webkit-line-clamp:2; display:-webkit-box; -webkit-box-orient:vertical; overflow:hidden; margin-bottom:10px; cursor:pointer;" title="' + summary + '">' + (summary || '<span style="color:var(--ink-faint); font-style:italic;">등록된 요약 정보가 없습니다.</span>') + '</div>' +
         '<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; margin-top:auto;">' +
           (p.family ? '<span class="pim-badge" style="background:var(--code-bg); color:var(--ink-soft);">' + escapeHtml(p.family) + '</span>' : '') +
-          (attachCount ? '<span class="pim-badge attach">📎 ' + attachCount + '개</span>' : '') +
+          (attachCount ? '<span class="pim-badge attach">' + attachCount + '개</span>' : '') +
           (function(){
             var displayPrice = (p.price != null && p.price !== "" && Number(p.price) > 0) ? p.price : (proc && proc.price ? proc.price : null);
             var curr = (p.currency || (proc && proc.currency) || "KRW").toUpperCase();
@@ -372,7 +485,7 @@ function renderPimAttachList(product){
   var html = "";
   attachments.forEach(function(a){
     var isImg = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(a.name);
-    var icon = isImg ? "🖼️ " : (/\.pdf$/i.test(a.name) ? "📑 " : "📄 ");
+    var icon = isImg ? "" : (/\.pdf$/i.test(a.name) ? "" : "");
     var url = "/api/products/attachment?id=" + encodeURIComponent(product.id) + "&file=" + encodeURIComponent(a.name);
     html += '<div class="pim-attach-item" data-name="' + escapeHtml(a.name) + '">' +
       '<a href="' + url + '" target="_blank" rel="noopener">' + icon + escapeHtml(a.name) +
@@ -473,6 +586,20 @@ function closePimFormModal(){
   renderPimList();
 }
 
+function autoResizePimTextarea(el, minH){
+  if(!el) return;
+  el.style.height = "auto";
+  var newH = Math.max(el.scrollHeight + 4, minH || 100);
+  el.style.height = newH + "px";
+}
+
+if(pimSummaryInput){
+  pimSummaryInput.addEventListener("input", function(){ autoResizePimTextarea(pimSummaryInput, 140); });
+}
+if(pimMemoInput){
+  pimMemoInput.addEventListener("input", function(){ autoResizePimTextarea(pimMemoInput, 100); });
+}
+
 function resetPimForm(){
   if(pimForm) pimForm.reset();
   if(pimIdField) pimIdField.value = "";
@@ -496,6 +623,8 @@ function resetPimForm(){
   if(pimPriceInput) pimPriceInput.value = "";
   setSelectedCurrency("KRW");
   renderPimSpecFields(pimCategorySelect ? pimCategorySelect.value : "일반", {});
+  if(pimSummaryInput) pimSummaryInput.style.height = "160px";
+  if(pimMemoInput) pimMemoInput.style.height = "110px";
   if(pimFormError){
     pimFormError.classList.remove("show");
     pimFormError.textContent = "";
@@ -513,8 +642,14 @@ function openPimEdit(product){
   if(pimDisplayNameInput) pimDisplayNameInput.value = product.displayName || "";
   if(pimFamilyInput) pimFamilyInput.value = product.family || "";
   if(pimLifecycleSelect) pimLifecycleSelect.value = product.lifecycle || "판매 중";
-  if(pimSummaryInput) pimSummaryInput.value = product.summary || "";
-  if(pimMemoInput) pimMemoInput.value = product.memo || "";
+  if(pimSummaryInput){
+    pimSummaryInput.value = product.summary || "";
+    autoResizePimTextarea(pimSummaryInput, 140);
+  }
+  if(pimMemoInput){
+    pimMemoInput.value = product.memo || "";
+    autoResizePimTextarea(pimMemoInput, 100);
+  }
 
   var proc = product.procurement;
   var hasProc = !!(proc && (proc.registeredName || proc.identificationNo || proc.configuration));
@@ -621,11 +756,18 @@ if(pimRemoveImageBtn){
     pimRemoveImageBtn.style.display = "none";
   });
 }
-if(pimAddCustomSpecBtn){
-  pimAddCustomSpecBtn.addEventListener("click", function(){
-    addCustomSpecRow("", "");
-  });
+var pimAddSpecGroupBtn = document.getElementById("pimAddSpecGroupBtn");
+var pimAddSpecGroupBottomBtn = document.getElementById("pimAddSpecGroupBottomBtn");
+function handleAddNewSpecGroup(){
+  var c = addSpecGroupCard("", []);
+  if(c){
+    var nameInput = c.querySelector(".pim-spec-group-name");
+    if(nameInput) nameInput.focus();
+  }
 }
+if(pimAddSpecGroupBtn) pimAddSpecGroupBtn.addEventListener("click", handleAddNewSpecGroup);
+if(pimAddSpecGroupBottomBtn) pimAddSpecGroupBottomBtn.addEventListener("click", handleAddNewSpecGroup);
+if(pimAddCustomSpecBtn) pimAddCustomSpecBtn.addEventListener("click", handleAddNewSpecGroup);
 
 if(pimForm){
   pimForm.addEventListener("submit", function(e){
@@ -925,22 +1067,7 @@ function openVision119Detail(cateId, bbsId){
         bulletsHtml += '<p style="font-size:12.5px; color:var(--ink-soft); font-style:italic;">기본 설명이 없습니다.</p>';
       }
 
-      var specsTableHtml = "";
-      if(d.specs && Object.keys(d.specs).length > 0){
-        var rows = Object.keys(d.specs).map(function(key){
-          var lbl = getSpecDisplayLabel(key, null);
-          return '<tr><th>' + escapeHtml(lbl) + '</th><td>' + escapeHtml(d.specs[key]) + '</td></tr>';
-        }).join("");
-        specsTableHtml = '<div class="pim-modal-specs-table-wrap">' +
-          '<h3 class="pim-modal-specs-title">📋 제품 세부 규격 사양 (총 ' + Object.keys(d.specs).length + '개 항목)</h3>' +
-          '<table class="pim-specs-table"><tbody>' + rows + '</tbody></table>' +
-          '</div>';
-      } else {
-        specsTableHtml = '<div class="pim-modal-specs-table-wrap">' +
-          '<h3 class="pim-modal-specs-title">📋 제품 세부 규격 사양</h3>' +
-          '<p style="font-size:12.5px; color:var(--ink-soft); padding:16px 0;">제공된 규격 사양표가 없습니다. 상단 카달로그 PDF를 다운로드하여 확인하세요.</p>' +
-          '</div>';
-      }
+      var specsTableHtml = (typeof renderStructuredSpecsHtml === "function") ? renderStructuredSpecsHtml(d.specs, d.specMatrix) : "";
 
       if(pimModalBody){
         pimModalBody.innerHTML = '<div class="pim-modal-top-section">' +
@@ -957,6 +1084,53 @@ function openVision119Detail(cateId, bbsId){
         pimModalBody.innerHTML = '<div style="color:var(--danger); text-align:center; padding:50px;">서버와의 통신 오류로 상세 정보를 가져올 수 없습니다.</div>';
       }
     });
+}
+
+function renderPimProductSummary(summary){
+  if(!summary || !summary.trim()) return "";
+  var rawLines = summary.split("\n").map(function(l){ return l.trim(); }).filter(Boolean);
+  var bullets = [];
+  var metaRows = [];
+
+  rawLines.forEach(function(line){
+    if(line.startsWith("펌웨어") || line.startsWith("버전정보") || line.startsWith("해시정보")){
+      var colonIdx = line.indexOf(":");
+      if(colonIdx !== -1){
+        var key = line.slice(0, colonIdx).trim();
+        var val = line.slice(colonIdx + 1).trim();
+        metaRows.push({ key: key, val: val });
+      } else {
+        metaRows.push({ key: line, val: "" });
+      }
+    } else {
+      bullets.push(line);
+    }
+  });
+
+  var html = '<div class="pim-summary-container" style="margin-top:8px; display:flex; flex-direction:column; gap:8px;">';
+  if(bullets.length > 0){
+    html += '<div style="display:flex; flex-direction:column; gap:4px;">';
+    bullets.forEach(function(b){
+      html += '<div style="display:flex; align-items:flex-start; gap:6px; font-size:12.5px; color:var(--ink); line-height:1.45;">' +
+        '<span style="color:var(--tab-pim, #0284c7); font-weight:700; line-height:1.4; user-select:none;">•</span>' +
+        '<span>' + escapeHtml(b) + '</span>' +
+      '</div>';
+    });
+    html += '</div>';
+  }
+  if(metaRows.length > 0){
+    html += '<div style="display:flex; flex-direction:column; gap:3px; padding-top:6px; border-top:1px dashed var(--line); font-size:11.5px;">';
+    metaRows.forEach(function(m){
+      var isHash = m.key.indexOf("해시") !== -1;
+      html += '<div style="display:flex; align-items:flex-start; gap:6px; color:var(--ink-soft); line-height:1.4;">' +
+        '<strong style="min-width:70px; color:var(--ink); flex-shrink:0;">' + escapeHtml(m.key) + (m.val ? ':' : '') + '</strong>' +
+        (m.val ? '<span style="' + (isHash ? 'font-family:monospace; word-break:break-all; font-size:11px;' : '') + '">' + escapeHtml(m.val) + '</span>' : '') +
+      '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
 }
 
 function openProductDetail(product){
@@ -1025,34 +1199,20 @@ function openProductDetail(product){
     '</div>' +
     '<div style="font-size:17px; font-weight:700; color:var(--ink); margin-top:2px;">' + escapeHtml(displayName || model) + '</div>' +
     '<div style="font-size:12.5px; color:var(--ink-soft);">제품 코드 / 모델명: <strong style="color:var(--ink);">' + escapeHtml(model) + '</strong></div>' +
-    (product.summary ? '<div style="font-size:13px; color:var(--ink); line-height:1.5; background:var(--bg-hover, rgba(0,0,0,0.02)); padding:10px 12px; border-radius:6px; border:1px solid var(--line); margin-top:6px;">' + escapeHtml(product.summary) + '</div>' : '') +
+    (product.summary ? renderPimProductSummary(product.summary) : '') +
   '</div>';
 
   // Specifications Table
   var specs = product.specs || {};
   var specKeys = Object.keys(specs).filter(function(k){ return specs[k] && String(specs[k]).trim(); });
-  var specsTableHtml = "";
-  if(specKeys.length > 0){
-    var specRows = specKeys.map(function(k){
-      var label = getSpecDisplayLabel(k, product.category);
-      return '<tr><th style="width:35%; font-weight:600;">' + escapeHtml(label) + '</th><td>' + escapeHtml(specs[k]) + '</td></tr>';
-    }).join("");
-    specsTableHtml = '<div class="pim-modal-specs-table-wrap">' +
-      '<h3 class="pim-modal-specs-title">📋 제품 세부 기술 사양 (총 ' + specKeys.length + '개 항목)</h3>' +
-      '<table class="pim-specs-table"><tbody>' + specRows + '</tbody></table>' +
-      '</div>';
-  } else {
-    specsTableHtml = '<div class="pim-modal-specs-table-wrap">' +
-      '<h3 class="pim-modal-specs-title">📋 제품 세부 기술 사양</h3>' +
-      '<p style="font-size:12.5px; color:var(--ink-soft); padding:12px 0;">등록된 기술 사양이 없습니다.</p>' +
-      '</div>';
-  }
+  var sm = product.specMatrix || null;
+  var specsTableHtml = (typeof renderStructuredSpecsHtml === "function") ? renderStructuredSpecsHtml(specs, sm) : "";
 
   // Procurement Section (if registered)
   var procHtml = "";
   if(proc && (proc.identificationNo || proc.registeredName || proc.configuration)){
     procHtml = '<div class="pim-modal-specs-table-wrap">' +
-      '<h3 class="pim-modal-specs-title">🏛️ 공공 조달 등록 정보 (G2B)</h3>' +
+      '<h4 class="pim-specs-table-title">공공 조달 등록 정보 (G2B)</h4>' +
       '<table class="pim-specs-table"><tbody>' +
         (proc.registeredName ? '<tr><th style="width:35%;">조달 식별명</th><td>' + escapeHtml(proc.registeredName) + '</td></tr>' : '') +
         (proc.identificationNo ? '<tr><th style="width:35%;">물품식별번호</th><td>' + escapeHtml(proc.identificationNo) + '</td></tr>' : '') +
@@ -1067,7 +1227,7 @@ function openProductDetail(product){
   if(attachList.length > 0){
     var attachItems = attachList.map(function(a){
       var isImg = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(a.name);
-      var icon = isImg ? "🖼️ " : (/\.pdf$/i.test(a.name) ? "📑 " : "📄 ");
+      var icon = isImg ? "" : (/\.pdf$/i.test(a.name) ? "" : "");
       var url = "/api/products/attachment?id=" + encodeURIComponent(product.id) + "&file=" + encodeURIComponent(a.name);
       return '<div style="display:flex; align-items:center; justify-content:space-between; background:var(--surface); border:1px solid var(--line); border-radius:6px; padding:8px 12px; font-size:12.5px;">' +
         '<div style="display:flex; align-items:center; gap:8px; overflow:hidden;">' +
@@ -1080,7 +1240,7 @@ function openProductDetail(product){
     }).join("");
 
     attachHtml = '<div class="pim-modal-specs-table-wrap">' +
-      '<h3 class="pim-modal-specs-title">📎 관련 첨부파일 및 문서 (' + attachList.length + '개)</h3>' +
+      '<h4 class="pim-specs-table-title">관련 첨부파일 및 문서 (' + attachList.length + '개)</h4>' +
       '<div style="display:flex; flex-direction:column; gap:6px;">' + attachItems + '</div>' +
       '</div>';
   }
@@ -1089,7 +1249,7 @@ function openProductDetail(product){
   var memoHtml = "";
   if(product.memo){
     memoHtml = '<div class="pim-modal-specs-table-wrap">' +
-      '<h3 class="pim-modal-specs-title">📝 사내 참고 메모</h3>' +
+      '<h4 class="pim-specs-table-title">사내 참고 메모</h4>' +
       '<div style="font-size:12.5px; color:var(--ink-soft); background:var(--code-bg); padding:10px 12px; border-radius:6px; border:1px solid var(--line); white-space:pre-wrap; line-height:1.5;">' + escapeHtml(product.memo) + '</div>' +
       '</div>';
   }

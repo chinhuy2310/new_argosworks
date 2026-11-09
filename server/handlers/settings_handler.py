@@ -226,7 +226,7 @@ def handle_get_settings(handler, parsed, ip):
         "JIRA_USER_ALIASES": jira_cfg.get("user_aliases", {}),
 
         # Workspace Branding
-        "WORKSPACE_NAME": env_data.get("WORKSPACE_NAME", cfg.get("workspace", {}).get("name", "JARVIS")),
+        "WORKSPACE_NAME": env_data.get("WORKSPACE_NAME", cfg.get("workspace", {}).get("name", "ARGOS WORKS")),
         "WORKSPACE_TITLE": env_data.get("WORKSPACE_TITLE", cfg.get("workspace", {}).get("title", "")),
         "WORKSPACE_WELCOME_GREETING": env_data.get("WORKSPACE_WELCOME_GREETING", cfg.get("workspace", {}).get("welcome_greeting", "")),
         "WORKSPACE_WELCOME_SUBTITLE": env_data.get("WORKSPACE_WELCOME_SUBTITLE", cfg.get("workspace", {}).get("welcome_subtitle", "")),

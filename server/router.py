@@ -559,7 +559,7 @@ def _sse_env_int(name, default):
 _WORKER_THREADS = _sse_env_int("ARGOS_WORKER_THREADS", 128)
 # Leave at least half the workers for normal HTTP requests after SSE streams.
 _SSE_MAX_TOTAL = _sse_env_int("ARGOS_SSE_MAX_CONNECTIONS", max(8, _WORKER_THREADS // 2))
-_SSE_MAX_PER_USER = _sse_env_int("ARGOS_SSE_PER_USER", 1)
+_SSE_MAX_PER_USER = _sse_env_int("ARGOS_SSE_PER_USER", 2)
 
 
 def _sse_user_key(session):
@@ -1310,6 +1310,20 @@ def handle_get_product_detail(handler, parsed, ip):
     if summary:
         bullets = [b.strip().lstrip("- ").lstrip("• ") for b in summary.split("\n") if b.strip() and not b.strip().startswith("---")]
 
+    spec_matrix = product.get("specMatrix")
+    if not spec_matrix and source == "vision119":
+        from config import DATA_DIR
+        v_path = os.path.join(DATA_DIR, "vision119_products.json")
+        if os.path.exists(v_path):
+            try:
+                with open(v_path, "r", encoding="utf-8") as vf:
+                    v_list = json.load(vf)
+                v_match = next((vp for vp in v_list if vp.get("id") == product.get("id")), None)
+                if v_match:
+                    spec_matrix = v_match.get("specMatrix")
+            except Exception:
+                pass
+
     handler._send_json(200, {
         "ok": True,
         "detail": {
@@ -1329,6 +1343,7 @@ def handle_get_product_detail(handler, parsed, ip):
             "image": image_url,
             "bullets": bullets,
             "specs": specs,
+            "specMatrix": spec_matrix,
             "summary": summary,
             "memo": memo if not is_live else "",
             "source": source,
@@ -3443,7 +3458,8 @@ from handlers.auth_handlers import (
 from handlers.schedule_handlers import handle_schedule_create, handle_schedule_update, handle_schedule_delete
 from handlers.product_handlers import (
     handle_product_save, handle_product_attachment_upload, handle_product_attachment_delete,
-    handle_get_product_categories_admin, handle_product_category_save, handle_product_category_delete
+    handle_get_product_categories_admin, handle_product_category_save, handle_product_category_delete,
+    handle_get_vision119_products, handle_get_vision119_detail
 )
 from handlers.department_handler import handle_add_department, handle_delete_department, handle_update_department
 from handlers.sync_handler import handle_sync
@@ -3527,6 +3543,10 @@ def match_get(path):
         return ("handler", handle_get_product_detail, None)
     elif path == "/api/products/attachment":
         return ("handler", handle_get_products_attachment, None)
+    elif path == "/api/external/vision119/products":
+        return ("handler", handle_get_vision119_products, None)
+    elif path == "/api/external/vision119/detail":
+        return ("handler", handle_get_vision119_detail, None)
     elif path == "/api/vectors/stats":
         return ("handler", handle_get_vector_stats, None)
     elif path == "/api/activities":

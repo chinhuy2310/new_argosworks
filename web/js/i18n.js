@@ -22,6 +22,7 @@
       "nav.main_section": "메인 업무",
       "nav.admin_section": "관리자 전용",
       "nav.toggle_menu": "메뉴 접기/펼치기",
+      "nav.menu": "메뉴",
       "nav.theme_toggle": "다크 / 라이트 모드 전환",
       "nav.lang_toggle": "언어 변경 (KO / EN)",
       "nav.theme": "화면 모드",

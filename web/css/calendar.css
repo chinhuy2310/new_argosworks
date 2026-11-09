@@ -2214,6 +2214,279 @@
 
 }
 
+@media (max-width: 768px) {
+  #viewSchedule {
+    height: calc(100vh - var(--topbar-height, 52px) - 54px - env(safe-area-inset-bottom, 0px)) !important;
+    min-height: calc(100vh - var(--topbar-height, 52px) - 54px - env(safe-area-inset-bottom, 0px)) !important;
+    max-height: calc(100vh - var(--topbar-height, 52px) - 54px - env(safe-area-inset-bottom, 0px)) !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  #viewSchedule .schedule-layout-modern {
+    height: 100% !important;
+    min-height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  .schedule-main-area {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    height: 100% !important;
+  }
+  .schedule-view-pane {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .schedule-members-sidebar,
+  .schedule-task-panel {
+    top: var(--topbar-height, 52px) !important;
+    bottom: calc(54px + env(safe-area-inset-bottom, 0px)) !important;
+    height: calc(100vh - var(--topbar-height, 52px) - 54px - env(safe-area-inset-bottom, 0px)) !important;
+    max-height: calc(100vh - var(--topbar-height, 52px) - 54px - env(safe-area-inset-bottom, 0px)) !important;
+    z-index: 1140 !important;
+  }
+  .sched-drop-unassign-zone {
+    bottom: calc(66px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  /* Compact 2-row Mobile Toolbar with clean contents-unwrapping */
+  .schedule-toolbar-modern {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    padding: 6px 10px !important;
+    gap: 6px !important;
+    min-height: auto !important;
+    background: var(--surface) !important;
+    border-bottom: 1px solid var(--line) !important;
+    flex-shrink: 0 !important;
+  }
+  .sched-tb-left {
+    display: contents !important;
+  }
+  .sched-tb-center {
+    display: contents !important;
+  }
+  .btn-toggle-members-sidebar {
+    order: 1 !important;
+    width: 28px !important;
+    height: 28px !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 14px !important;
+  }
+  .sched-main-title {
+    display: none !important;
+  }
+  .schedule-nav-group {
+    order: 2 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 2px !important;
+  }
+  .schedule-month-title {
+    font-size: 13.5px !important;
+    font-weight: 700 !important;
+    min-width: 66px !important;
+    text-align: center !important;
+  }
+  .sched-nav-btn {
+    width: 26px !important;
+    height: 26px !important;
+    font-size: 15px !important;
+  }
+  .sched-today-pill {
+    order: 3 !important;
+    padding: 2px 7px !important;
+    font-size: 11px !important;
+    height: 26px !important;
+  }
+  .schedule-view-switcher {
+    order: 4 !important;
+    margin-left: auto !important;
+    display: inline-flex !important;
+    gap: 2px !important;
+    background: var(--code-bg) !important;
+    padding: 2px !important;
+    border-radius: 6px !important;
+  }
+  .sched-view-tab {
+    padding: 3px 7px !important;
+    font-size: 11px !important;
+    min-height: 24px !important;
+  }
+  .sched-tb-right {
+    order: 5 !important;
+    flex: 1 1 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 6px !important;
+    padding-top: 4px !important;
+    border-top: 1px dashed var(--line) !important;
+  }
+  .schedule-toggle-pill {
+    padding: 0 6px !important;
+    font-size: 11px !important;
+    height: 28px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    flex-shrink: 0 !important;
+  }
+  .btn-toggle-task-panel {
+    flex: 1 1 auto !important;
+    height: 28px !important;
+    justify-content: center !important;
+    padding: 0 6px !important;
+    font-size: 11px !important;
+  }
+  .btn-sched-create-primary {
+    flex: 1 1 auto !important;
+    height: 28px !important;
+    justify-content: center !important;
+    padding: 0 8px !important;
+    font-size: 11.5px !important;
+  }
+
+  /* Month View: 100% Full Bleed, Fits mobile screen without horizontal overflow */
+  .cal-month-card {
+    overflow-x: hidden !important;
+    border-radius: 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-top: none !important;
+  }
+  .cal-month-table {
+    min-width: 100% !important;
+    width: 100% !important;
+    table-layout: fixed !important;
+  }
+  .cal-weekday-row th {
+    padding: 6px 1px !important;
+    font-size: 10.5px !important;
+  }
+  .cal-day-cell {
+    min-height: 64px !important;
+    padding: 2px 2px !important;
+    height: auto !important;
+  }
+  .cal-day-header {
+    margin-bottom: 2px !important;
+  }
+  .cal-day-cell .cal-date-num {
+    font-size: 11px !important;
+    min-width: 18px !important;
+    height: 18px !important;
+    line-height: 18px !important;
+  }
+  .cal-day-count {
+    font-size: 9.5px !important;
+    padding: 0 3px !important;
+  }
+  .cal-day-add-btn {
+    display: none !important;
+  }
+  .cal-chip {
+    font-size: 9.5px !important;
+    height: 16px !important;
+    min-height: 16px !important;
+    line-height: 15px !important;
+    padding: 0 3px !important;
+    margin-bottom: 2px !important;
+    border-radius: 3px !important;
+  }
+  .cal-more-link {
+    font-size: 9.5px !important;
+    padding: 1px 2px !important;
+    margin-top: 1px !important;
+  }
+
+  /* Week View */
+  .cal-week-card {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+  }
+  .cal-week-table {
+    min-width: 500px !important;
+  }
+  .cal-week-cell,
+  .cal-week-day-cell {
+    height: 320px !important;
+    min-height: 280px !important;
+  }
+
+  /* Agenda View */
+  .cal-agenda-container {
+    padding: 10px 8px 32px !important;
+    gap: 8px !important;
+  }
+  .agenda-day-group {
+    padding: 10px 10px !important;
+    gap: 10px !important;
+    border-radius: 8px !important;
+  }
+  .agenda-date-badge {
+    min-width: 44px !important;
+    padding: 6px 4px !important;
+  }
+  .agenda-date-badge .adb-day {
+    font-size: 17px !important;
+  }
+  .agenda-item-row {
+    padding: 8px 10px !important;
+    gap: 8px !important;
+  }
+  .agenda-item-title {
+    font-size: 12px !important;
+  }
+
+  /* Schedule Modals: Bottom sheet style on mobile */
+  .sched-modal-backdrop {
+    padding: 0 !important;
+    align-items: flex-end !important;
+    background: rgba(0, 0, 0, 0.6) !important;
+    z-index: 1200 !important;
+  }
+  .sched-modal-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 88vh !important;
+    border-radius: 16px 16px 0 0 !important;
+    margin: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  .sched-modal-body {
+    flex: 1 1 auto !important;
+    max-height: calc(88vh - 120px) !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    padding: 12px 14px !important;
+  }
+  .sched-modal-footer {
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+    flex-wrap: wrap !important;
+  }
+  .sched-modal-footer button {
+    flex: 1 1 calc(50% - 6px) !important;
+    min-height: 38px !important;
+  }
+}
+
 /* ==========================================================================
    Floating Drop-to-Unassign Zone (Khu vực kéo thả gỡ lịch)
    - Dấu X tròn ở giữa

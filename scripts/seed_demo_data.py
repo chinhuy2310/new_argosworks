@@ -244,6 +244,44 @@ def run_seed():
         [(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], now_iso, now_iso, p[11]) for p in products_data]
     )
 
+    # Also seed Vision119 sample catalog if available
+    v119_path = os.path.join(os.path.dirname(DB_PATH), "vision119_products.json")
+    if os.path.exists(v119_path):
+        import json
+        try:
+            with open(v119_path, "r", encoding="utf-8") as vf:
+                v119_list = json.load(vf)
+            v119_tuples = []
+            v119_atts = []
+            for p in v119_list:
+                specs_json = json.dumps(p.get("specs", {}), ensure_ascii=False)
+                proc = p.get("procurement")
+                proc_json = json.dumps(proc, ensure_ascii=False) if proc else None
+                v119_tuples.append((
+                    p["id"], p.get("model", ""), p.get("displayName", ""),
+                    p.get("family", ""), p.get("lifecycle", "판매 중"),
+                    p.get("category", "일반"), p.get("summary", ""),
+                    p.get("memo", ""), specs_json, proc_json,
+                    p.get("price", 0), p.get("currency", "KRW"),
+                    now_iso, now_iso, p.get("source", "vision119")
+                ))
+                for att in p.get("attachments", []):
+                    v119_atts.append((p["id"], att.get("name", ""), att.get("size", 0), att.get("uploadedAt", now_iso)))
+            
+            cur.executemany(
+                """INSERT INTO products (id, model, display_name, family, lifecycle, category, summary, memo, specs, procurement, price, currency, revision, created_at, updated_at, source)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)""",
+                v119_tuples
+            )
+            if v119_atts:
+                cur.executemany(
+                    "INSERT INTO product_attachments (product_id, filename, file_size, uploaded_at) VALUES (?, ?, ?, ?)",
+                    v119_atts
+                )
+            print(f"      -> Included {len(v119_tuples)} vision119 sample products & {len(v119_atts)} attachments.")
+        except Exception as e:
+            print(f"      -> Note: vision119 demo seeding skipped: {e}")
+
     print("[7/8] Seeding Korean Corporate Schedules & Lounge Announcements...")
     schedules = [
         (base_time + 101, 1, "김민수", "mgmt", "minsoo.kim@argosworks.kr", "meeting",

@@ -1236,8 +1236,7 @@ window.openProductDetailModal = function(productId){
       '상세 사양과 조달 정보를 가져오고 있습니다...</div>';
   }
 
-  fetch("/api/products/detail?id=" + encodeURIComponent(productId), { cache: "no-store" })
-    .then(function(r){ return r.json(); })
+  (typeof apiGet === "function" ? apiGet("/api/products/detail?id=" + encodeURIComponent(productId)) : fetch("/api/products/detail?id=" + encodeURIComponent(productId), { credentials: "same-origin", cache: "no-store" }).then(function(r){ return r.json(); }))
     .then(function(res){
       if(!res || !res.ok || !res.detail){
         if(pimModalBody){
@@ -1295,21 +1294,7 @@ window.openProductDetailModal = function(productId){
         bulletsHtml += '<p style="font-size:13px; color:var(--ink-soft); line-height:1.5;">' + escapeHtml(d.summary) + '</p>';
       }
 
-      var specsTableHtml = "";
-      if(d.specs && Object.keys(d.specs).length > 0){
-        var rows = Object.keys(d.specs).map(function(key){
-          return '<tr><th>' + escapeHtml(key) + '</th><td>' + escapeHtml(d.specs[key]) + '</td></tr>';
-        }).join("");
-        specsTableHtml = '<div class="pim-modal-specs-table-wrap">' +
-          '<h3 class="pim-modal-specs-title">📋 제품 세부 규격 사양 (총 ' + Object.keys(d.specs).length + '개 항목)</h3>' +
-          '<table class="pim-specs-table"><tbody>' + rows + '</tbody></table>' +
-          '</div>';
-      } else {
-        specsTableHtml = '<div class="pim-modal-specs-table-wrap">' +
-          '<h3 class="pim-modal-specs-title">📋 제품 세부 규격 사양</h3>' +
-          '<p style="font-size:12.5px; color:var(--ink-soft); padding:16px 0;">제공된 규격 사양표가 없습니다. 상단 카달로그 PDF를 다운로드하여 확인하세요.</p>' +
-          '</div>';
-      }
+      var specsTableHtml = (typeof renderStructuredSpecsHtml === "function") ? renderStructuredSpecsHtml(d.specs, d.specMatrix) : "";
 
       if(pimModalBody){
         pimModalBody.innerHTML = '<div class="pim-modal-top-section">' +

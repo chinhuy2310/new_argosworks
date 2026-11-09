@@ -238,59 +238,63 @@ function jiraPill(jira){
   );
 }
 
-function recordStatusBadge(r){
-  var text = "";
-  var cls = "inprog";
-
+function getRecordCategoryStatusCls(r){
+  if(!r) return "todo";
   if(r.jira){
     var rawName = (r.jira.statusName || "").trim();
     var rawStatus = (r.jira.status || "").toLowerCase();
     var rawLower = rawName.toLowerCase();
 
     if(rawName.includes("완료") || rawLower === "done" || rawLower === "closed" || rawLower === "resolved" || rawStatus === "good"){
-      text = "완료";
-      cls = "done";
-    } else if(rawName.includes("지연") || rawStatus === "critical"){
-      text = "지연";
-      cls = "delayed";
-    } else if(rawName.includes("검토") || rawLower.includes("review") || rawLower.includes("testing")){
-      text = "검토";
-      cls = "review";
-    } else if(rawName.includes("예정") || rawName.includes("할 일") || rawName.includes("준비") || rawName.includes("대기") || rawLower.includes("todo") || rawLower === "to do" || rawLower === "open"){
-      text = "예정";
-      cls = "todo";
-    } else if(rawName.includes("진행") || rawLower.includes("in progress") || rawLower.includes("progress")){
-      text = "진행";
-      cls = "inprog";
-    } else if(rawName){
-      text = (rawStatus === "good") ? "완료" : "진행";
-      cls = (rawStatus === "good") ? "done" : "inprog";
-    } else {
-      text = (rawStatus === "good") ? "완료" : (rawStatus === "critical" ? "지연" : "진행");
-      cls = (rawStatus === "good") ? "done" : (rawStatus === "critical" ? "delayed" : "inprog");
+      return "done";
     }
-  } else {
-    var loc = String(r.status || "").trim().toLowerCase();
-    if(loc.indexOf("완료") !== -1 || loc.indexOf("done") !== -1 || loc.indexOf("hoàn thành") !== -1){
-      text = "완료";
-      cls = "done";
-    } else if(loc.indexOf("검토") !== -1 || loc.indexOf("review") !== -1 || loc.indexOf("kiểm tra") !== -1){
-      text = "검토";
-      cls = "review";
-    } else if(loc.indexOf("진행") !== -1 || loc.indexOf("progress") !== -1 || loc.indexOf("đang") !== -1){
-      text = "진행";
-      cls = "inprog";
-    } else if(loc.indexOf("예정") !== -1 || loc.indexOf("대기") !== -1 || loc.indexOf("todo") !== -1 || loc.indexOf("to do") !== -1 || loc.indexOf("chờ") !== -1){
-      text = "예정";
-      cls = "todo";
-    } else if(r.status){
-      text = r.status;
-      cls = "inprog";
-    } else {
-      text = "예정";
-      cls = "todo";
+    if(rawName.includes("지연") || rawStatus === "critical"){
+      return "delayed";
     }
+    if(rawName.includes("검토") || rawLower.includes("review") || rawLower.includes("testing") || rawLower.includes("kiểm tra")){
+      return "review";
+    }
+    if(rawName.includes("예정") || rawName.includes("할 일") || rawName.includes("준비") || rawName.includes("대기") ||
+       rawLower.includes("todo") || rawLower.includes("to do") || rawLower.includes("to-do") ||
+       rawLower === "open" || rawLower === "backlog" || rawLower.includes("selected for development") || rawLower.includes("ready")){
+      return "todo";
+    }
+    if(rawName.includes("진행") || rawLower.includes("in progress") || rawLower.includes("progress") || rawLower.includes("doing")){
+      return "inprog";
+    }
+    if(rawName){
+      return (rawStatus === "good") ? "done" : "inprog";
+    }
+    return (rawStatus === "good") ? "done" : (rawStatus === "critical" ? "delayed" : "inprog");
   }
+
+  var loc = String(r.status || "").trim().toLowerCase();
+  if(loc.indexOf("완료") !== -1 || loc.indexOf("done") !== -1 || loc.indexOf("hoàn thành") !== -1){
+    return "done";
+  }
+  if(loc.indexOf("검토") !== -1 || loc.indexOf("review") !== -1 || loc.indexOf("kiểm tra") !== -1){
+    return "review";
+  }
+  if(loc.indexOf("진행") !== -1 || loc.indexOf("progress") !== -1 || loc.indexOf("đang") !== -1){
+    return "inprog";
+  }
+  if(loc.indexOf("예정") !== -1 || loc.indexOf("대기") !== -1 || loc.indexOf("todo") !== -1 || loc.indexOf("to do") !== -1 || loc.indexOf("to-do") !== -1 || loc.indexOf("chờ") !== -1 || loc.indexOf("backlog") !== -1 || loc.indexOf("open") !== -1){
+    return "todo";
+  }
+  if(!loc){
+    return "todo";
+  }
+  return "inprog";
+}
+
+function recordStatusBadge(r){
+  var cls = getRecordCategoryStatusCls(r);
+  var text = "진행";
+  if(cls === "done") text = "완료";
+  else if(cls === "delayed") text = "지연";
+  else if(cls === "review") text = "검토";
+  else if(cls === "todo") text = "예정";
+  else if(cls === "inprog") text = "진행";
 
   // Đa ngôn ngữ (i18n): Đồng bộ theo ngôn ngữ giao diện đang chọn (KO / EN)
   var localizedText = text;
@@ -436,35 +440,9 @@ function assigneeBaseName(name){
 }
 
 function getRecordProgressCategory(r){
-  if(r.jira){
-    var rawName = (r.jira.statusName || "").trim();
-    var rawStatus = (r.jira.status || "").toLowerCase();
-
-    if(rawName.includes("완료") || rawName.toLowerCase() === "done" || rawStatus === "good"){
-      return "done";
-    }
-    if(rawName.includes("검토") || rawName.toLowerCase().includes("review") || rawName.toLowerCase().includes("testing") || rawName.includes("kiểm tra")){
-      return "review";
-    }
-    if(rawName.includes("예정") || rawName.includes("할 일") || rawName.includes("준비") || rawName.includes("대기") || rawName.toLowerCase().includes("todo")){
-      return "todo";
-    }
-    return "inprog";
-  }
-  var loc = String(r.status || "").trim().toLowerCase();
-  if(loc.indexOf("완료") !== -1 || loc.indexOf("done") !== -1){
-    return "done";
-  }
-  if(loc.indexOf("검토") !== -1 || loc.indexOf("review") !== -1 || loc.indexOf("kiểm tra") !== -1){
-    return "review";
-  }
-  if(loc.indexOf("진행") !== -1 || loc.indexOf("progress") !== -1){
-    return "inprog";
-  }
-  if(loc.indexOf("예정") !== -1 || loc.indexOf("대기") !== -1 || loc.indexOf("todo") !== -1){
-    return "todo";
-  }
-  return "inprog";
+  var cls = getRecordCategoryStatusCls(r);
+  if(cls === "delayed") return "inprog";
+  return cls;
 }
 
 function enableHorizontalDragScroll(container){
@@ -653,8 +631,9 @@ function renderAssigneeTable(){
 
   var tableRowsHtml = rows.map(function(a){
     var cats = Object.keys(a.cats).sort(function(x, y){ return a.cats[y] - a.cats[x]; });
-    var shown = cats.slice(0, 3).map(function(c){ return '<span class="tag">' + escapeHtml(c) + '</span>'; }).join("");
-    var overflow = cats.length > 3 ? '<span class="tag">+' + (cats.length - 3) + '</span>' : "";
+    var shownCats = cats.slice(0, 2);
+    var shown = shownCats.map(function(c){ return '<span class="tag" title="' + escapeHtml(c) + '">' + escapeHtml(c) + '</span>'; }).join("");
+    var overflow = cats.length > 2 ? '<span class="tag tag-overflow" title="' + escapeHtml(cats.slice(2).join(", ")) + '">+' + (cats.length - 2) + '</span>' : "";
     var dept = deptById(a.org);
     var isSelected = (filters.assignee && filters.assignee !== "all" && (assigneeBaseName(a.name) === assigneeBaseName(filters.assignee)));
 
@@ -701,12 +680,31 @@ function renderAssigneeTable(){
       '<span class="pill-count" title="' + escapeHtml(assignedText) + '">' + a.count + '</span>' +
     '</div>';
 
-    var breakdown = [];
-    if(a.done > 0) breakdown.push('<span class="pg-item pg-done">' + escapeHtml(sDone) + ' ' + a.done + '</span>');
-    if(a.review > 0) breakdown.push('<span class="pg-item pg-review">' + escapeHtml(sReview) + ' ' + a.review + '</span>');
-    if(a.inprog > 0) breakdown.push('<span class="pg-item pg-inprog">' + escapeHtml(sInprog) + ' ' + a.inprog + '</span>');
-    if(a.todo > 0) breakdown.push('<span class="pg-item pg-todo">' + escapeHtml(sTodo) + ' ' + a.todo + '</span>');
-    if(breakdown.length === 0) breakdown.push('<span class="pg-item pg-todo">' + escapeHtml(sZeroTasks) + '</span>');
+    var row1 = [];
+    var row2 = [];
+
+    if(a.count === 0){
+      row1 = ['<span class="pg-item pg-todo">' + escapeHtml(sZeroTasks) + '</span>'];
+    } else {
+      // Row 1: 완료 X (và 검토 Y nếu có)
+      row1.push('<span class="pg-item pg-done">' + escapeHtml(sDone) + ' ' + (a.done || 0) + '</span>');
+      if(a.review > 0){
+        row1.push('<span class="pg-item pg-review">' + escapeHtml(sReview) + ' ' + a.review + '</span>');
+      }
+
+      // Row 2: Luôn hiển thị đầy đủ cả 진행 và 예정
+      row2.push('<span class="pg-item pg-inprog">' + escapeHtml(sInprog) + ' ' + (a.inprog || 0) + '</span>');
+      row2.push('<span class="pg-item pg-todo">' + escapeHtml(sTodo) + ' ' + (a.todo || 0) + '</span>');
+    }
+
+    var breakdownHtml = '<div class="assignee-progress-breakdown">';
+    if(row1.length > 0){
+      breakdownHtml += '<div class="apb-row">' + row1.join('<span class="pg-dot">·</span>') + '</div>';
+    }
+    if(row2.length > 0){
+      breakdownHtml += '<div class="apb-row">' + row2.join('<span class="pg-dot">·</span>') + '</div>';
+    }
+    breakdownHtml += '</div>';
 
     var deptTag = (isUnassignedUser || !dept || !dept.name || dept.name === "-" || dept.name === "미배정")
       ? ''
@@ -718,7 +716,7 @@ function renderAssigneeTable(){
 
     var catsHtml = (shown || overflow)
       ? ('<div class="assignee-cat-tags">' + shown + overflow + '</div>')
-      : '';
+      : '<div class="assignee-cat-tags empty-tags"></div>';
 
     return (
       '<div class="fluid-compact-row' + (isSelected ? " selected" : "") + '" data-assignee="' + escapeHtml(a.name) + '" title="' + escapeHtml(tooltip) + '">' +
@@ -740,9 +738,7 @@ function renderAssigneeTable(){
               '<span class="assignee-donut-num" style="color:' + numColor + ';">' + overallPct + '%</span>' +
             '</div>' +
           '</div>' +
-          '<div class="assignee-progress-breakdown">' +
-            breakdown.join('<span class="pg-dot">·</span>') +
-          '</div>' +
+          breakdownHtml +
         '</div>' +
       '</div>'
     );
