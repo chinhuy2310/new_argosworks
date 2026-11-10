@@ -14,6 +14,7 @@ def _dummy_cfg():
     return {
         "voyage": {
             "enabled": True,
+            "provider": "voyage",
             "api_key": "dummy_key",
             "model": "voyage-3-lite"
         }
