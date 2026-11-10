@@ -47,16 +47,102 @@ function getHistStatusClass(st) {
   return "todo";
 }
 
+function cleanJiraRichText(text) {
+  if (!text || typeof text !== "string") return text || "";
+  if (!text.includes("{adf") && !text.includes("{panel") && !text.includes("h2.") && !text.includes("[^")) {
+    return text;
+  }
+  var cleaned = text;
+
+  // 1. ADF blocks: {adf:display=block} {JSON} {adf}
+  cleaned = cleaned.replace(/\{adf[^}]*\}\s*(\{[\s\S]*?\})\s*\{adf\}/g, function(match, jsonStr) {
+    try {
+      var data = JSON.parse(jsonStr);
+      if (data && data.type === "table" && Array.isArray(data.content)) {
+        var rows = [];
+        data.content.forEach(function(row) {
+          if (!row || !Array.isArray(row.content)) return;
+          var cells = [];
+          row.content.forEach(function(cell) {
+            var parts = [];
+            function walk(n) {
+              if (!n) return;
+              if (Array.isArray(n)) {
+                n.forEach(walk);
+              } else if (typeof n === "object") {
+                if (n.type === "text" && n.text) parts.push(n.text);
+                if (Array.isArray(n.content)) n.content.forEach(walk);
+              }
+            }
+            walk(cell);
+            cells.push(parts.join(" ").trim());
+          });
+          if (cells.some(Boolean)) rows.push(cells);
+        });
+
+        if (rows.length > 1 && rows[0].length === 2) {
+          var pairs = [];
+          for (var i = 1; i < rows.length; i++) {
+            var r = rows[i];
+            if (r.length >= 2 && r[0] && r[1]) pairs.push(r[0] + ": " + r[1]);
+            else if (r[0]) pairs.push(r[0]);
+          }
+          if (pairs.length > 0) return " 📋 [" + pairs.join(" | ") + "] ";
+        } else if (rows.length > 0) {
+          var rowStrs = rows.map(function(r) { return r.filter(Boolean).join(" - "); }).filter(Boolean);
+          if (rowStrs.length > 0) return " 📋 [" + rowStrs.join(" | ") + "] ";
+        }
+      } else if (data && data.type === "doc") {
+        var docParts = [];
+        function walkDoc(n) {
+          if (!n) return;
+          if (Array.isArray(n)) n.forEach(walkDoc);
+          else if (typeof n === "object") {
+            if (n.type === "text" && n.text) docParts.push(n.text);
+            if (Array.isArray(n.content)) n.content.forEach(walkDoc);
+          }
+        }
+        walkDoc(data);
+        return " " + docParts.join(" ").trim() + " ";
+      }
+      return " ";
+    } catch (e) {
+      return " ";
+    }
+  });
+
+  // 2. Jira panels {panel...} ... {panel}
+  cleaned = cleaned.replace(/\{panel[^}]*\}([\s\S]*?)\{panel\}/g, function(_, inner) {
+    return " [" + inner.trim() + "] ";
+  });
+
+  // 3. Headings h1. h2. etc.
+  cleaned = cleaned.replace(/h[1-6]\.\s*/gi, "");
+
+  // 4. Attachments [^filename]
+  cleaned = cleaned.replace(/\[\^([^\]]+)\]/g, " 📎 $1");
+
+  // 5. Inline code/quote {{text}}
+  cleaned = cleaned.replace(/\{\{([^}]+)\}\}/g, "$1");
+
+  // 6. Clean whitespace and newlines
+  cleaned = cleaned.replace(/[\r\n]+/g, " · ");
+  cleaned = cleaned.replace(/\s{2,}/g, " ").trim();
+
+  return cleaned;
+}
+
 function formatHistActionDetail(actionType, rawDetail) {
   if (!rawDetail && actionType !== "created" && actionType !== "status_change") return "";
+  var cleanedDetail = cleanJiraRichText(rawDetail);
 
   if (actionType === "created") {
-    if (!rawDetail || rawDetail === "새 작업 생성" || rawDetail === "Tạo thẻ mới") return "";
-    return escapeHtml(rawDetail);
+    if (!cleanedDetail || cleanedDetail === "새 작업 생성" || cleanedDetail === "Tạo thẻ mới") return "";
+    return escapeHtml(cleanedDetail);
   }
 
   if (actionType === "status_change" || actionType === "STATUS_CHANGE") {
-    var parts = (rawDetail || "").split("➔").map(function(s){ return s.trim(); });
+    var parts = (cleanedDetail || "").split("➔").map(function(s){ return s.trim(); });
     if (parts.length === 2) {
       var oldSt = parts[0];
       var newSt = parts[1];
@@ -68,16 +154,16 @@ function formatHistActionDetail(actionType, rawDetail) {
         '<span class="hist-status-pill hist-status-' + newCls + '">' + escapeHtml(newSt) + '</span>' +
         '</span>';
     }
-    return '<span style="font-weight:600; margin-left:6px;">' + escapeHtml(rawDetail) + '</span>';
+    return '<span style="font-weight:600; margin-left:6px;">' + escapeHtml(cleanedDetail) + '</span>';
   }
 
   if (actionType === "comment" || actionType === "COMMENT_ADDED") {
-    return '<span style="font-style:italic; margin-left:6px; opacity:0.9;">"' + escapeHtml(rawDetail) + '"</span>';
+    return '<span style="font-style:italic; margin-left:6px; opacity:0.9;">"' + escapeHtml(cleanedDetail) + '"</span>';
   }
 
   if (actionType === "attachment" || actionType === "attachment_deleted") {
     var isDel = actionType === "attachment_deleted";
-    var lines = (rawDetail || "").split("\n").filter(Boolean);
+    var lines = (cleanedDetail || "").split("\n").filter(Boolean);
     if (lines.length === 1) {
       return '<span style="display:inline-flex; align-items:center; gap:5px; margin-left:6px; font-weight:600;' + (isDel ? ' text-decoration:line-through; opacity:0.8;' : '') + '">' +
         '<span>' + (isDel ? '🗑️' : '📎') + '</span>' +
@@ -94,10 +180,10 @@ function formatHistActionDetail(actionType, rawDetail) {
   }
 
   if (actionType === "updated") {
-    return '<span style="margin-left:6px; font-weight:600;">' + escapeHtml(rawDetail) + '</span>';
+    return '<span style="margin-left:6px; font-weight:600;">' + escapeHtml(cleanedDetail) + '</span>';
   }
 
-  return '<span style="margin-left:6px;">' + escapeHtml(rawDetail) + '</span>';
+  return '<span style="margin-left:6px;">' + escapeHtml(cleanedDetail) + '</span>';
 }
 
 function renderHistActionBadge(actionType, actionDetail, act) {
@@ -262,13 +348,31 @@ function renderHistoryTable() {
       avatarHtml = '<div class="hist-avatar">' + escapeHtml(authorInitial) + '</div>';
     }
 
-    var keyHtml = '<span class="hist-key">' + escapeHtml(act.issue_key || "-") + '</span>';
+    var viewHint = isEn ? "View details (Open Canvas)" : "상세 정보 보기 (캔버스 열기)";
+    var key = (act.issue_key || "").trim();
+    var keyHtml = '';
+    if (key && key !== "-") {
+      var keyEsc = escapeHtml(key);
+      var keyJsEsc = key.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+      keyHtml = '<a href="javascript:void(0)" class="hist-key hist-key-link" onclick="if(window.showIssueInCanvas){window.showIssueInCanvas(\'' + keyJsEsc + '\');}return false;" title="' + keyEsc + ' - ' + viewHint + '" role="button">' + keyEsc + '</a>';
+    } else {
+      keyHtml = '<span class="hist-key">-</span>';
+    }
+
+    var summaryText = act.summary || act.issue_key || "-";
+    var summaryHtml = '';
+    if (key && key !== "-") {
+      var keyJsEsc = key.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+      summaryHtml = '<div class="hist-summary-title hist-summary-link" onclick="if(window.showIssueInCanvas){window.showIssueInCanvas(\'' + keyJsEsc + '\');}return false;" title="' + escapeHtml(key) + ' - ' + viewHint + '">' + escapeHtml(summaryText) + '</div>';
+    } else {
+      summaryHtml = '<div class="hist-summary-title">' + escapeHtml(summaryText) + '</div>';
+    }
 
     html += '<tr class="hist-row">' +
       '<td class="hist-col-key">' + keyHtml + '</td>' +
       '<td class="hist-col-summary">' +
         '<div class="hist-summary-wrap">' +
-          '<div class="hist-summary-title">' + escapeHtml(act.summary || act.issue_key || "-") + '</div>' +
+          summaryHtml +
           '<div class="hist-summary-meta">' +
             '<span class="hist-status-pill hist-status-' + statusCls + '">' + escapeHtml(act.status || "진행") + '</span>' +
             (act.issue_type ? '<span>• ' + escapeHtml(act.issue_type) + '</span>' : '') +

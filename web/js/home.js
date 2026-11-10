@@ -205,6 +205,9 @@ function streamTypewriterAnswer(rawText, onComplete){
 function formatMarkdownAnswer(text){
   if(!text) return "";
   var s = escapeHtml(text);
+  // Restore single and double quotes for clean display inside text nodes
+  s = s.replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+
   // Markdown links: strip URL and keep plain text (links should be accessed via bottom source cards)
   s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)\"\']+)\)/g, '$1');
   // Bold: **text** -> <strong>text</strong>
@@ -217,8 +220,8 @@ function formatMarkdownAnswer(text){
     if(NON_ISSUE_KEYS[key.toUpperCase()]) return match;
     return '<a href="javascript:void(0)" class="home-jira-canvas-link" onclick="if(window.showIssueInCanvas){window.showIssueInCanvas(\'' + key.toUpperCase() + '\');}return false;" title="' + key.toUpperCase() + ' 상세 정보 보기 (모달)">' + key.toUpperCase() + '</a>';
   });
-  s = s.replace(/#(\d+)\b/g, function(match, num){
-    return '<a href="javascript:void(0)" class="home-jira-canvas-link" onclick="if(window.showIssueInCanvas){window.showIssueInCanvas(\'#' + num + '\');}return false;" title="#' + num + ' 상세 정보 보기 (모달)">#' + num + '</a>';
+  s = s.replace(/(^|[^&])#(\d+)\b/g, function(match, prefix, num){
+    return prefix + '<a href="javascript:void(0)" class="home-jira-canvas-link" onclick="if(window.showIssueInCanvas){window.showIssueInCanvas(\'#' + num + '\');}return false;" title="#' + num + ' 상세 정보 보기 (모달)">#' + num + '</a>';
   });
 
 

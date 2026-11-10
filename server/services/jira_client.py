@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 import os
 from utils.logging import log_line
-from utils.text import assignee_base_name, _adf_to_text, parse_iso_timestamp
+from utils.text import assignee_base_name, _adf_to_text, parse_iso_timestamp, clean_jira_rich_text
 from config import JIRA_AUTO_SYNC_INTERVAL_SEC, BASE_DIR
 from services.data_store import read_records
 
@@ -868,6 +868,8 @@ def jira_search_issues(cfg, max_results=2000, page_size=200, since_updated=None,
                     action_detail = f"보고자 변경: {from_str} ➔ {to_str}"
                 elif field == "issueparentassociation":
                     action_detail = f"상위 작업 연결: {to_str}"
+
+                action_detail = clean_jira_rich_text(action_detail)
 
                 activities.append({
                     "id": act_id,
